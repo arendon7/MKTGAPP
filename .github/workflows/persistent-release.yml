@@ -9,7 +9,20 @@ permissions:
   contents: write
 
 jobs:
+  release-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify canonical release tag
+        env:
+          PYTHONPATH: src
+        run: python scripts/verify_release_tag.py --tag "$GITHUB_REF_NAME"
+
   build-native:
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:

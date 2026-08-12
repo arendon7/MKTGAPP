@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "binario-marketing-app"
-version = "0.9.0.dev1"
+dynamic = ["version"]
 description = "Git-first reconstructed canonical source for BINARIO Marketing App"
 requires-python = ">=3.12"
 dependencies = []
@@ -14,3 +14,6 @@ binario-marketing = "binario_marketing.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "binario_marketing.version.__version__"}
