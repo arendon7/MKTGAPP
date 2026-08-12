@@ -42,11 +42,32 @@ jobs:
           path: .cache/full-mac-media-${{ matrix.arch }}
           key: ffmpeg-8.1.2-${{ runner.os }}-${{ matrix.arch }}-38b88335f99e76ed89ff3c93f877fdefce736c13
       - name: Build native app
+        shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
         run: |
+          set -euo pipefail
           chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_embedded_ffmpeg.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh
-          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}"
+          LOG="$RUNNER_TEMP/full-mac-build-${{ matrix.arch }}.log"
+          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}" 2>&1 | /usr/bin/tee "$LOG"
+      - name: Preserve build diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/full-mac-build-${{ matrix.arch }}.log"
+          {
+            echo '### FULL MAC build failure — ${{ matrix.arch }}'
+            echo '```text'
+            /usr/bin/tail -n 160 "$LOG" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-mac-build-diagnostics-${{ matrix.arch }}
+          path: ${{ runner.temp }}/full-mac-build-${{ matrix.arch }}.log
+          if-no-files-found: warn
       - name: Audit bundle
         run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
       - name: Smoke boot local API from bundled runtimes
@@ -55,8 +76,10 @@ jobs:
           set -euo pipefail
           APP="dist/Binario Marketing IA.app"
           MEDIA="$APP/Contents/Resources/runtime/media/bin"
-          "$MEDIA/ffmpeg" -hide_banner -version | head -n 1
-          "$MEDIA/ffprobe" -hide_banner -version | head -n 1
+          "$MEDIA/ffmpeg" -hide_banner -version > "$RUNNER_TEMP/ffmpeg-version.txt"
+          "$MEDIA/ffprobe" -hide_banner -version > "$RUNNER_TEMP/ffprobe-version.txt"
+          /usr/bin/head -n 1 "$RUNNER_TEMP/ffmpeg-version.txt"
+          /usr/bin/head -n 1 "$RUNNER_TEMP/ffprobe-version.txt"
           LOG="$RUNNER_TEMP/binario-smoke.log"
           BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
           PID=$!

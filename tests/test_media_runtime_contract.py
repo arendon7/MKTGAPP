@@ -1,4 +1,3 @@
-import re
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +27,18 @@ class MediaRuntimeContractTests(unittest.TestCase):
         self.assertIn("/usr/local", script)
         self.assertNotIn("--enable-gpl", script)
         self.assertNotIn("--enable-nonfree", script)
+
+    def test_pipefail_sensitive_checks_use_files_not_early_closing_pipelines(self):
+        builder = (ROOT / "scripts/build_embedded_ffmpeg.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts/audit_full_mac_app.sh").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/full-mac-app.yml").read_text(encoding="utf-8")
+        self.assertNotIn("-encoders 2>/dev/null | /usr/bin/grep -q", builder)
+        self.assertNotIn("-encoders 2>/dev/null | /usr/bin/grep -q", audit)
+        self.assertNotIn("-version | head", workflow)
+        self.assertIn('ENCODERS_FILE=', builder)
+        self.assertIn('ENCODERS_FILE=', audit)
+        self.assertIn("Preserve build diagnostics", workflow)
+        self.assertIn("Upload build diagnostics", workflow)
 
     def test_full_mac_builder_bundles_and_prioritizes_media_runtime(self):
         builder = (ROOT / "scripts/build_full_mac_app.sh").read_text(encoding="utf-8")

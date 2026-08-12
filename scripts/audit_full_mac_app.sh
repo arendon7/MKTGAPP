@@ -20,20 +20,23 @@ if /usr/bin/grep -Eq '(^|[;&|[:space:]])python3([[:space:]]|$)' "$LAUNCHER"; the
 
 for binary in "$FFMPEG" "$FFPROBE"; do
   DEPS="$(/usr/bin/otool -L "$binary")"
-  if printf '%s\n' "$DEPS" | /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)'; then
+  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$DEPS"; then
     printf '%s\n' "$DEPS" >&2
     echo "media runtime has non-system dependency" >&2
     exit 3
   fi
 done
-"$FFMPEG" -hide_banner -encoders 2>/dev/null | /usr/bin/grep -q 'h264_videotoolbox' || { echo "h264_videotoolbox unavailable" >&2; exit 3; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+ENCODERS_FILE="$TMP/encoders.txt"
+"$FFMPEG" -hide_banner -encoders >"$ENCODERS_FILE" 2>&1
+/usr/bin/grep -q 'h264_videotoolbox' "$ENCODERS_FILE" || { echo "h264_videotoolbox unavailable" >&2; exit 3; }
 "$FFMPEG" -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=10' -t 0.4 -c:v mpeg4 -an -y "$TMP/smoke.mp4"
-"$FFPROBE" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$TMP/smoke.mp4" | /usr/bin/grep -q '^320,180$'
+PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$TMP/smoke.mp4")"
+[[ "$PROBE_DIMENSIONS" == "320,180" ]] || { echo "unexpected synthetic probe dimensions: $PROBE_DIMENSIONS" >&2; exit 3; }
 
 BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" "$PY" -I -B - "$RES/source/src" "$RES/source" <<'PY'
-import json, os, sys
+import json, sys
 from pathlib import Path
 src, root = map(Path, sys.argv[1:3])
 sys.path.insert(0, str(src))

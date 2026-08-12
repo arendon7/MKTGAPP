@@ -9,6 +9,7 @@ CACHE_DIR="${FULL_MAC_FFMPEG_CACHE_DIR:-}"
 
 fail(){ printf 'FULL MAC MEDIA BUILD BLOCKED: %s\n' "$1" >&2; exit 6; }
 pass(){ printf 'PASS: %s\n' "$1"; }
+phase(){ printf 'PHASE: %s\n' "$1"; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,6 +61,7 @@ SRC="$TMP/src"
 INSTALL="$TMP/install"
 mkdir -p "$SRC" "$INSTALL"
 
+phase "fetch exact FFmpeg source"
 /usr/bin/git -C "$SRC" init -q
 /usr/bin/git -C "$SRC" remote add origin "$FULL_MAC_FFMPEG_REPOSITORY"
 /usr/bin/git -C "$SRC" fetch --depth 1 origin "$FULL_MAC_FFMPEG_COMMIT_SHA"
@@ -81,12 +83,18 @@ CONFIG_FLAGS=(
 )
 if [[ "$ARCH" == "x86_64" ]]; then CONFIG_FLAGS+=("--disable-x86asm"); fi
 
+phase "configure FFmpeg ($ARCH)"
 (
   cd "$SRC"
   ./configure "${CONFIG_FLAGS[@]}"
+)
+phase "compile FFmpeg ($ARCH)"
+(
+  cd "$SRC"
   /usr/bin/make -j"$(/usr/sbin/sysctl -n hw.ncpu)"
 )
 
+phase "assemble embedded media runtime"
 rm -rf "$TARGET"
 mkdir -p "$TARGET/bin" "$TARGET/licenses"
 /bin/cp "$SRC/ffmpeg" "$TARGET/bin/ffmpeg"
@@ -96,20 +104,27 @@ for license in LICENSE.md COPYING.LGPLv2.1; do
   [[ -f "$SRC/$license" ]] && /bin/cp "$SRC/$license" "$TARGET/licenses/$license"
 done
 
+phase "audit binary linkage"
 for binary in "$TARGET/bin/ffmpeg" "$TARGET/bin/ffprobe"; do
   /usr/bin/codesign --force --sign - "$binary" >/dev/null
   "$binary" -hide_banner -version >/dev/null
   DEPS="$(/usr/bin/otool -L "$binary")"
-  if printf '%s\n' "$DEPS" | /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)'; then
+  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$DEPS"; then
     printf '%s\n' "$DEPS" >&2
     fail "FFmpeg binary links to non-system build-host dependency"
   fi
 done
 
-"$TARGET/bin/ffmpeg" -hide_banner -encoders 2>/dev/null | /usr/bin/grep -q 'h264_videotoolbox' || fail "h264_videotoolbox encoder is missing"
+phase "verify required encoders"
+ENCODERS_FILE="$TMP/encoders.txt"
+"$TARGET/bin/ffmpeg" -hide_banner -encoders >"$ENCODERS_FILE" 2>&1 || fail "ffmpeg -encoders failed"
+/usr/bin/grep -q 'h264_videotoolbox' "$ENCODERS_FILE" || { /usr/bin/tail -n 80 "$ENCODERS_FILE" >&2; fail "h264_videotoolbox encoder is missing"; }
+
+phase "synthetic render/probe smoke"
 SMOKE="$TMP/smoke.mp4"
 "$TARGET/bin/ffmpeg" -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=10' -t 0.4 -c:v mpeg4 -an -y "$SMOKE"
-"$TARGET/bin/ffprobe" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$SMOKE" | /usr/bin/grep -q '^320,180$' || fail "FFmpeg synthetic render/probe smoke failed"
+PROBE_DIMENSIONS="$("$TARGET/bin/ffprobe" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$SMOKE")" || fail "ffprobe synthetic smoke failed"
+[[ "$PROBE_DIMENSIONS" == "320,180" ]] || fail "FFmpeg synthetic render/probe smoke returned unexpected dimensions: $PROBE_DIMENSIONS"
 
 cat > "$TARGET/FULL_MAC_MEDIA_RUNTIME.json" <<JSON
 {
@@ -124,6 +139,7 @@ cat > "$TARGET/FULL_MAC_MEDIA_RUNTIME.json" <<JSON
 }
 JSON
 
+phase "final runtime validation"
 validate_runtime "$TARGET" || fail "built media runtime failed final validation"
 if [[ -n "$CACHE_DIR" ]]; then
   rm -rf "$CACHE_DIR"
