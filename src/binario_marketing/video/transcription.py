@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -75,14 +76,30 @@ def transcript_sha256(segments:list[SpeechSegment]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _embedded_runtime_file(relative:str) -> Path | None:
+    executable=Path(sys.executable).resolve()
+    if len(executable.parents)>=3:
+        runtime=executable.parents[2]
+        if runtime.name=='runtime':
+            candidate=runtime/relative
+            if candidate.is_file():return candidate
+    return None
+
+
 def resolve_whisper_cli(explicit:str|None=None) -> str:
-    candidate=explicit or os.environ.get('BINARIO_WHISPER_CLI') or shutil.which('whisper-cli')
+    candidate=explicit or os.environ.get('BINARIO_WHISPER_CLI')
+    if not candidate:
+        embedded=_embedded_runtime_file('transcription/bin/whisper-cli')
+        candidate=str(embedded) if embedded is not None else shutil.which('whisper-cli')
     if not candidate:raise FileNotFoundError('whisper.cpp CLI runtime is unavailable')
     return candidate
 
 
 def resolve_whisper_model(explicit:str|None=None) -> str:
     candidate=explicit or os.environ.get('BINARIO_WHISPER_MODEL')
+    if not candidate:
+        embedded=_embedded_runtime_file('transcription/models/ggml-tiny.bin')
+        candidate=str(embedded) if embedded is not None else None
     if not candidate:raise FileNotFoundError('whisper.cpp model is unavailable')
     path=Path(candidate)
     if not path.is_file():raise FileNotFoundError(path)

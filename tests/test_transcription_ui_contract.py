@@ -19,7 +19,7 @@ class TranscriptionUiContractTests(unittest.TestCase):
 
     def test_api_contract_has_managed_transcript_routes(self):
         service=(ROOT/'src/binario_marketing/service.py').read_text(encoding='utf-8')
-        for token in ('TranscriptionManager','transcriptions','transcription/segments','transcription/file','transcription/clips'):
+        for token in ('TranscriptionManager','transcriptions','[\"transcription\", \"segments\"]','[\"transcription\", \"file\"]','[\"transcription\", \"clips\"]'):
             self.assertIn(token,service)
 
 

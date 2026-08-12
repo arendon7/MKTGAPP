@@ -70,7 +70,7 @@ if [[ "$VALID_CACHE" != "1" ]]; then
     -DGGML_METAL=OFF \
     -DGGML_ACCELERATE=ON
   cmake --build "$BUILD" --config Release --target whisper-cli --parallel "$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"
-  BUILT="$(find "$BUILD" -type f -name whisper-cli -perm -111 | head -n 1)"
+  BUILT="$(find "$BUILD" -type f -name whisper-cli -perm -111 -print -quit)"
   [[ -n "$BUILT" && -x "$BUILT" ]] || { echo "whisper-cli binary was not produced" >&2; exit 5; }
   cp "$BUILT" "$CACHE_BIN"
   chmod 755 "$CACHE_BIN"

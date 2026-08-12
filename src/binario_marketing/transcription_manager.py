@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .atomic import write_json_atomic
 from .projects import ProjectStore
-from .video.transcription import SpeechSegment,extract_audio_command,load_whisper_output,transcript_sha256,whisper_command
+from .video.transcription import SpeechSegment,extract_audio_command,load_whisper_output,resolve_whisper_model,transcript_sha256,whisper_command
 from .workspace import Workspace
 
 
@@ -91,6 +91,24 @@ class TranscriptionManager:
         with self._lock:rows=self._load()
         return [row for row in rows if project_id is None or row.project_id==project_id]
 
+    def active_for_asset(self,project_id:str,asset_id:str)->bool:
+        row=self.get(project_id,asset_id)
+        return row is not None and row.status in TRANSCRIPTION_ACTIVE
+
+    def _remove_record(self,project_id:str,asset_id:str)->None:
+        with self._lock:self._save([row for row in self._load() if not (row.project_id==project_id and row.asset_id==asset_id)])
+
+    def invalidate(self,project_id:str,asset_id:str)->None:
+        row=self.get(project_id,asset_id)
+        if row is None:return
+        if row.status in TRANSCRIPTION_ACTIVE:raise ValueError('asset has an active transcription job')
+        if row.transcript_relative_path:
+            project_root=self.projects.path_for(project_id).resolve();path=(project_root/row.transcript_relative_path).resolve();root=self._transcripts_dir(project_id)
+            if root not in path.parents:raise ValueError('transcript path escaped managed transcripts root')
+            path.unlink(missing_ok=True)
+        self._remove_record(project_id,asset_id)
+        self.workspace.registries.timeline.append('transcription.invalidated',{'project_id':project_id,'asset_id':asset_id})
+
     def _transcripts_dir(self,project_id:str)->Path:
         root=self.projects.path_for(project_id).resolve();path=(root/'transcripts').resolve()
         if root not in path.parents:raise ValueError('transcripts path escaped project root')
@@ -118,9 +136,12 @@ class TranscriptionManager:
 
     def _model_sha(self)->str|None:
         if self._model_sha_cache:return self._model_sha_cache
-        candidate=self.model or os.environ.get('BINARIO_WHISPER_MODEL')
-        if candidate and Path(candidate).is_file():self._model_sha_cache=_sha256_file(Path(candidate));return self._model_sha_cache
-        return None
+        try:
+            candidate=resolve_whisper_model(self.model)
+        except FileNotFoundError:
+            return None
+        self._model_sha_cache=_sha256_file(Path(candidate))
+        return self._model_sha_cache
 
     def ensure(self,project_id:str,asset_id:str,language:str='auto',force:bool=False)->TranscriptRecord:
         source_sha,source=self._source_sha(project_id,asset_id);requested=(language or 'auto').strip().lower() or 'auto';model_sha=self._model_sha()
