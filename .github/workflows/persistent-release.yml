@@ -1,0 +1,101 @@
+name: Persistent Mac Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cache verified FFmpeg runtime when available
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-media-${{ matrix.arch }}
+          key: release-media-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_media_runtime.env') }}
+      - name: Build and audit native app
+        shell: bash
+        env:
+          FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}"
+          scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+      - name: Smoke bundled service
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="dist/Binario Marketing IA.app"
+          LOG="$RUNNER_TEMP/release-smoke.log"
+          BINARIO_NO_BROWSER=1 BINARIO_PORT=18766 "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
+          PID=$!
+          cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          READY=0
+          for _ in $(seq 1 60); do
+            if /usr/bin/curl --fail --silent http://127.0.0.1:18766/api/health > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
+            sleep 0.25
+          done
+          if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
+          /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
+      - name: Package immutable release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          SAFE_TAG="${GITHUB_REF_NAME//\//-}"
+          ZIP="release/Binario-Marketing-IA-${SAFE_TAG}-${{ matrix.arch }}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
+          SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
+          printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
+          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s"}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: persistent-release-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  publish-release:
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: persistent-release-*
+          path: release
+          merge-multiple: true
+      - name: Verify both architectures and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release/RELEASE-arm64.json
+          test -f release/RELEASE-x86_64.json
+          cd release
+          for checksum in *.zip.sha256; do sha256sum -c "$checksum"; done
+      - name: Publish permanent GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "BINARIO Marketing $GITHUB_REF_NAME" \
+            --generate-notes
