@@ -22,7 +22,17 @@ jobs:
         with:
           python-version: "3.12"
       - name: Reconcile actual product source
-        run: python scripts/reconcile_incomplete_features.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/reconcile_incomplete_features.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/build_full_mac_app.sh')
+          text=p.read_text(encoding='utf-8')
+          text=text.replace('export PATH="$TRANSCRIPTION/bin:$MEDIA_BIN:$RESOURCES/runtime/python/bin:/usr/bin:/bin"','export PATH="$MEDIA_BIN:$TRANSCRIPTION/bin:$RESOURCES/runtime/python/bin:/usr/bin:/bin"')
+          p.write_text(text,encoding='utf-8')
+          PY
       - name: Validate canonical source
         env:
           PYTHONPATH: src
