@@ -34,11 +34,25 @@
 
       <div id="project-view" class="hidden stack-lg">
         <section class="panel project-hero">
-          <div><p class="eyebrow">PROYECTO ACTIVO</p><h2 id="active-project-name">—</h2><p id="active-project-meta" class="muted"></p></div>
-          <div class="hero-stats"><div><strong id="asset-count">0</strong><span>assets</span></div><div><strong id="clip-count">0</strong><span>clips</span></div><div><strong id="render-count">0</strong><span>renders</span></div><div><strong id="handoff-count">0</strong><span>handoffs</span></div></div>
+          <div class="project-copy"><p class="eyebrow">PROYECTO ACTIVO</p><h2 id="active-project-name">—</h2><p id="active-project-meta" class="muted"></p><p id="project-path" class="path-text"></p></div>
+          <div class="project-actions"><button id="open-project-folder" type="button">Abrir en Finder</button><div class="hero-stats"><div><strong id="asset-count">0</strong><span>assets</span></div><div><strong id="clip-count">0</strong><span>clips</span></div><div><strong id="render-count">0</strong><span>renders</span></div><div><strong id="handoff-count">0</strong><span>handoffs</span></div></div></div>
         </section>
 
-        <div class="grid-two">
+        <section class="panel editor-preview-panel">
+          <div class="section-head"><div><p class="eyebrow">EDITOR PRINCIPAL</p><h3>Preview</h3></div><div class="shortcut-hint">Space · play/pause &nbsp; ⌘Z · undo &nbsp; [ / ] · marcar trim</div></div>
+          <div class="preview-layout">
+            <div id="preview-stage" class="preview-stage"><div class="preview-empty"><strong>Selecciona un video, audio o imagen</strong><span>El archivo se reproduce directamente desde el proyecto; no se duplica en memoria.</span></div></div>
+            <aside class="preview-inspector">
+              <p class="eyebrow">ASSET ACTIVO</p>
+              <strong id="preview-name">Sin selección</strong>
+              <p id="preview-meta" class="muted">Selecciona “Preview” en Assets.</p>
+              <div class="toolbar preview-toolbar"><button id="preview-add-timeline" type="button" disabled>+ Timeline completo</button><button id="preview-mark-start" type="button" disabled>Marcar inicio [</button><button id="preview-mark-end" type="button" disabled>Marcar fin ]</button></div>
+              <div class="playhead"><span>Playhead</span><strong id="preview-time">0.00s</strong></div>
+            </aside>
+          </div>
+        </section>
+
+        <div class="grid-two editor-grid">
           <section class="panel">
             <div class="section-head"><div><p class="eyebrow">MEDIA</p><h3>Assets</h3></div></div>
             <form id="asset-form" class="stack">
@@ -50,10 +64,11 @@
             <div id="asset-list" class="asset-list"></div>
           </section>
 
-          <section class="panel">
+          <section class="panel timeline-panel">
             <div class="section-head"><div><p class="eyebrow">EDITOR</p><h3>Timeline</h3></div><span id="aspect-badge" class="badge">16:9</span></div>
             <div class="toolbar"><button data-editor-action="undo">Deshacer</button><button data-editor-action="redo">Rehacer</button><button data-editor-action="reset">Reset</button><select id="aspect-select" aria-label="Relación de aspecto"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:5</option></select></div>
             <form id="clip-form" class="clip-form"><select id="clip-asset" required><option value="">Selecciona asset</option></select><input id="clip-start" type="number" min="0" step="0.1" value="0" aria-label="Inicio"><input id="clip-end" type="number" min="0.1" step="0.1" value="10" aria-label="Fin"><input id="clip-track" type="number" min="0" step="1" value="0" aria-label="Track"><button class="primary" type="submit">Añadir clip</button></form>
+            <div id="timeline-visual" class="timeline-visual"></div>
             <div id="timeline" class="timeline"></div>
           </section>
         </div>
@@ -61,7 +76,7 @@
         <div class="grid-two">
           <section class="panel">
             <div class="section-head"><div><p class="eyebrow">CLIPPER</p><h3>Clips para redes</h3></div></div>
-            <p class="muted">Pega segmentos como <code>inicio|fin|texto</code>, uno por línea. Los candidatos pueden exportarse usando el asset seleccionado en el Editor.</p>
+            <p class="muted">Pega segmentos como <code>inicio|fin|texto</code>, uno por línea. Los candidatos pueden previsualizarse y exportarse con el asset activo.</p>
             <textarea id="clipper-input" rows="7" placeholder="0|8|¿Cómo evitar este error?&#10;8|20|La clave es definir el objetivo."></textarea>
             <div class="inline-form"><label>Cantidad<input id="clipper-count" type="number" min="1" max="20" value="3"></label><label>Mín. seg<input id="clipper-min" type="number" min="1" value="15"></label><label>Máx. seg<input id="clipper-max" type="number" min="1" value="75"></label><button id="clipper-run" class="secondary" type="button">Seleccionar</button></div>
             <div id="clipper-results" class="results"></div>
