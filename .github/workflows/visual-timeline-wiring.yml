@@ -1,0 +1,109 @@
+name: Visual Timeline Atomic Wiring
+
+on:
+  push:
+    branches: [feature/editor-visual-timeline]
+    paths: [.github/workflows/visual-timeline-wiring.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  wire-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply deterministic wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p=Path(path)
+              text=p.read_text(encoding='utf-8')
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'expected wiring anchor not found in {path}: {old!r}')
+              p.write_text(text.replace(old,new,1),encoding='utf-8')
+
+          replace_once(
+              'web/index.html',
+              '  <script src="/pro-media.js" defer></script>\n',
+              '  <script src="/pro-media.js" defer></script>\n  <script src="/visual-timeline.js" defer></script>\n',
+          )
+          replace_once(
+              'src/binario_marketing/service.py',
+              '"/app.js", "/pro-media.js", "/styles.css"',
+              '"/app.js", "/pro-media.js", "/visual-timeline.js", "/styles.css"',
+          )
+          service=Path('src/binario_marketing/service.py')
+          service_text=service.read_text(encoding='utf-8').replace(
+              'STREAM_CHUNK_BYTES = 1024 * 1024 * 1024 // 1024',
+              'STREAM_CHUNK_BYTES = 1024 * 1024',
+          )
+          service.write_text(service_text,encoding='utf-8')
+
+          visual=Path('web/visual-timeline.js')
+          text=visual.read_text(encoding='utf-8')
+          text=text.replace(
+              "state.visualTimeline=state.visualTimeline||{draggedClipId:null,probeCache:{},masterActive:false,masterPlaying:false,masterIndex:0,masterTime:0,switching:false};",
+              "state.visualTimeline=state.visualTimeline||{draggedClipId:null,probeCache:{},masterActive:false,masterPlaying:false,masterIndex:0,masterTime:0,switching:false,advancing:false};",
+          )
+          text=text.replace(
+              "range.addEventListener('input',()=>visualSeekMaster(Number(range.value),false));",
+              "range.addEventListener('input',()=>{state.visualTimeline.masterTime=Number(range.value);const label=$('#visual-master-time');if(label)label.textContent=`${visualFormatTime(state.visualTimeline.masterTime)} / ${visualFormatTime(visualMasterDuration())}`;visualHighlightCurrent()});range.addEventListener('change',()=>visualSeekMaster(Number(range.value),false));",
+          )
+          text=text.replace(
+              "clips.forEach((clip,index)=>rail.append(visualClipNode(clip,index,total)));",
+              "clips.forEach((clip,index)=>{visualProbe(clip.asset_id).catch(()=>{});rail.append(visualClipNode(clip,index,total))});",
+          )
+          text=text.replace(
+              "$('#visual-master-time').textContent=`${visualFormatTime(Number(range.value))} / ${visualFormatTime(total)}`;",
+              "$('#visual-master-time').textContent=`${visualFormatTime(Number(range.value))} / ${visualFormatTime(total)}`;const preview=$('#visual-master-preview');if(preview)preview.textContent=state.visualTimeline.masterPlaying?'Pausar master':state.visualTimeline.masterActive?'Continuar master':'Previsualizar master';",
+          )
+          text=text.replace(
+              "state.visualTimeline.masterActive=false;state.visualTimeline.masterPlaying=false;state.visualTimeline.switching=false;",
+              "state.visualTimeline.masterActive=false;state.visualTimeline.masterPlaying=false;state.visualTimeline.switching=false;state.visualTimeline.advancing=false;",
+          )
+          text=text.replace(
+              "const media=currentMedia();if(!media)return;visualAttachMasterMedia(media,located);if(autoplay){",
+              "const media=currentMedia();if(!media)return;if(media.readyState<1)await new Promise((resolve,reject)=>{const ok=()=>{cleanup();resolve()};const fail=()=>{cleanup();reject(new Error('No fue posible cargar el clip del master'))};const cleanup=()=>{media.removeEventListener('loadedmetadata',ok);media.removeEventListener('error',fail)};media.addEventListener('loadedmetadata',ok,{once:true});media.addEventListener('error',fail,{once:true})});visualAttachMasterMedia(media,located);if(autoplay){",
+          )
+          old="async function visualAdvanceMaster(){\n  if(!state.visualTimeline.masterPlaying)return;const clips=visualTrackZero(),next=state.visualTimeline.masterIndex+1;if(next>=clips.length){visualStopMaster(false);state.visualTimeline.masterTime=visualMasterDuration();visualRender();return}const before=clips.slice(0,next).reduce((sum,row)=>sum+visualClipDuration(row),0);state.visualTimeline.masterTime=before;try{await visualLoadMasterTime(before,true)}catch(err){visualStopMaster(false);toast(err.message)}\n}"
+          new="async function visualAdvanceMaster(){\n  if(!state.visualTimeline.masterPlaying||state.visualTimeline.advancing)return;state.visualTimeline.advancing=true;try{const clips=visualTrackZero(),next=state.visualTimeline.masterIndex+1;if(next>=clips.length){visualStopMaster(false);state.visualTimeline.masterTime=visualMasterDuration();visualRender();return}const before=clips.slice(0,next).reduce((sum,row)=>sum+visualClipDuration(row),0);state.visualTimeline.masterTime=before;await visualLoadMasterTime(before,true)}catch(err){visualStopMaster(false);toast(err.message)}finally{state.visualTimeline.advancing=false}\n}"
+          if old not in text:
+              raise SystemExit('visualAdvanceMaster anchor not found')
+          text=text.replace(old,new,1)
+          visual.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate source and browser bundle
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python scripts/check_source_tree.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+          python scripts/version_info.py
+      - name: Commit validated wiring and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/visual-timeline-wiring.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "editor: wire validated visual timeline master preview"
+          git push origin HEAD:feature/editor-visual-timeline
