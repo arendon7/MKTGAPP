@@ -1,0 +1,72 @@
+name: Pin Whisper Runtime Once
+
+on:
+  push:
+    branches: [feature/auto-transcription-clipper]
+    paths: [.github/workflows/pin-whisper-runtime.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve official release and multilingual tiny model
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO_URL="https://github.com/ggml-org/whisper.cpp.git"
+          API="https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest"
+          TAG="$(python - <<'PY'
+          import json,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest',headers={'Accept':'application/vnd.github+json','User-Agent':'mktgapp-pin'})
+          with urllib.request.urlopen(req,timeout=30) as r: print(json.load(r)['tag_name'])
+          PY
+          )"
+          TMP="$RUNNER_TEMP/whisper-src"
+          git clone --quiet --depth 1 --branch "$TAG" "$REPO_URL" "$TMP"
+          COMMIT="$(git -C "$TMP" rev-parse HEAD)"
+          test -n "$COMMIT"
+          MODEL_NAME="ggml-tiny.bin"
+          MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_NAME"
+          MODEL="$RUNNER_TEMP/$MODEL_NAME"
+          curl --fail --location --retry 4 --retry-delay 2 "$MODEL_URL" -o "$MODEL"
+          MODEL_SHA="$(sha256sum "$MODEL" | awk '{print $1}')"
+          MODEL_BYTES="$(wc -c < "$MODEL" | tr -d ' ')"
+          test "$MODEL_BYTES" -gt 10000000
+          cat > scripts/full_mac_transcription_runtime.env <<EOF
+          WHISPER_REPOSITORY=$REPO_URL
+          WHISPER_TAG=$TAG
+          WHISPER_COMMIT=$COMMIT
+          WHISPER_MODEL_NAME=$MODEL_NAME
+          WHISPER_MODEL_URL=$MODEL_URL
+          WHISPER_MODEL_SHA256=$MODEL_SHA
+          WHISPER_MODEL_BYTES=$MODEL_BYTES
+          EOF
+          cat scripts/full_mac_transcription_runtime.env
+      - name: Validate pin shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/full_mac_transcription_runtime.env
+          [[ "$WHISPER_REPOSITORY" == "https://github.com/ggml-org/whisper.cpp.git" ]]
+          [[ "$WHISPER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WHISPER_MODEL_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$WHISPER_MODEL_NAME" == "ggml-tiny.bin" ]]
+      - name: Commit immutable pin and remove resolver workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/pin-whisper-runtime.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/full_mac_transcription_runtime.env
+          git diff --cached --check
+          git commit -m "runtime: pin official whisper.cpp and multilingual tiny model"
+          git push origin HEAD:feature/auto-transcription-clipper
