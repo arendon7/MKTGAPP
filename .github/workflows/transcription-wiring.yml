@@ -1,0 +1,106 @@
+name: Transcription Atomic Wiring
+
+on:
+  push:
+    branches: [feature/auto-transcription-clipper]
+    paths: [.github/workflows/transcription-wiring.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Wire transcription runtime and API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path,old,new):
+              p=Path(path);text=p.read_text(encoding='utf-8')
+              if new in text:return
+              if old not in text:raise SystemExit(f'anchor missing in {path}: {old!r}')
+              p.write_text(text.replace(old,new,1),encoding='utf-8')
+
+          manager=Path('src/binario_marketing/transcription_manager.py')
+          text=manager.read_text(encoding='utf-8')
+          anchor='''    def list(self,project_id:str|None=None)->list[TranscriptRecord]:\n        with self._lock:rows=self._load()\n        return [row for row in rows if project_id is None or row.project_id==project_id]\n'''
+          methods='''    def active_for_asset(self,project_id:str,asset_id:str)->bool:\n        row=self.get(project_id,asset_id)\n        return row is not None and row.status in TRANSCRIPTION_ACTIVE\n\n    def _remove_record(self,project_id:str,asset_id:str)->None:\n        with self._lock:self._save([row for row in self._load() if not (row.project_id==project_id and row.asset_id==asset_id)])\n\n    def invalidate(self,project_id:str,asset_id:str)->None:\n        row=self.get(project_id,asset_id)\n        if row is None:return\n        if row.status in TRANSCRIPTION_ACTIVE:raise ValueError('asset has an active transcription job')\n        if row.transcript_relative_path:\n            project_root=self.projects.path_for(project_id).resolve();path=(project_root/row.transcript_relative_path).resolve();transcripts=self._transcripts_dir(project_id)\n            if transcripts not in path.parents:raise ValueError('transcript path escaped managed transcripts root')\n            path.unlink(missing_ok=True)\n        self._remove_record(project_id,asset_id)\n        self.workspace.registries.timeline.append('transcription.invalidated',{'project_id':project_id,'asset_id':asset_id})\n\n'''
+          if 'def active_for_asset(' not in text:
+              if anchor not in text:raise SystemExit('manager list anchor missing')
+              text=text.replace(anchor,anchor+'\n'+methods,1);manager.write_text(text,encoding='utf-8')
+
+          service=Path('src/binario_marketing/service.py');text=service.read_text(encoding='utf-8')
+          if 'from .transcription_manager import TranscriptionManager' not in text:
+              text=text.replace('from .sequence_service import start_sequence_render\n','from .sequence_service import start_sequence_render\nfrom .transcription_manager import TranscriptionManager\nfrom .transcription_service import select_transcript_clips\n',1)
+          text=text.replace('''    proxies: ProxyManager\n    renders: RenderQueue\n''','''    proxies: ProxyManager\n    transcriptions: TranscriptionManager\n    renders: RenderQueue\n''',1)
+          text=text.replace('''        proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)\n        renders = RenderQueue(user_root / "State" / "renders", projects, workspace)\n        return cls(root, user_root, projects, workspace, editors, proxies, renders)\n''','''        proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)\n        transcriptions = TranscriptionManager(user_root / "State" / "transcriptions", projects, workspace)\n        renders = RenderQueue(user_root / "State" / "renders", projects, workspace)\n        return cls(root, user_root, projects, workspace, editors, proxies, transcriptions, renders)\n''',1)
+          old='''        proxies = {}\n        for asset in assets:\n            record = self.proxies.get(project_id, asset.id)\n            if record is not None:\n                proxies[asset.id] = asdict(record)\n        return {\n'''
+          new='''        proxies = {}\n        transcriptions = {}\n        for asset in assets:\n            record = self.proxies.get(project_id, asset.id)\n            if record is not None:\n                proxies[asset.id] = asdict(record)\n            transcript = self.transcriptions.get(project_id, asset.id)\n            if transcript is not None:\n                transcriptions[asset.id] = asdict(transcript)\n        return {\n'''
+          if 'transcriptions = {}' not in text:
+              if old not in text:raise SystemExit('project detail proxy anchor missing')
+              text=text.replace(old,new,1)
+          text=text.replace('''            "proxies": proxies,\n            "editor": self.editors.state(project_id),\n''','''            "proxies": proxies,\n            "transcriptions": transcriptions,\n            "editor": self.editors.state(project_id),\n''',1)
+          old='''        if self.proxies.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active preview proxy job")\n        for row in self.renders.list(project_id):\n'''
+          new='''        if self.proxies.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active preview proxy job")\n        if self.transcriptions.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active transcription job")\n        for row in self.renders.list(project_id):\n'''
+          if 'active transcription job' not in text:
+              if old not in text:raise SystemExit('asset lifecycle anchor missing')
+              text=text.replace(old,new,1)
+          text=text.replace('''        self.proxies.invalidate(project_id, asset_id)\n        if not self.projects.remove_asset(project_id, asset_id):\n''','''        self.proxies.invalidate(project_id, asset_id)\n        self.transcriptions.invalidate(project_id, asset_id)\n        if not self.projects.remove_asset(project_id, asset_id):\n''',1)
+          helper='''    def _transcript_file(self, project_id: str, asset_id: str) -> None:\n        row = self.server.runtime.transcriptions.get(project_id, asset_id)\n        if row is None or row.status != "PASS":\n            raise ValueError("transcript is not available until transcription passes")\n        path = self.server.runtime.transcriptions.transcript_path(project_id, asset_id)\n        self._stream_file(path, "application/json; charset=utf-8", attachment=path.name)\n\n'''
+          if 'def _transcript_file(' not in text:
+              anchor='''    def _render_file(self, job_id: str) -> None:\n'''
+              if anchor not in text:raise SystemExit('render file helper anchor missing')
+              text=text.replace(anchor,helper+anchor,1)
+          text=text.replace('''            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/styles.css"}:\n''','''            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/transcription.js", "/styles.css"}:\n''',1)
+          get_anchor='''            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["proxy", "file"]:\n                self._proxy_file(parts[2], parts[4])\n'''
+          get_routes='''            elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":\n                row = self.server.runtime.transcriptions.get(parts[2], parts[4])\n                self._json(asdict(row) if row is not None else {"project_id": parts[2], "asset_id": parts[4], "status": "NONE"})\n            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "segments"]:\n                self._json(self.server.runtime.transcriptions.segments(parts[2], parts[4]))\n            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "file"]:\n                self._transcript_file(parts[2], parts[4])\n'''
+          if 'parts[5] == "transcription"' not in text:
+              if get_anchor not in text:raise SystemExit('GET proxy anchor missing')
+              text=text.replace(get_anchor,get_anchor+get_routes,1)
+          post_anchor='''                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":\n                    self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)\n'''
+          post_routes='''                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":\n                    self._json(asdict(self.server.runtime.transcriptions.ensure(parts[2], parts[4], str(payload.get("language", "auto")), bool(payload.get("force", False)))), HTTPStatus.ACCEPTED)\n                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "cancel"]:\n                    self._json(asdict(self.server.runtime.transcriptions.cancel(parts[2], parts[4])))\n                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "clips"]:\n                    self._json(select_transcript_clips(self.server.runtime, parts[2], parts[4], payload))\n'''
+          if '["transcription", "clips"]' not in text:
+              if post_anchor not in text:raise SystemExit('POST proxy anchor missing')
+              text=text.replace(post_anchor,post_anchor+post_routes,1)
+          text=text.replace('''        runtime.proxies.shutdown()\n        runtime.renders.shutdown()\n''','''        runtime.proxies.shutdown()\n        runtime.transcriptions.shutdown()\n        runtime.renders.shutdown()\n''',1)
+          service.write_text(text,encoding='utf-8')
+
+          html=Path('web/index.html');text=html.read_text(encoding='utf-8')
+          if '<script src="/transcription.js" defer></script>' not in text:
+              anchor='''  <script src="/visual-timeline.js" defer></script>\n'''
+              if anchor not in text:raise SystemExit('visual script anchor missing')
+              text=text.replace(anchor,anchor+'  <script src="/transcription.js" defer></script>\n',1)
+              html.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate transcription wiring
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python scripts/check_source_tree.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+      - name: Commit validated wiring and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/transcription-wiring.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "transcription: wire local transcript API and automatic Clipper"
+          git push origin HEAD:feature/auto-transcription-clipper
