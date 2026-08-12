@@ -32,10 +32,22 @@ class Overlay:
 
 
 @dataclass
+class AudioTrack:
+    asset_id: str
+    enabled: bool = True
+    offset_seconds: float = 0.0
+    gain_db: float = 0.0
+    normalize: bool = True
+    target_lufs: float = -16.0
+    replace_original: bool = True
+
+
+@dataclass
 class EditorState:
     clips: list[dict] = field(default_factory=list)
     subtitles: list[dict] = field(default_factory=list)
     overlays: list[dict] = field(default_factory=list)
+    audio_track: dict | None = None
     aspect_ratio: str = "16:9"
 
 
@@ -44,6 +56,7 @@ class EditorSession:
         self.timeline = Timeline()
         self.subtitles: list[Subtitle] = []
         self.overlays: list[Overlay] = []
+        self.audio_track: AudioTrack | None = None
         self.aspect_ratio = "16:9"
         self._undo: list[EditorState] = []
         self._redo: list[EditorState] = []
@@ -51,10 +64,12 @@ class EditorSession:
 
     @staticmethod
     def _state_from_dict(payload: dict) -> EditorState:
+        audio = payload.get("audio_track")
         return EditorState(
             clips=copy.deepcopy(payload.get("clips", [])),
             subtitles=copy.deepcopy(payload.get("subtitles", [])),
             overlays=copy.deepcopy(payload.get("overlays", [])),
+            audio_track=copy.deepcopy(audio) if isinstance(audio, dict) else None,
             aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
         )
 
@@ -80,6 +95,7 @@ class EditorSession:
             clips=copy.deepcopy(self.timeline.to_dict()),
             subtitles=[asdict(item) for item in self.subtitles],
             overlays=[asdict(item) for item in self.overlays],
+            audio_track=asdict(self.audio_track) if self.audio_track is not None else None,
             aspect_ratio=self.aspect_ratio,
         )
 
@@ -87,12 +103,50 @@ class EditorSession:
         self._undo.append(self.snapshot())
         self._redo.clear()
 
+    @staticmethod
+    def _validate_subtitle(item: Subtitle) -> None:
+        if item.start < 0 or item.end <= item.start:
+            raise ValueError("invalid subtitle bounds")
+        if not item.text.strip():
+            raise ValueError("subtitle text is required")
+
+    @staticmethod
+    def _validate_overlay(item: Overlay) -> None:
+        if item.start < 0 or item.end <= item.start:
+            raise ValueError("invalid overlay bounds")
+        if not 0 <= item.x <= 1 or not 0 <= item.y <= 1:
+            raise ValueError("overlay position must be normalized between 0 and 1")
+        if not 0 <= item.opacity <= 1:
+            raise ValueError("overlay opacity must be between 0 and 1")
+        if item.scale <= 0 or item.scale > 8:
+            raise ValueError("overlay scale is outside supported bounds")
+        if item.z_index < -1000 or item.z_index > 1000:
+            raise ValueError("overlay z-index is outside supported bounds")
+
+    @staticmethod
+    def _validate_audio(item: AudioTrack) -> None:
+        if not item.asset_id:
+            raise ValueError("audio asset is required")
+        if item.offset_seconds < -3600 or item.offset_seconds > 3600:
+            raise ValueError("audio offset is outside supported bounds")
+        if item.gain_db < -60 or item.gain_db > 24:
+            raise ValueError("audio gain is outside supported bounds")
+        if item.target_lufs < -36 or item.target_lufs > -5:
+            raise ValueError("target LUFS is outside supported bounds")
+
     def _restore(self, state: EditorState) -> None:
         if state.aspect_ratio not in ASPECT_RATIOS:
             raise ValueError(f"invalid aspect ratio: {state.aspect_ratio}")
         self.timeline = Timeline([Clip(**item) for item in copy.deepcopy(state.clips)])
         self.subtitles = [Subtitle(**item) for item in copy.deepcopy(state.subtitles)]
         self.overlays = [Overlay(**item) for item in copy.deepcopy(state.overlays)]
+        self.audio_track = AudioTrack(**copy.deepcopy(state.audio_track)) if state.audio_track else None
+        for item in self.subtitles:
+            self._validate_subtitle(item)
+        for item in self.overlays:
+            self._validate_overlay(item)
+        if self.audio_track is not None:
+            self._validate_audio(self.audio_track)
         self.aspect_ratio = state.aspect_ratio
 
     def add_clip(self, asset_id: str, start: float, end: float, track: int = 0) -> Clip:
@@ -152,23 +206,69 @@ class EditorSession:
         self.aspect_ratio = value
 
     def add_subtitle(self, subtitle: Subtitle) -> None:
-        if subtitle.end <= subtitle.start:
-            raise ValueError("invalid subtitle bounds")
+        self._validate_subtitle(subtitle)
+        if any(item.id == subtitle.id for item in self.subtitles):
+            raise ValueError("subtitle id already exists")
         self._checkpoint()
         self.subtitles.append(subtitle)
 
-    def edit_subtitle(self, subtitle_id: str, text: str) -> None:
+    def edit_subtitle(self, subtitle_id: str, *, start: float | None = None, end: float | None = None, text: str | None = None) -> None:
         item = next((row for row in self.subtitles if row.id == subtitle_id), None)
         if item is None:
             raise KeyError(subtitle_id)
+        updated = Subtitle(item.id, item.start if start is None else float(start), item.end if end is None else float(end), item.text if text is None else str(text))
+        self._validate_subtitle(updated)
         self._checkpoint()
-        item.text = text
+        item.start, item.end, item.text = updated.start, updated.end, updated.text
+
+    def delete_subtitle(self, subtitle_id: str) -> bool:
+        index = next((i for i, item in enumerate(self.subtitles) if item.id == subtitle_id), None)
+        if index is None:
+            return False
+        self._checkpoint()
+        del self.subtitles[index]
+        return True
 
     def add_overlay(self, overlay: Overlay) -> None:
-        if overlay.end <= overlay.start or not 0 <= overlay.opacity <= 1 or overlay.scale <= 0:
-            raise ValueError("invalid overlay")
+        self._validate_overlay(overlay)
+        if any(item.id == overlay.id for item in self.overlays):
+            raise ValueError("overlay id already exists")
         self._checkpoint()
         self.overlays.append(overlay)
+
+    def edit_overlay(self, overlay_id: str, **changes) -> None:
+        item = next((row for row in self.overlays if row.id == overlay_id), None)
+        if item is None:
+            raise KeyError(overlay_id)
+        payload = asdict(item)
+        for key in {"start", "end", "x", "y", "scale", "opacity", "z_index", "behind_subject"}:
+            if key in changes and changes[key] is not None:
+                payload[key] = changes[key]
+        updated = Overlay(**payload)
+        self._validate_overlay(updated)
+        self._checkpoint()
+        for key, value in asdict(updated).items():
+            setattr(item, key, value)
+
+    def delete_overlay(self, overlay_id: str) -> bool:
+        index = next((i for i, item in enumerate(self.overlays) if item.id == overlay_id), None)
+        if index is None:
+            return False
+        self._checkpoint()
+        del self.overlays[index]
+        return True
+
+    def set_audio_track(self, track: AudioTrack) -> None:
+        self._validate_audio(track)
+        self._checkpoint()
+        self.audio_track = track
+
+    def clear_audio_track(self) -> bool:
+        if self.audio_track is None:
+            return False
+        self._checkpoint()
+        self.audio_track = None
+        return True
 
     def undo(self) -> bool:
         if not self._undo:
