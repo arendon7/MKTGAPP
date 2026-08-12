@@ -111,6 +111,10 @@ function applyPreviewSource(){
 
 function mountCompositionPreview(){
   const stage=$('#preview-stage'),media=currentMedia();if(!stage||!media||media.tagName!=='VIDEO'||!state.current)return;
+  if(media.__binarioCompositionUpdate){
+    media.removeEventListener('timeupdate',media.__binarioCompositionUpdate);
+    media.removeEventListener('seeked',media.__binarioCompositionUpdate);
+  }
   stage.querySelector('.composition-preview-layer')?.remove();
   const layer=el('div','composition-preview-layer');const subtitle=el('div','composition-subtitle');layer.append(subtitle);
   for(const row of state.current.editor.overlays||[]){
@@ -119,7 +123,7 @@ function mountCompositionPreview(){
   }
   if(state.current.editor.audio_track?.enabled){const badge=el('div','composition-audio-badge',`Audio externo · ${assetName(state.current.editor.audio_track.asset_id)}`);layer.append(badge)}
   stage.append(layer);
-  const update=()=>updateCompositionPreview(media,layer,subtitle);media.addEventListener('timeupdate',update);media.addEventListener('seeked',update);update();
+  const update=()=>updateCompositionPreview(media,layer,subtitle);media.__binarioCompositionUpdate=update;media.addEventListener('timeupdate',update);media.addEventListener('seeked',update);update();
 }
 function updateCompositionPreview(media,layer,subtitle){
   const t=Number(media.currentTime)||0;
