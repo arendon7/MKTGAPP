@@ -29,7 +29,7 @@ from .workspace import Workspace
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
-STREAM_CHUNK_BYTES = 1024 * 1024 * 1024 // 1024
+STREAM_CHUNK_BYTES = 1024 * 1024
 RENDER_DIMENSIONS = {
     "16:9": (1920, 1080),
     "9:16": (1080, 1920),
@@ -377,7 +377,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             path = urlparse(self.path).path
-            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/styles.css"}:
+            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/styles.css"}:
                 self._static(path)
                 return
             parts = self._segments()

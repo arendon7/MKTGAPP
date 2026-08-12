@@ -1,5 +1,5 @@
 const VISUAL_MIN_CLIP_SECONDS=0.1;
-state.visualTimeline=state.visualTimeline||{draggedClipId:null,probeCache:{},masterActive:false,masterPlaying:false,masterIndex:0,masterTime:0,switching:false};
+state.visualTimeline=state.visualTimeline||{draggedClipId:null,probeCache:{},masterActive:false,masterPlaying:false,masterIndex:0,masterTime:0,switching:false,advancing:false};
 
 function visualTrackZero(){return (state.current?.editor?.clips||[]).filter(row=>Number(row.track)===0)}
 function visualMasterDuration(){return visualTrackZero().reduce((sum,row)=>sum+Math.max(0,Number(row.end)-Number(row.start)),0)}
@@ -33,7 +33,7 @@ function ensureVisualTimelineEditor(){
   controls.append(preview,stop);head.append(copy,controls);
   const rail=el('div','visual-sequence-rail');rail.id='visual-sequence-rail';
   const play=el('div','visual-playhead-row');
-  const range=document.createElement('input');range.id='visual-master-playhead';range.type='range';range.min='0';range.max='0';range.step='0.01';range.value='0';range.addEventListener('input',()=>visualSeekMaster(Number(range.value),false));
+  const range=document.createElement('input');range.id='visual-master-playhead';range.type='range';range.min='0';range.max='0';range.step='0.01';range.value='0';range.addEventListener('input',()=>{state.visualTimeline.masterTime=Number(range.value);const label=$('#visual-master-time');if(label)label.textContent=`${visualFormatTime(state.visualTimeline.masterTime)} / ${visualFormatTime(visualMasterDuration())}`;visualHighlightCurrent()});range.addEventListener('change',()=>visualSeekMaster(Number(range.value),false));
   const time=el('strong','visual-master-time','0:00.00 / 0:00.00');time.id='visual-master-time';play.append(range,time);
   const hint=el('p','microcopy','Arrastra clips para cambiar el orden. Arrastra los bordes para trim. El preview continuo usa el audio de los clips; el audio externo se aplica en el render final.');
   root.append(head,rail,play,hint);
@@ -52,8 +52,8 @@ function visualRender(){
   const clips=visualTrackZero(),total=visualMasterDuration(),rail=$('#visual-sequence-rail');rail.replaceChildren();
   $('#visual-track-meta').textContent=`${clips.length} clip${clips.length===1?'':'s'} · ${visualFormatTime(total)}`;
   const range=$('#visual-master-playhead');range.max=String(total);range.value=String(Math.min(total,state.visualTimeline.masterTime||0));
-  $('#visual-master-time').textContent=`${visualFormatTime(Number(range.value))} / ${visualFormatTime(total)}`;
-  clips.forEach((clip,index)=>rail.append(visualClipNode(clip,index,total)));
+  $('#visual-master-time').textContent=`${visualFormatTime(Number(range.value))} / ${visualFormatTime(total)}`;const preview=$('#visual-master-preview');if(preview)preview.textContent=state.visualTimeline.masterPlaying?'Pausar master':state.visualTimeline.masterActive?'Continuar master':'Previsualizar master';
+  clips.forEach((clip,index)=>{visualProbe(clip.asset_id).catch(()=>{});rail.append(visualClipNode(clip,index,total))});
   if(!clips.length)rail.append(el('p','muted','Añade videos a Track 0 para construir el master.'));
   visualHighlightCurrent();
 }
@@ -91,7 +91,7 @@ async function visualReorderTo(clipId,targetIndex){
 }
 
 function visualStopMaster(reset=false){
-  state.visualTimeline.masterActive=false;state.visualTimeline.masterPlaying=false;state.visualTimeline.switching=false;
+  state.visualTimeline.masterActive=false;state.visualTimeline.masterPlaying=false;state.visualTimeline.switching=false;state.visualTimeline.advancing=false;
   const media=currentMedia();if(media&&typeof media.pause==='function')media.pause();
   if(reset){state.visualTimeline.masterTime=0;const range=$('#visual-master-playhead');if(range)range.value='0'}
   visualRender();
@@ -109,7 +109,7 @@ async function visualSeekMaster(seconds,autoplay=false){
 async function visualLoadMasterTime(seconds,autoplay){
   const located=visualLocateMasterTime(seconds);if(!located)return;state.visualTimeline.masterIndex=located.index;state.visualTimeline.switching=true;
   try{await previewAsset(located.clip.asset_id,Number(located.clip.start)+located.offset)}finally{state.visualTimeline.switching=false}
-  const media=currentMedia();if(!media)return;visualAttachMasterMedia(media,located);if(autoplay){state.visualTimeline.masterPlaying=true;await media.play().catch(()=>{})}visualUpdateMasterFromMedia(media,located);visualRender();
+  const media=currentMedia();if(!media)return;if(media.readyState<1)await new Promise((resolve,reject)=>{const ok=()=>{cleanup();resolve()};const fail=()=>{cleanup();reject(new Error('No fue posible cargar el clip del master'))};const cleanup=()=>{media.removeEventListener('loadedmetadata',ok);media.removeEventListener('error',fail)};media.addEventListener('loadedmetadata',ok,{once:true});media.addEventListener('error',fail,{once:true})});visualAttachMasterMedia(media,located);if(autoplay){state.visualTimeline.masterPlaying=true;await media.play().catch(()=>{})}visualUpdateMasterFromMedia(media,located);visualRender();
 }
 function visualAttachMasterMedia(media,located){
   if(media.__binarioMasterTimeUpdate){media.removeEventListener('timeupdate',media.__binarioMasterTimeUpdate);media.removeEventListener('ended',media.__binarioMasterEnded)}
@@ -118,7 +118,7 @@ function visualAttachMasterMedia(media,located){
 function visualUpdateMasterFromMedia(media,located){
   if(!state.visualTimeline.masterActive)return;const sourceTime=Number(media.currentTime)||Number(located.clip.start);const offset=Math.max(0,Math.min(visualClipDuration(located.clip),sourceTime-Number(located.clip.start)));state.visualTimeline.masterTime=located.masterStart+offset;const range=$('#visual-master-playhead');if(range)range.value=String(state.visualTimeline.masterTime);const label=$('#visual-master-time');if(label)label.textContent=`${visualFormatTime(state.visualTimeline.masterTime)} / ${visualFormatTime(visualMasterDuration())}`;visualApplyMasterCompositionTime(state.visualTimeline.masterTime);visualHighlightCurrent();if(state.visualTimeline.masterPlaying&&sourceTime>=Number(located.clip.end)-.035)visualAdvanceMaster()}
 async function visualAdvanceMaster(){
-  if(!state.visualTimeline.masterPlaying)return;const clips=visualTrackZero(),next=state.visualTimeline.masterIndex+1;if(next>=clips.length){visualStopMaster(false);state.visualTimeline.masterTime=visualMasterDuration();visualRender();return}const before=clips.slice(0,next).reduce((sum,row)=>sum+visualClipDuration(row),0);state.visualTimeline.masterTime=before;try{await visualLoadMasterTime(before,true)}catch(err){visualStopMaster(false);toast(err.message)}
+  if(!state.visualTimeline.masterPlaying||state.visualTimeline.advancing)return;state.visualTimeline.advancing=true;try{const clips=visualTrackZero(),next=state.visualTimeline.masterIndex+1;if(next>=clips.length){visualStopMaster(false);state.visualTimeline.masterTime=visualMasterDuration();visualRender();return}const before=clips.slice(0,next).reduce((sum,row)=>sum+visualClipDuration(row),0);state.visualTimeline.masterTime=before;await visualLoadMasterTime(before,true)}catch(err){visualStopMaster(false);toast(err.message)}finally{state.visualTimeline.advancing=false}
 }
 function visualApplyMasterCompositionTime(masterTime){
   const layer=document.querySelector('.composition-preview-layer');if(!layer||!state.current)return;
