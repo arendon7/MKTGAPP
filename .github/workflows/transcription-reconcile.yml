@@ -1,0 +1,140 @@
+name: Transcription Reconcile
+
+on:
+  push:
+    branches: [feature/auto-transcription-clipper]
+    paths: [.github/workflows/transcription-reconcile.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reconcile intended source state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          # Fix QA contract to match the segmented router representation.
+          p=Path('tests/test_transcription_ui_contract.py');text=p.read_text(encoding='utf-8')
+          old="for token in ('TranscriptionManager','transcriptions','transcription/segments','transcription/file','transcription/clips'):\n            self.assertIn(token,service)"
+          new="for token in ('TranscriptionManager','transcriptions','[\\\"transcription\\\", \\\"segments\\\"]','[\\\"transcription\\\", \\\"file\\\"]','[\\\"transcription\\\", \\\"clips\\\"]'):\n            self.assertIn(token,service)"
+          if old in text:text=text.replace(old,new,1)
+          p.write_text(text,encoding='utf-8')
+
+          # Ensure model evidence uses the actually resolved embedded model.
+          p=Path('src/binario_marketing/transcription_manager.py');text=p.read_text(encoding='utf-8')
+          text=text.replace('from .video.transcription import SpeechSegment,extract_audio_command,load_whisper_output,transcript_sha256,whisper_command','from .video.transcription import SpeechSegment,extract_audio_command,load_whisper_output,resolve_whisper_model,transcript_sha256,whisper_command')
+          old='''    def _model_sha(self)->str|None:\n        if self._model_sha_cache:return self._model_sha_cache\n        candidate=self.model or os.environ.get('BINARIO_WHISPER_MODEL')\n        if candidate and Path(candidate).is_file():self._model_sha_cache=_sha256_file(Path(candidate));return self._model_sha_cache\n        return None\n'''
+          new='''    def _model_sha(self)->str|None:\n        if self._model_sha_cache:return self._model_sha_cache\n        try:\n            candidate=resolve_whisper_model(self.model)\n        except FileNotFoundError:\n            return None\n        self._model_sha_cache=_sha256_file(Path(candidate))\n        return self._model_sha_cache\n'''
+          if old in text:text=text.replace(old,new,1)
+
+          # Ensure transcript lifecycle helpers exist.
+          anchor='''    def list(self,project_id:str|None=None)->list[TranscriptRecord]:\n        with self._lock:rows=self._load()\n        return [row for row in rows if project_id is None or row.project_id==project_id]\n'''
+          helpers='''    def active_for_asset(self,project_id:str,asset_id:str)->bool:\n        row=self.get(project_id,asset_id)\n        return row is not None and row.status in TRANSCRIPTION_ACTIVE\n\n    def _remove_record(self,project_id:str,asset_id:str)->None:\n        with self._lock:self._save([row for row in self._load() if not (row.project_id==project_id and row.asset_id==asset_id)])\n\n    def invalidate(self,project_id:str,asset_id:str)->None:\n        row=self.get(project_id,asset_id)\n        if row is None:return\n        if row.status in TRANSCRIPTION_ACTIVE:raise ValueError('asset has an active transcription job')\n        if row.transcript_relative_path:\n            project_root=self.projects.path_for(project_id).resolve();path=(project_root/row.transcript_relative_path).resolve();transcripts=self._transcripts_dir(project_id)\n            if transcripts not in path.parents:raise ValueError('transcript path escaped managed transcripts root')\n            path.unlink(missing_ok=True)\n        self._remove_record(project_id,asset_id)\n        self.workspace.registries.timeline.append('transcription.invalidated',{'project_id':project_id,'asset_id':asset_id})\n\n'''
+          if 'def active_for_asset(' not in text:
+              if anchor not in text:raise SystemExit('manager lifecycle anchor missing')
+              text=text.replace(anchor,anchor+'\n'+helpers,1)
+          p.write_text(text,encoding='utf-8')
+
+          # Embedded bundle auto-resolution.
+          p=Path('src/binario_marketing/video/transcription.py');text=p.read_text(encoding='utf-8')
+          if 'import sys\n' not in text:text=text.replace('import shutil\n','import shutil\nimport sys\n',1)
+          if '_embedded_runtime_file' not in text:
+              old='''def resolve_whisper_cli(explicit:str|None=None) -> str:\n    candidate=explicit or os.environ.get('BINARIO_WHISPER_CLI') or shutil.which('whisper-cli')\n    if not candidate:raise FileNotFoundError('whisper.cpp CLI runtime is unavailable')\n    return candidate\n\n\ndef resolve_whisper_model(explicit:str|None=None) -> str:\n    candidate=explicit or os.environ.get('BINARIO_WHISPER_MODEL')\n    if not candidate:raise FileNotFoundError('whisper.cpp model is unavailable')\n    path=Path(candidate)\n    if not path.is_file():raise FileNotFoundError(path)\n    return str(path)\n'''
+              new='''def _embedded_runtime_file(relative:str) -> Path | None:\n    executable=Path(sys.executable).resolve()\n    if len(executable.parents)>=3:\n        runtime=executable.parents[2]\n        if runtime.name=='runtime':\n            candidate=runtime/relative\n            if candidate.is_file():return candidate\n    return None\n\n\ndef resolve_whisper_cli(explicit:str|None=None) -> str:\n    candidate=explicit or os.environ.get('BINARIO_WHISPER_CLI')\n    if not candidate:\n        embedded=_embedded_runtime_file('transcription/bin/whisper-cli')\n        candidate=str(embedded) if embedded is not None else shutil.which('whisper-cli')\n    if not candidate:raise FileNotFoundError('whisper.cpp CLI runtime is unavailable')\n    return candidate\n\n\ndef resolve_whisper_model(explicit:str|None=None) -> str:\n    candidate=explicit or os.environ.get('BINARIO_WHISPER_MODEL')\n    if not candidate:\n        embedded=_embedded_runtime_file('transcription/models/ggml-tiny.bin')\n        candidate=str(embedded) if embedded is not None else None\n    if not candidate:raise FileNotFoundError('whisper.cpp model is unavailable')\n    path=Path(candidate)\n    if not path.is_file():raise FileNotFoundError(path)\n    return str(path)\n'''
+              if old not in text:raise SystemExit('resolver anchor missing')
+              text=text.replace(old,new,1)
+          p.write_text(text,encoding='utf-8')
+
+          # AppRuntime + HTTP API wiring, idempotent.
+          p=Path('src/binario_marketing/service.py');text=p.read_text(encoding='utf-8')
+          if 'from .transcription_manager import TranscriptionManager' not in text:text=text.replace('from .sequence_service import start_sequence_render\n','from .sequence_service import start_sequence_render\nfrom .transcription_manager import TranscriptionManager\nfrom .transcription_service import select_transcript_clips\n',1)
+          if '    transcriptions: TranscriptionManager\n' not in text:text=text.replace('    proxies: ProxyManager\n    renders: RenderQueue\n','    proxies: ProxyManager\n    transcriptions: TranscriptionManager\n    renders: RenderQueue\n',1)
+          if 'transcriptions = TranscriptionManager(' not in text:
+              old='''        proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)\n        renders = RenderQueue(user_root / "State" / "renders", projects, workspace)\n        return cls(root, user_root, projects, workspace, editors, proxies, renders)\n'''
+              new='''        proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)\n        transcriptions = TranscriptionManager(user_root / "State" / "transcriptions", projects, workspace)\n        renders = RenderQueue(user_root / "State" / "renders", projects, workspace)\n        return cls(root, user_root, projects, workspace, editors, proxies, transcriptions, renders)\n'''
+              if old not in text:raise SystemExit('runtime creation anchor missing')
+              text=text.replace(old,new,1)
+          if 'transcriptions = {}' not in text:
+              old='''        proxies = {}\n        for asset in assets:\n            record = self.proxies.get(project_id, asset.id)\n            if record is not None:\n                proxies[asset.id] = asdict(record)\n        return {\n'''
+              new='''        proxies = {}\n        transcriptions = {}\n        for asset in assets:\n            record = self.proxies.get(project_id, asset.id)\n            if record is not None:\n                proxies[asset.id] = asdict(record)\n            transcript = self.transcriptions.get(project_id, asset.id)\n            if transcript is not None:\n                transcriptions[asset.id] = asdict(transcript)\n        return {\n'''
+              if old not in text:raise SystemExit('project detail anchor missing')
+              text=text.replace(old,new,1)
+          if '"transcriptions": transcriptions' not in text:text=text.replace('            "proxies": proxies,\n            "editor": self.editors.state(project_id),\n','            "proxies": proxies,\n            "transcriptions": transcriptions,\n            "editor": self.editors.state(project_id),\n',1)
+          if 'active transcription job' not in text:
+              old='''        if self.proxies.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active preview proxy job")\n        for row in self.renders.list(project_id):\n'''
+              new='''        if self.proxies.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active preview proxy job")\n        if self.transcriptions.active_for_asset(project_id, asset_id):\n            raise ValueError("asset is referenced by an active transcription job")\n        for row in self.renders.list(project_id):\n'''
+              if old not in text:raise SystemExit('asset active anchor missing')
+              text=text.replace(old,new,1)
+          if 'self.transcriptions.invalidate(project_id, asset_id)' not in text:text=text.replace('        self.proxies.invalidate(project_id, asset_id)\n        if not self.projects.remove_asset(project_id, asset_id):\n','        self.proxies.invalidate(project_id, asset_id)\n        self.transcriptions.invalidate(project_id, asset_id)\n        if not self.projects.remove_asset(project_id, asset_id):\n',1)
+          if 'def _transcript_file(' not in text:
+              helper='''    def _transcript_file(self, project_id: str, asset_id: str) -> None:\n        row = self.server.runtime.transcriptions.get(project_id, asset_id)\n        if row is None or row.status != "PASS":\n            raise ValueError("transcript is not available until transcription passes")\n        path = self.server.runtime.transcriptions.transcript_path(project_id, asset_id)\n        self._stream_file(path, "application/json; charset=utf-8", attachment=path.name)\n\n'''
+              text=text.replace('    def _render_file(self, job_id: str) -> None:\n',helper+'    def _render_file(self, job_id: str) -> None:\n',1)
+          if '"/transcription.js"' not in text:text=text.replace('"/visual-timeline.js", "/styles.css"','"/visual-timeline.js", "/transcription.js", "/styles.css"',1)
+          if 'parts[5] == "transcription"' not in text:
+              anchor='''            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["proxy", "file"]:\n                self._proxy_file(parts[2], parts[4])\n'''
+              routes='''            elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":\n                row = self.server.runtime.transcriptions.get(parts[2], parts[4])\n                self._json(asdict(row) if row is not None else {"project_id": parts[2], "asset_id": parts[4], "status": "NONE"})\n            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "segments"]:\n                self._json(self.server.runtime.transcriptions.segments(parts[2], parts[4]))\n            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "file"]:\n                self._transcript_file(parts[2], parts[4])\n'''
+              if anchor not in text:raise SystemExit('GET route anchor missing')
+              text=text.replace(anchor,anchor+routes,1)
+          if '["transcription", "clips"]' not in text:
+              anchor='''                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":\n                    self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)\n'''
+              routes='''                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":\n                    self._json(asdict(self.server.runtime.transcriptions.ensure(parts[2], parts[4], str(payload.get("language", "auto")), bool(payload.get("force", False)))), HTTPStatus.ACCEPTED)\n                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "cancel"]:\n                    self._json(asdict(self.server.runtime.transcriptions.cancel(parts[2], parts[4])))\n                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "clips"]:\n                    self._json(select_transcript_clips(self.server.runtime, parts[2], parts[4], payload))\n'''
+              if anchor not in text:raise SystemExit('POST route anchor missing')
+              text=text.replace(anchor,anchor+routes,1)
+          if 'runtime.transcriptions.shutdown()' not in text:text=text.replace('        runtime.proxies.shutdown()\n        runtime.renders.shutdown()\n','        runtime.proxies.shutdown()\n        runtime.transcriptions.shutdown()\n        runtime.renders.shutdown()\n',1)
+          p.write_text(text,encoding='utf-8')
+
+          # Browser module wiring.
+          p=Path('web/index.html');text=p.read_text(encoding='utf-8')
+          if '<script src="/transcription.js" defer></script>' not in text:
+              anchor='  <script src="/visual-timeline.js" defer></script>\n'
+              if anchor not in text:raise SystemExit('browser script anchor missing')
+              text=text.replace(anchor,anchor+'  <script src="/transcription.js" defer></script>\n',1)
+          p.write_text(text,encoding='utf-8')
+
+          # Runtime contract wording matches relative embedded resolver paths.
+          p=Path('tests/test_transcription_runtime_contract.py');text=p.read_text(encoding='utf-8')
+          text=text.replace("'runtime/transcription/bin/whisper-cli'","'transcription/bin/whisper-cli'")
+          text=text.replace("'runtime/transcription/models'","'transcription/models/ggml-tiny.bin'")
+          p.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate reconciled source
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python scripts/check_source_tree.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+      - name: Commit reconciled source and remove all temporary workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in \
+            .github/workflows/transcription-reconcile.yml \
+            .github/workflows/transcription-wiring.yml \
+            .github/workflows/whisper-bundle-wiring.yml \
+            .github/workflows/transcription-model-evidence-fix.yml \
+            .github/workflows/pin-whisper-runtime.yml; do
+            [[ -e "$f" ]] && git rm -f "$f" || true
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: reconcile standalone transcription source and QA contracts"
+          git push origin HEAD:feature/auto-transcription-clipper
