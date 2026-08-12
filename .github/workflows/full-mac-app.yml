@@ -41,13 +41,19 @@ jobs:
         with:
           path: .cache/full-mac-media-${{ matrix.arch }}
           key: ffmpeg-8.1.2-${{ runner.os }}-${{ matrix.arch }}-38b88335f99e76ed89ff3c93f877fdefce736c13
+      - name: Cache verified Whisper runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-whisper-${{ matrix.arch }}
+          key: whisper-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
       - name: Build native app
         shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
+          FULL_MAC_WHISPER_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-whisper-${{ matrix.arch }}
         run: |
           set -euo pipefail
-          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_embedded_ffmpeg.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh
+          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_embedded_ffmpeg.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh scripts/build_embedded_whisper.sh scripts/audit_embedded_whisper.sh scripts/smoke_full_mac_transcription.sh
           LOG="$RUNNER_TEMP/full-mac-build-${{ matrix.arch }}.log"
           scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}" 2>&1 | /usr/bin/tee "$LOG"
       - name: Preserve build diagnostics
@@ -70,6 +76,9 @@ jobs:
           if-no-files-found: warn
       - name: Audit bundle
         run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+      - name: Audit embedded local transcription runtime
+        shell: bash
+        run: bash scripts/audit_embedded_whisper.sh "dist/Binario Marketing IA.app" "${{ matrix.arch }}"
       - name: Smoke boot and render through bundled API
         shell: bash
         run: |
@@ -114,6 +123,12 @@ jobs:
           /usr/bin/curl --fail --silent "$BASE/api/runtime" > "$RUNNER_TEMP/runtime.json"
           /usr/bin/curl --fail --silent "$BASE/pro-media.js" > "$RUNNER_TEMP/pro-media.js"
           /usr/bin/grep -q 'ensureActiveProxy' "$RUNNER_TEMP/pro-media.js"
+          /usr/bin/curl --fail --silent "$BASE/visual-timeline.js" > "$RUNNER_TEMP/visual-timeline.js"
+          /usr/bin/grep -q 'reorder_to' "$RUNNER_TEMP/visual-timeline.js"
+          /usr/bin/curl --fail --silent "$BASE/transcription.js" > "$RUNNER_TEMP/transcription.js"
+          /usr/bin/grep -q 'startTranscription' "$RUNNER_TEMP/transcription.js"
+          /usr/bin/curl --fail --silent "$BASE/clipper-modes.js" > "$RUNNER_TEMP/clipper-modes.js"
+          /usr/bin/grep -q 'clipperModePayload' "$RUNNER_TEMP/clipper-modes.js"
           "$PY" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
           import json, sys
           apps=json.load(open(sys.argv[1], encoding='utf-8'))
