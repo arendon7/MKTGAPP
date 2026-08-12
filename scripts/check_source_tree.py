@@ -15,6 +15,11 @@ REQUIRED = {
     "src/binario_marketing/projects.py",
     "src/binario_marketing/video/clipper.py",
     "src/binario_marketing/video/session.py",
+    "src/binario_marketing/editor_store.py",
+    "src/binario_marketing/service.py",
+    "web/index.html",
+    "web/app.js",
+    "web/styles.css",
 }
 
 
@@ -44,7 +49,7 @@ def main() -> int:
         if forbidden:
             print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
         return 1
-    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps)")
+    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, local web app present)")
     return 0
 
 
