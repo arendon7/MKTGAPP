@@ -55,6 +55,13 @@ class EditorStore:
                 session.trim(str(payload["clip_id"]), float(payload["start"]), float(payload["end"]))
             elif action == "move":
                 session.move(str(payload["clip_id"]), int(payload["track"]))
+            elif action == "reorder":
+                session._checkpoint()
+                try:
+                    session.timeline.reorder(str(payload["clip_id"]), int(payload["direction"]))
+                except Exception:
+                    session._undo.pop()
+                    raise
             elif action == "split":
                 session.split(str(payload["clip_id"]), float(payload["at"]))
             elif action == "lock":
