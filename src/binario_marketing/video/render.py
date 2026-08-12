@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+VIDEO_OVERLAY_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
+
+
 @dataclass(frozen=True)
 class RenderSpec:
     input_path: Path
@@ -33,7 +36,7 @@ class OverlayRenderSpec:
     opacity: float = 1.0
     z_index: int = 10
     behind_subject: bool = False
-    kind: str = "image"
+    kind: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -137,8 +140,9 @@ def _overlay_filter(index: int, label: str, item: OverlayRenderSpec, render_star
         active_end = min(active_end, render_duration)
     if active_end <= 0 or active_end <= active_start:
         return None
+    is_video = item.kind == "video" or (item.kind == "auto" and item.input_path.suffix.lower() in VIDEO_OVERLAY_SUFFIXES)
     filters: list[str] = []
-    if item.kind == "video":
+    if is_video:
         source_skip = max(0.0, render_start - item.start)
         if source_skip > 0:
             filters.append(f"trim=start={source_skip:.6f}")
