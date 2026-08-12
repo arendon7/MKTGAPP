@@ -173,6 +173,14 @@ class EditorSession:
         self._checkpoint()
         clip.track = int(track)
 
+    def reorder_clip(self, clip_id: str, direction: int) -> None:
+        self._checkpoint()
+        try:
+            self.timeline.reorder(clip_id, int(direction))
+        except Exception:
+            self._undo.pop()
+            raise
+
     def split(self, clip_id: str, at: float):
         self._checkpoint()
         try:
