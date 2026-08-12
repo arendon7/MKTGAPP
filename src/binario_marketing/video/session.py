@@ -212,7 +212,7 @@ class EditorSession:
         self._checkpoint()
         self.subtitles.append(subtitle)
 
-    def edit_subtitle(self, subtitle_id: str, *, start: float | None = None, end: float | None = None, text: str | None = None) -> None:
+    def edit_subtitle(self, subtitle_id: str, text: str | None = None, *, start: float | None = None, end: float | None = None) -> None:
         item = next((row for row in self.subtitles if row.id == subtitle_id), None)
         if item is None:
             raise KeyError(subtitle_id)
