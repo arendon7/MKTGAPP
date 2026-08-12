@@ -1,0 +1,11 @@
+{
+  "id": "editor-video-ia",
+  "name": "Editor Video IA",
+  "service": "video_media",
+  "entrypoint": "binario_marketing.video.timeline",
+  "recovery_status": "reconstructed",
+  "capabilities": [
+    "projects", "managed-assets", "delete-assets", "timeline", "split", "lock",
+    "social-clipper", "external-audio-selection", "normalization-plan"
+  ]
+}

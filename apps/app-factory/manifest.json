@@ -1,0 +1,8 @@
+{
+  "id": "app-factory-ia",
+  "name": "App Factory IA",
+  "service": "app_factory",
+  "entrypoint": "binario_marketing.app_factory",
+  "recovery_status": "reconstructed",
+  "capabilities": ["project-registry", "product-lab", "engineering-delivery", "operation"]
+}
