@@ -18,6 +18,7 @@ from .editor_store import EditorStore
 from .hub import discover_apps
 from .projects import ProjectStore
 from .providers import PROVIDERS, diagnose_provider
+from .proxy_manager import ProxyManager
 from .render_queue import ACTIVE, RenderQueue
 from .runtime_center import diagnose
 from .video.clipper import TranscriptSegment, select_clips
@@ -69,6 +70,7 @@ class AppRuntime:
     projects: ProjectStore
     workspace: Workspace
     editors: EditorStore
+    proxies: ProxyManager
     renders: RenderQueue
 
     @classmethod
@@ -79,8 +81,9 @@ class AppRuntime:
         projects = ProjectStore(user_root / "Projects")
         workspace = Workspace(user_root / "State" / "workspace")
         editors = EditorStore(user_root / "State" / "editor")
+        proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)
         renders = RenderQueue(user_root / "State" / "renders", projects, workspace)
-        return cls(root, user_root, projects, workspace, editors, renders)
+        return cls(root, user_root, projects, workspace, editors, proxies, renders)
 
     def apps_payload(self) -> list[dict]:
         return [{"id": app.app_id, "name": app.name, "service": app.service, "entrypoint": app.entrypoint, "capabilities": list(app.capabilities)} for app in discover_apps(self.repo_root)]
@@ -93,10 +96,22 @@ class AppRuntime:
         if project is None:
             raise KeyError(project_id)
         project_root = self.projects.path_for(project_id).resolve()
+        assets = self.projects.assets(project_id)
+        proxies = {}
+        for asset in assets:
+            record = self.proxies.get(project_id, asset.id)
+            if record is not None:
+                proxies[asset.id] = asdict(record)
         return {
             "project": asdict(project),
-            "paths": {"project": str(project_root), "assets": str((project_root / "assets").resolve()), "exports": str(self.projects.exports_dir(project_id).resolve())},
-            "assets": [asdict(item) for item in self.projects.assets(project_id)],
+            "paths": {
+                "project": str(project_root),
+                "assets": str((project_root / "assets").resolve()),
+                "exports": str(self.projects.exports_dir(project_id).resolve()),
+                "proxies": str(self.projects.proxies_dir(project_id).resolve()),
+            },
+            "assets": [asdict(item) for item in assets],
+            "proxies": proxies,
             "editor": self.editors.state(project_id),
             "renders": [asdict(item) for item in self.renders.list(project_id)],
             "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
@@ -119,7 +134,15 @@ class AppRuntime:
         return {"opened": True, "path": str(project_root)}
 
     def _record_asset(self, project_id: str, asset) -> dict:
-        artifact = self.workspace.registries.record_artifact({"project_id": project_id, "asset_id": asset.id, "name": asset.name, "kind": asset.kind, "relative_path": asset.relative_path, "sha256": asset.sha256, "bytes": asset.bytes})
+        artifact = self.workspace.registries.record_artifact({
+            "project_id": project_id,
+            "asset_id": asset.id,
+            "name": asset.name,
+            "kind": asset.kind,
+            "relative_path": asset.relative_path,
+            "sha256": asset.sha256,
+            "bytes": asset.bytes,
+        })
         payload = asdict(asset)
         payload["artifact_ref"] = artifact.hash
         return payload
@@ -139,10 +162,13 @@ class AppRuntime:
         audio = editor.get("audio_track")
         if isinstance(audio, dict) and audio.get("asset_id") == asset_id:
             raise ValueError("asset is configured as the editor external audio track")
+        if self.proxies.active_for_asset(project_id, asset_id):
+            raise ValueError("asset is referenced by an active preview proxy job")
         for row in self.renders.list(project_id):
-            sources = row.source_asset_ids or [row.asset_id]
+            sources = getattr(row, "source_asset_ids", None) or [row.asset_id]
             if row.status in ACTIVE and asset_id in sources:
                 raise ValueError("asset is referenced by an active render job")
+        self.proxies.invalidate(project_id, asset_id)
         if not self.projects.remove_asset(project_id, asset_id):
             raise KeyError(asset_id)
         self.workspace.registries.timeline.append("asset.deleted", {"project_id": project_id, "asset_id": asset_id})
@@ -150,6 +176,14 @@ class AppRuntime:
     def probe_asset(self, project_id: str, asset_id: str) -> dict:
         payload = probe_media(self.projects.asset_path(project_id, asset_id))
         return {"asset_id": asset_id, "duration": media_duration(payload), "format": payload.get("format", {}), "streams": payload.get("streams", [])}
+
+    def proxy_status(self, project_id: str, asset_id: str) -> dict:
+        self.projects.asset(project_id, asset_id)
+        row = self.proxies.get(project_id, asset_id)
+        return asdict(row) if row is not None else {"project_id": project_id, "asset_id": asset_id, "status": "NONE"}
+
+    def ensure_proxy(self, project_id: str, asset_id: str) -> dict:
+        return asdict(self.proxies.ensure(project_id, asset_id))
 
     def editor_action(self, project_id: str, payload: dict) -> dict:
         action = str(payload.get("action", ""))
@@ -176,7 +210,16 @@ class AppRuntime:
             "subtitles": editor.get("subtitles", []),
             "audio_track": editor.get("audio_track"),
         }
-        return asdict(self.renders.start(project_id, asset_id, float(payload.get("start", 0)), float(payload["end"]), width, height, str(payload.get("label") or "clip"), composition=composition))
+        return asdict(self.renders.start(
+            project_id,
+            asset_id,
+            float(payload.get("start", 0)),
+            float(payload["end"]),
+            width,
+            height,
+            str(payload.get("label") or "clip"),
+            composition=composition,
+        ))
 
     def create_handoff(self, project_id: str, payload: dict) -> dict:
         to_app = str(payload.get("to_app") or "")
@@ -185,7 +228,14 @@ class AppRuntime:
         project = next((item for item in self.workspace.projects() if item.id == project_id), None)
         if project is None:
             raise KeyError(project_id)
-        handoff = self.workspace.handoff(project_id, str(payload.get("from_app") or "05-editor-video-ia"), to_app, str(payload.get("summary") or ""), tuple(payload.get("artifact_refs") or ()), tuple(payload.get("evidence_refs") or ()))
+        handoff = self.workspace.handoff(
+            project_id,
+            str(payload.get("from_app") or "05-editor-video-ia"),
+            to_app,
+            str(payload.get("summary") or ""),
+            tuple(payload.get("artifact_refs") or ()),
+            tuple(payload.get("evidence_refs") or ()),
+        )
         self.workspace.upsert_project(project_id, project.name, handoff.to_app)
         return asdict(handoff)
 
@@ -264,14 +314,16 @@ class MarketingHandler(BaseHTTPRequestHandler):
             payload = self.server.runtime.add_uploaded_asset(project_id, filename, kind, self.rfile, length)
         self._json(payload, HTTPStatus.CREATED)
 
-    def _asset_file(self, project_id: str, asset_id: str) -> None:
-        asset = self.server.runtime.projects.asset(project_id, asset_id)
-        path = self.server.runtime.projects.asset_path(project_id, asset_id)
+    def _stream_file(self, path: Path, content_type: str, *, attachment: str | None = None) -> None:
+        if not path.is_file():
+            raise FileNotFoundError(path)
         size = path.stat().st_size
-        content_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
+        extra = {"Accept-Ranges": "bytes"}
+        if attachment:
+            extra["Content-Disposition"] = f'attachment; filename="{attachment}"'
         range_header = self.headers.get("Range")
         if not range_header:
-            self._headers(HTTPStatus.OK, content_type, size, {"Accept-Ranges": "bytes"})
+            self._headers(HTTPStatus.OK, content_type, size, extra)
             with path.open("rb") as handle:
                 for chunk in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
                     self.wfile.write(chunk)
@@ -279,10 +331,12 @@ class MarketingHandler(BaseHTTPRequestHandler):
         try:
             start, end = parse_byte_range(range_header, size)
         except ValueError:
-            self._headers(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE, "application/octet-stream", 0, {"Accept-Ranges": "bytes", "Content-Range": f"bytes */{size}"})
+            extra["Content-Range"] = f"bytes */{size}"
+            self._headers(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE, "application/octet-stream", 0, extra)
             return
         length = end - start + 1
-        self._headers(HTTPStatus.PARTIAL_CONTENT, content_type, length, {"Accept-Ranges": "bytes", "Content-Range": f"bytes {start}-{end}/{size}"})
+        extra["Content-Range"] = f"bytes {start}-{end}/{size}"
+        self._headers(HTTPStatus.PARTIAL_CONTENT, content_type, length, extra)
         remaining = length
         with path.open("rb") as handle:
             handle.seek(start)
@@ -293,17 +347,22 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
 
+    def _asset_file(self, project_id: str, asset_id: str) -> None:
+        asset = self.server.runtime.projects.asset(project_id, asset_id)
+        path = self.server.runtime.projects.asset_path(project_id, asset_id)
+        content_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
+        self._stream_file(path, content_type)
+
+    def _proxy_file(self, project_id: str, asset_id: str) -> None:
+        path = self.server.runtime.proxies.file_path(project_id, asset_id)
+        self._stream_file(path, "video/mp4")
+
     def _render_file(self, job_id: str) -> None:
         row = self.server.runtime.renders.get(job_id)
         if row.status != "PASS":
             raise ValueError("render output is not available until the job passes")
         path = self.server.runtime.renders.output_path(job_id)
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        self._headers(HTTPStatus.OK, "video/mp4", path.stat().st_size, {"Content-Disposition": f'attachment; filename="{row.output_name}"'})
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
-                self.wfile.write(chunk)
+        self._stream_file(path, "video/mp4", attachment=row.output_name)
 
     def _subtitle_file(self, job_id: str) -> None:
         row = self.server.runtime.renders.get(job_id)
@@ -312,8 +371,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
         path = self.server.runtime.renders.subtitle_path(job_id)
         if path is None or not path.is_file():
             raise FileNotFoundError("render has no subtitle sidecar")
-        self._headers(HTTPStatus.OK, "application/x-subrip; charset=utf-8", path.stat().st_size, {"Content-Disposition": f'attachment; filename="{path.name}"'})
-        self.wfile.write(path.read_bytes())
+        self._stream_file(path, "application/x-subrip; charset=utf-8", attachment=path.name)
 
     def do_GET(self) -> None:
         try:
@@ -342,6 +400,10 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self._json(self.server.runtime.probe_asset(parts[2], parts[4]))
             elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "file":
                 self._asset_file(parts[2], parts[4])
+            elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":
+                self._json(self.server.runtime.proxy_status(parts[2], parts[4]))
+            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["proxy", "file"]:
+                self._proxy_file(parts[2], parts[4])
             elif len(parts) == 3 and parts[:2] == ["api", "renders"]:
                 self._json(asdict(self.server.runtime.renders.get(parts[2])))
             elif len(parts) == 4 and parts[:2] == ["api", "renders"] and parts[3] == "file":
@@ -373,6 +435,8 @@ class MarketingHandler(BaseHTTPRequestHandler):
                     self._json(self.server.runtime.create_project(str(payload.get("name", ""))), HTTPStatus.CREATED)
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "assets":
                     self._json(self.server.runtime.add_asset(parts[2], str(payload["source_path"]), str(payload.get("kind", "file"))), HTTPStatus.CREATED)
+                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":
+                    self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["editor", "actions"]:
                     self._json(self.server.runtime.editor_action(parts[2], payload))
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "renders":
@@ -450,5 +514,6 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
     except KeyboardInterrupt:
         pass
     finally:
+        runtime.proxies.shutdown()
         runtime.renders.shutdown()
         server.server_close()
