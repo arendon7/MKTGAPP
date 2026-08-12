@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import sys
 import tempfile
 import time
@@ -79,11 +78,19 @@ class RenderQueueTests(unittest.TestCase):
         self.assertEqual(done.status, "CANCELLED")
         self.assertFalse(self.queue.output_path(row.id).exists())
 
+    def test_immediate_cancel_is_safe_before_process_registration(self):
+        row = self.queue.start(self.project.id, self.asset.id, 0, 2, 320, 180, "slow-immediate")
+        self.queue.cancel(row.id)
+        done = self.wait_terminal(row.id)
+        self.assertEqual(done.status, "CANCELLED")
+        self.assertFalse(self.queue.output_path(row.id).exists())
+
     def test_missing_ffmpeg_fails_job_without_breaking_queue_startup(self):
         queue = RenderQueue(self.root / "renders-missing", self.projects, self.workspace, str(self.root / "missing-ffmpeg"), video_codec="mpeg4")
         row = queue.start(self.project.id, self.asset.id, 0, 1, 320, 180)
         self.assertEqual(row.status, "FAIL")
         self.assertIn("FileNotFoundError", row.error)
+        self.assertEqual(queue.list()[0].status, "FAIL")
         queue.shutdown()
 
     def test_restart_marks_active_jobs_interrupted_and_removes_partial(self):

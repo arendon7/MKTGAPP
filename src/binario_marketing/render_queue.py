@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import threading
@@ -145,6 +146,12 @@ class RenderQueue:
         row = self.get(job_id)
         return self.projects.export_path(row.project_id, row.output_name)
 
+    def _fail_before_thread(self, record: RenderRecord, exc: Exception) -> RenderRecord:
+        failed = replace(record, status="FAIL", updated_at=_now(), error=f"{type(exc).__name__}: {exc}")
+        self._replace(failed)
+        self.workspace.registries.timeline.append("render.failed", {"job_id": record.id, "project_id": record.project_id, "exception": type(exc).__name__})
+        return failed
+
     def start(self, project_id: str, asset_id: str, start: float, end: float, width: int, height: int, label: str = "clip") -> RenderRecord:
         start = float(start)
         end = float(end)
@@ -174,14 +181,15 @@ class RenderQueue:
         )
         self._replace(record)
         self.workspace.registries.timeline.append("render.queued", {"job_id": job_id, "project_id": project_id, "asset_id": asset_id, "start": start, "end": end})
+        if self.ffmpeg is not None:
+            candidate = Path(self.ffmpeg)
+            if not candidate.is_file() or not os.access(candidate, os.X_OK):
+                return self._fail_before_thread(record, FileNotFoundError(f"ffmpeg executable unavailable: {self.ffmpeg}"))
         spec = RenderSpec(input_path, output, width, height, video_codec=self.video_codec, start=start, duration=end - start, progress=True)
         try:
             command = ffmpeg_command(spec, self.ffmpeg)
         except Exception as exc:
-            failed = replace(record, status="FAIL", updated_at=_now(), error=f"{type(exc).__name__}: {exc}")
-            self._replace(failed)
-            self.workspace.registries.timeline.append("render.failed", {"job_id": job_id, "project_id": project_id, "exception": type(exc).__name__})
-            return failed
+            return self._fail_before_thread(record, exc)
         thread = threading.Thread(target=self._run, args=(job_id, command), daemon=True, name=f"render-{job_id}")
         with self._lock:
             self._threads[job_id] = thread
@@ -208,23 +216,36 @@ class RenderQueue:
         row = self.get(job_id)
         log_path = self.logs / f"{job_id}.log"
         output = self.output_path(job_id)
+        process: subprocess.Popen | None = None
         try:
+            with self._lock:
+                if job_id in self._cancelled:
+                    current = self.get(job_id)
+                    self._replace(replace(current, status="CANCELLED", updated_at=_now(), error=None))
+                    self.workspace.registries.timeline.append("render.cancelled", {"job_id": job_id, "project_id": row.project_id})
+                    return
             with log_path.open("w", encoding="utf-8") as log:
                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1)
                 with self._lock:
                     self._processes[job_id] = process
+                    cancelled_after_spawn = job_id in self._cancelled
                 self._replace(replace(row, status="RUNNING", updated_at=_now()))
+                if cancelled_after_spawn and process.poll() is None:
+                    process.terminate()
                 if process.stdout is None:
                     raise RuntimeError("ffmpeg progress pipe unavailable")
                 last_progress = -1.0
-                for line in process.stdout:
-                    seconds = self._progress_seconds(line)
-                    if seconds is not None:
-                        progress = max(0.0, min(0.999, seconds / max(row.duration, 0.001)))
-                        if progress - last_progress >= 0.01:
-                            current = self.get(job_id)
-                            self._replace(replace(current, progress=progress, updated_at=_now()))
-                            last_progress = progress
+                try:
+                    for line in process.stdout:
+                        seconds = self._progress_seconds(line)
+                        if seconds is not None:
+                            progress = max(0.0, min(0.999, seconds / max(row.duration, 0.001)))
+                            if progress - last_progress >= 0.01:
+                                current = self.get(job_id)
+                                self._replace(replace(current, progress=progress, updated_at=_now()))
+                                last_progress = progress
+                finally:
+                    process.stdout.close()
                 code = process.wait()
             with self._lock:
                 cancelled = job_id in self._cancelled
@@ -257,10 +278,15 @@ class RenderQueue:
                 self.workspace.registries.timeline.append("render.failed", {"job_id": job_id, "project_id": row.project_id, "exit_code": code})
         except Exception as exc:
             output.unlink(missing_ok=True)
-            current = self.get(job_id)
+            try:
+                current = self.get(job_id)
+            except KeyError:
+                return
             self._replace(replace(current, status="FAIL", updated_at=_now(), error=f"{type(exc).__name__}: {exc}"))
             self.workspace.registries.timeline.append("render.failed", {"job_id": job_id, "project_id": row.project_id, "exception": type(exc).__name__})
         finally:
+            if process is not None and process.stdout is not None and not process.stdout.closed:
+                process.stdout.close()
             with self._lock:
                 self._processes.pop(job_id, None)
                 self._threads.pop(job_id, None)
