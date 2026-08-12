@@ -376,7 +376,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             path = urlparse(self.path).path
-            if path in {"/", "/index.html", "/app.js", "/styles.css"}:
+            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/styles.css"}:
                 self._static(path)
                 return
             parts = self._segments()
