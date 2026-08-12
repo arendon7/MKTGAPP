@@ -75,6 +75,19 @@ class ProxyManagerTests(unittest.TestCase):
         self.assertEqual(cached.filename, done.filename)
         self.assertTrue(self.workspace.registries.verify_all())
 
+    def test_external_source_change_invalidates_sha_cache(self):
+        self.manager.ensure(self.project.id, self.asset.id)
+        first = self.wait_terminal()
+        source = self.projects.asset_path(self.project.id, self.asset.id)
+        source.write_bytes(b"source-video-modified")
+        expected_sha = hashlib.sha256(b"source-video-modified").hexdigest()
+        queued = self.manager.ensure(self.project.id, self.asset.id)
+        self.assertEqual(queued.source_sha256, expected_sha)
+        second = self.wait_terminal()
+        self.assertEqual(second.status, "PASS", second.error)
+        self.assertNotEqual(second.filename, first.filename)
+        self.assertIn(expected_sha[:12], second.filename)
+
     def test_invalidate_removes_derived_proxy_not_source(self):
         self.manager.ensure(self.project.id, self.asset.id)
         self.wait_terminal()
