@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -12,16 +15,83 @@ class RenderSpec:
     output_path: Path
     width: int
     height: int
-    video_codec: str = "libx264"
+    video_codec: str | None = None
     audio_codec: str = "aac"
 
 
-def ffmpeg_command(spec: RenderSpec, ffmpeg: str = "ffmpeg") -> list[str]:
+def resolve_ffmpeg(explicit: str | None = None) -> str:
+    candidate = explicit or os.environ.get("BINARIO_FFMPEG") or shutil.which("ffmpeg")
+    if not candidate:
+        raise FileNotFoundError("ffmpeg runtime is unavailable")
+    return candidate
+
+
+def resolve_ffprobe(explicit: str | None = None) -> str:
+    candidate = explicit or os.environ.get("BINARIO_FFPROBE") or shutil.which("ffprobe")
+    if not candidate:
+        raise FileNotFoundError("ffprobe runtime is unavailable")
+    return candidate
+
+
+def available_encoders(ffmpeg: str | None = None) -> set[str]:
+    binary = resolve_ffmpeg(ffmpeg)
+    proc = subprocess.run([binary, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=15, check=True)
+    encoders: set[str] = set()
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] in {"V", "A", "S", "."}:
+            encoders.add(parts[1])
+    return encoders
+
+
+def preferred_video_codec(ffmpeg: str | None = None) -> str:
+    encoders = available_encoders(ffmpeg)
+    if "h264_videotoolbox" in encoders:
+        return "h264_videotoolbox"
+    if "mpeg4" in encoders:
+        return "mpeg4"
+    raise RuntimeError("no supported video encoder is available")
+
+
+def ffmpeg_command(spec: RenderSpec, ffmpeg: str | None = None) -> list[str]:
+    binary = resolve_ffmpeg(ffmpeg)
+    codec = spec.video_codec or preferred_video_codec(binary)
+    if spec.width <= 0 or spec.height <= 0:
+        raise ValueError("render dimensions must be positive")
     return [
-        ffmpeg, "-y", "-i", str(spec.input_path),
+        binary, "-y", "-i", str(spec.input_path),
         "-vf", f"scale={spec.width}:{spec.height}:force_original_aspect_ratio=decrease,pad={spec.width}:{spec.height}:(ow-iw)/2:(oh-ih)/2",
-        "-c:v", spec.video_codec, "-c:a", spec.audio_codec, str(spec.output_path),
+        "-c:v", codec, "-pix_fmt", "yuv420p", "-c:a", spec.audio_codec,
+        "-movflags", "+faststart", str(spec.output_path),
     ]
+
+
+def probe_media(path: Path, ffprobe: str | None = None) -> dict:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    binary = resolve_ffprobe(ffprobe)
+    proc = subprocess.run(
+        [binary, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+        capture_output=True, text=True, timeout=30, check=True,
+    )
+    payload = json.loads(proc.stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("ffprobe returned invalid JSON")
+    return payload
+
+
+def media_runtime_status(ffmpeg: str | None = None, ffprobe: str | None = None) -> dict:
+    ffmpeg_bin = resolve_ffmpeg(ffmpeg)
+    ffprobe_bin = resolve_ffprobe(ffprobe)
+    version = subprocess.run([ffmpeg_bin, "-hide_banner", "-version"], capture_output=True, text=True, timeout=10, check=True).stdout.splitlines()[0]
+    encoders = available_encoders(ffmpeg_bin)
+    return {
+        "ffmpeg": ffmpeg_bin,
+        "ffprobe": ffprobe_bin,
+        "version": version,
+        "h264_videotoolbox": "h264_videotoolbox" in encoders,
+        "preferred_video_codec": "h264_videotoolbox" if "h264_videotoolbox" in encoders else "mpeg4" if "mpeg4" in encoders else None,
+    }
 
 
 class RenderJob:
