@@ -1,0 +1,9 @@
+{
+  "id": "11-documentos-ia",
+  "id_origin": "reconstructed",
+  "name": "Documentos IA",
+  "service": "documents",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["specialized-service", "trace", "export"]
+}

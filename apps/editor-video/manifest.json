@@ -1,0 +1,14 @@
+{
+  "id": "05-editor-video-ia",
+  "id_origin": "reconstructed",
+  "name": "Editor Video IA",
+  "service": "video_media",
+  "entrypoint": "binario_marketing.video.session",
+  "recovery_status": "rc5_rc6_documented_behavior_reconstructed_source",
+  "capabilities": [
+    "projects", "managed-assets", "delete-assets", "timeline", "trim", "split", "lock", "move", "undo", "redo", "reset",
+    "subtitles", "overlays", "story-map", "ab-cuts", "9:16", "16:9", "1:1", "4:5", "smart-reframe",
+    "optional-face-tracker", "brand-presets", "lower-thirds", "safe-zones", "contextual-broll", "subject-layers",
+    "preview-proxy", "render-progress", "render-cancel", "social-clipper", "external-audio-selection", "audio-alignment", "drift-correction"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "12-app-factory-ia",
+  "id_origin": "documented",
+  "name": "App Factory IA",
+  "service": "app_factory",
+  "engine_type": "service",
+  "runtime_profile": "app_factory",
+  "preferred_port": 8790,
+  "entrypoint": "binario_marketing.app_factory",
+  "recovery_status": "documented_manifest_fields_reconstructed_source",
+  "capabilities": [
+    "product-intake", "functional-architecture", "ux-system", "content-factory", "asset-factory", "mock-data",
+    "product-lab", "quality-gates", "version-center", "github-delivery", "supabase-delivery", "agent-engine",
+    "model-evaluation", "component-intelligence", "project-memory", "production-ops", "release-train",
+    "portfolio-scheduling", "autonomous-loops", "governance", "ecosystem-orchestration", "evidence-adoption"
+  ]
+}

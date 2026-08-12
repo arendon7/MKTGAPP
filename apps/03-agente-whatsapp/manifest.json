@@ -1,0 +1,9 @@
+{
+  "id": "03-agente-ia-whatsapp",
+  "id_origin": "reconstructed",
+  "name": "Agente IA · WhatsApp",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}

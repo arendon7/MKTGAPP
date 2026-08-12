@@ -1,0 +1,9 @@
+{
+  "id": "09-propuestas-ia",
+  "id_origin": "reconstructed",
+  "name": "Propuestas IA",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}

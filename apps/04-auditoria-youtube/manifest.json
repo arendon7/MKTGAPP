@@ -1,0 +1,9 @@
+{
+  "id": "04-auditoria-youtube-ia",
+  "id_origin": "reconstructed",
+  "name": "Auditoría YouTube IA",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}
