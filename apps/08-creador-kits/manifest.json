@@ -1,0 +1,9 @@
+{
+  "id": "08-creador-kits-ia",
+  "id_origin": "reconstructed",
+  "name": "Creador de Kits IA",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}

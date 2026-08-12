@@ -1,0 +1,9 @@
+{
+  "id": "10-investigador-ia",
+  "id_origin": "reconstructed",
+  "name": "Investigador IA",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_folder_and_skills_reconstructed_manifest",
+  "capabilities": ["scope", "research-plan", "discovery", "source-intake", "provenance", "evidence-extraction", "verification", "contradiction-detection", "confidence", "synthesis", "review", "versioning"]
+}

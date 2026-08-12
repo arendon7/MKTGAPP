@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "expected_apps": 12,
+  "apps": [
+    "Auditoría de Negocio IA",
+    "Cazador de Webs",
+    "Agente IA · WhatsApp",
+    "Auditoría YouTube IA",
+    "Editor Video IA",
+    "Auditoría Marca Personal",
+    "Auditoría E-commerce",
+    "Creador de Kits IA",
+    "Propuestas IA",
+    "Investigador IA",
+    "Documentos IA",
+    "App Factory IA"
+  ],
+  "note": "Names are documented. Exact original manifest ids/ports are not claimed unless marked documented in each manifest."
+}

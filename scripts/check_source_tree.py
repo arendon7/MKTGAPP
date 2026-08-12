@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -9,9 +10,11 @@ FORBIDDEN_SUFFIXES = {".zip", ".dmg", ".app"}
 REQUIRED = {
     "pyproject.toml",
     "docs/recovery/RECOVERY_STATE.json",
+    "docs/recovery/APP_REGISTRY.json",
     "apps/editor-video/manifest.json",
     "src/binario_marketing/projects.py",
     "src/binario_marketing/video/clipper.py",
+    "src/binario_marketing/video/session.py",
 }
 
 
@@ -24,13 +27,24 @@ def main() -> int:
     tracked = tracked_files()
     missing = sorted(REQUIRED - set(tracked))
     forbidden = [path for path in tracked if Path(path).suffix.lower() in FORBIDDEN_SUFFIXES]
-    if missing or forbidden:
+    manifests = sorted(ROOT.glob("apps/*/manifest.json"))
+    manifest_ids = []
+    for path in manifests:
+        manifest_ids.append(json.loads(path.read_text(encoding="utf-8"))["id"])
+    errors = []
+    if len(manifests) != 12:
+        errors.append(f"expected 12 app manifests, found {len(manifests)}")
+    if len(manifest_ids) != len(set(manifest_ids)):
+        errors.append("duplicate app manifest ids")
+    if missing or forbidden or errors:
+        for item in errors:
+            print("ERROR:", item)
         if missing:
             print("missing required source:", *missing, sep="\n- ")
         if forbidden:
             print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
         return 1
-    print(f"PASS: canonical source tree ({len(tracked)} tracked files)")
+    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps)")
     return 0
 
 

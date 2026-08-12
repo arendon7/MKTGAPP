@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "canonical_repository": "arendon7/MKTGAPP",
   "recovery_branch": "recovery/git-canonicalization",
   "reconstructed": true,
@@ -7,11 +7,20 @@
   "lineage": [
     {"name": "Binario IA v0.8.1 FULL STANDALONE PRO MAC R5", "status": "documented"},
     {"name": "Binario IA v0.9.0/R1", "status": "documented", "tests": 377, "python_modules": 353},
+    {"name": "Binario IA v0.9.0/R3", "status": "documented", "apps": "12/12", "quick_tests": 348, "full_tests": 387, "compiled_modules": 357},
     {"name": "Editor Video RC5", "status": "documented", "tests": "34/34"},
+    {"name": "Editor Video RC6", "status": "documented_audio_behavior"},
     {"name": "App13 Wave20", "status": "documented", "runtime": "0.5.5a1", "engineering": "472/472", "ux": "19/19"},
     {"name": "App13 Wave21", "status": "artifact_not_generated"},
-    {"name": "Wave22 control plane", "status": "preserved_in_legacy_repo", "repository": "arendon7/MKTG-APP", "head": "002ebe507faba148291fa6a626d435bf99683435"}
+    {"name": "Wave22 control plane", "status": "preserved_in_legacy_repo", "repository": "arendon7/MKTG-APP", "head": "002ebe507faba148291fa6a626d435bf99683435"},
+    {"name": "Binario IA v0.22.0 R22 Unified Workspace & Orchestration", "status": "documented_later_baseline", "apps": "12/12", "tests": "541/541", "http": "12/12", "runtime_installer": "18/18", "documented_sha256": "655e26c5eaa6ef92e4a4c55ff3c12364ff6a99ff865dccd4fcf89891c2c550f4"}
   ],
+  "current_reconstruction": {
+    "apps_manifests": "12/12",
+    "editor": "RC5/RC6 core behavior in progress",
+    "source_control": "Git-first",
+    "ci": ["ubuntu", "macos"]
+  },
   "recovery_policy": "Rebuild behavior from documented contracts; never claim byte-identical recovery of unavailable source.",
-  "next_gate": "reconstruct_and_test_core_source"
+  "next_gate": "reconstruct_unified_workspace_and_editor_service"
 }

@@ -1,0 +1,9 @@
+{
+  "id": "06-auditoria-marca-personal",
+  "id_origin": "reconstructed",
+  "name": "Auditoría Marca Personal",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}

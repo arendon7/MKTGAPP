@@ -1,6 +1,6 @@
 import unittest
 
-from binario_marketing.video.audio import AudioSource, choose_best_audio, normalization_plan
+from binario_marketing.video.audio import AudioSource, AudioSyncSample, alignment_plan, choose_best_audio, normalization_plan
 
 
 class AudioTests(unittest.TestCase):
@@ -12,6 +12,14 @@ class AudioTests(unittest.TestCase):
         plan = normalization_plan(best)
         self.assertTrue(plan["preserve_sync"])
         self.assertTrue(plan["replace_original_when_rendering"])
+
+    def test_alignment_detects_offset_and_drift(self):
+        plan = alignment_plan([
+            AudioSyncSample(0.10, 0.00),
+            AudioSyncSample(60.20, 60.00),
+        ])
+        self.assertAlmostEqual(plan["offset_seconds"], 0.1, places=6)
+        self.assertTrue(plan["correction_required"])
 
 
 if __name__ == "__main__":

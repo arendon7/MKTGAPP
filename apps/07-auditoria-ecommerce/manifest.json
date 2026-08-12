@@ -1,0 +1,9 @@
+{
+  "id": "07-auditoria-ecommerce",
+  "id_origin": "reconstructed",
+  "name": "Auditoría E-commerce",
+  "service": "native_domain",
+  "entrypoint": "binario_marketing.workflows",
+  "recovery_status": "documented_name_reconstructed_manifest",
+  "capabilities": ["intake", "validators", "domain-pipeline", "scoring", "quality-gate", "trace", "export"]
+}
