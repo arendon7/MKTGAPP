@@ -15,13 +15,21 @@ from .editor_store import EditorStore
 from .hub import discover_apps
 from .projects import ProjectStore
 from .providers import PROVIDERS, diagnose_provider
+from .render_queue import RenderQueue
 from .runtime_center import diagnose
 from .video.clipper import TranscriptSegment, select_clips
+from .video.render import media_duration, probe_media
 from .workspace import Workspace
 
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
+RENDER_DIMENSIONS = {
+    "16:9": (1920, 1080),
+    "9:16": (1080, 1920),
+    "1:1": (1080, 1080),
+    "4:5": (1080, 1350),
+}
 
 
 @dataclass
@@ -31,16 +39,30 @@ class AppRuntime:
     projects: ProjectStore
     workspace: Workspace
     editors: EditorStore
+    renders: RenderQueue
 
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
         root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
         user_root = (data_root or default_paths().home).expanduser().resolve()
         user_root.mkdir(parents=True, exist_ok=True)
-        return cls(root, user_root, ProjectStore(user_root / "Projects"), Workspace(user_root / "State" / "workspace"), EditorStore(user_root / "State" / "editor"))
+        projects = ProjectStore(user_root / "Projects")
+        workspace = Workspace(user_root / "State" / "workspace")
+        editors = EditorStore(user_root / "State" / "editor")
+        renders = RenderQueue(user_root / "State" / "renders", projects, workspace)
+        return cls(root, user_root, projects, workspace, editors, renders)
 
     def apps_payload(self) -> list[dict]:
-        return [{"id": app.app_id, "name": app.name, "service": app.service, "entrypoint": app.entrypoint, "capabilities": list(app.capabilities)} for app in discover_apps(self.repo_root)]
+        return [
+            {
+                "id": app.app_id,
+                "name": app.name,
+                "service": app.service,
+                "entrypoint": app.entrypoint,
+                "capabilities": list(app.capabilities),
+            }
+            for app in discover_apps(self.repo_root)
+        ]
 
     def projects_payload(self) -> list[dict]:
         return [asdict(item) for item in self.projects.list_projects()]
@@ -49,7 +71,13 @@ class AppRuntime:
         project = next((item for item in self.projects.list_projects() if item.id == project_id), None)
         if project is None:
             raise KeyError(project_id)
-        return {"project": asdict(project), "assets": [asdict(item) for item in self.projects.assets(project_id)], "editor": self.editors.state(project_id), "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id]}
+        return {
+            "project": asdict(project),
+            "assets": [asdict(item) for item in self.projects.assets(project_id)],
+            "editor": self.editors.state(project_id),
+            "renders": [asdict(item) for item in self.renders.list(project_id)],
+            "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
+        }
 
     def create_project(self, name: str) -> dict:
         if not name.strip():
@@ -60,7 +88,17 @@ class AppRuntime:
         return asdict(project)
 
     def _record_asset(self, project_id: str, asset) -> dict:
-        artifact = self.workspace.registries.record_artifact({"project_id": project_id, "asset_id": asset.id, "name": asset.name, "kind": asset.kind, "relative_path": asset.relative_path, "sha256": asset.sha256, "bytes": asset.bytes})
+        artifact = self.workspace.registries.record_artifact(
+            {
+                "project_id": project_id,
+                "asset_id": asset.id,
+                "name": asset.name,
+                "kind": asset.kind,
+                "relative_path": asset.relative_path,
+                "sha256": asset.sha256,
+                "bytes": asset.bytes,
+            }
+        )
         payload = asdict(asset)
         payload["artifact_ref"] = artifact.hash
         return payload
@@ -79,9 +117,21 @@ class AppRuntime:
             raise ValueError("asset is referenced by the editor timeline")
         if any(row.get("asset_id") == asset_id for row in editor.get("overlays", [])):
             raise ValueError("asset is referenced by an editor overlay")
+        if any(row.asset_id == asset_id and row.status not in {"FAIL", "CANCELLED", "INTERRUPTED"} for row in self.renders.list(project_id)):
+            raise ValueError("asset is referenced by a render job")
         if not self.projects.remove_asset(project_id, asset_id):
             raise KeyError(asset_id)
         self.workspace.registries.timeline.append("asset.deleted", {"project_id": project_id, "asset_id": asset_id})
+
+    def probe_asset(self, project_id: str, asset_id: str) -> dict:
+        path = self.projects.asset_path(project_id, asset_id)
+        payload = probe_media(path)
+        return {
+            "asset_id": asset_id,
+            "duration": media_duration(payload),
+            "format": payload.get("format", {}),
+            "streams": payload.get("streams", []),
+        }
 
     def editor_action(self, project_id: str, payload: dict) -> dict:
         action = str(payload.get("action", ""))
@@ -93,6 +143,24 @@ class AppRuntime:
         self.workspace.registries.timeline.append("editor.action", {"project_id": project_id, "action": action})
         return state
 
+    def start_render(self, project_id: str, payload: dict) -> dict:
+        asset_id = str(payload.get("asset_id") or "")
+        self.projects.asset(project_id, asset_id)
+        aspect = str(payload.get("aspect") or self.editors.state(project_id).get("aspect_ratio") or "16:9")
+        if aspect not in RENDER_DIMENSIONS:
+            raise ValueError(f"unsupported render aspect: {aspect}")
+        width, height = RENDER_DIMENSIONS[aspect]
+        row = self.renders.start(
+            project_id,
+            asset_id,
+            float(payload.get("start", 0)),
+            float(payload["end"]),
+            width,
+            height,
+            str(payload.get("label") or "clip"),
+        )
+        return asdict(row)
+
     def create_handoff(self, project_id: str, payload: dict) -> dict:
         to_app = str(payload.get("to_app") or "")
         known_apps = {item["id"] for item in self.apps_payload()}
@@ -101,7 +169,14 @@ class AppRuntime:
         project = next((item for item in self.workspace.projects() if item.id == project_id), None)
         if project is None:
             raise KeyError(project_id)
-        handoff = self.workspace.handoff(project_id, str(payload.get("from_app") or "05-editor-video-ia"), to_app, str(payload.get("summary") or ""), tuple(payload.get("artifact_refs") or ()), tuple(payload.get("evidence_refs") or ()))
+        handoff = self.workspace.handoff(
+            project_id,
+            str(payload.get("from_app") or "05-editor-video-ia"),
+            to_app,
+            str(payload.get("summary") or ""),
+            tuple(payload.get("artifact_refs") or ()),
+            tuple(payload.get("evidence_refs") or ()),
+        )
         self.workspace.upsert_project(project_id, project.name, handoff.to_app)
         return asdict(handoff)
 
@@ -121,7 +196,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         return
 
-    def _headers(self, status: int, content_type: str, length: int | None = None) -> None:
+    def _headers(self, status: int, content_type: str, length: int | None = None, extra: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -129,6 +204,9 @@ class MarketingHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         if content_type.startswith("text/html"):
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'")
+        if extra:
+            for key, value in extra.items():
+                self.send_header(key, value)
         if length is not None:
             self.send_header("Content-Length", str(length))
         self.end_headers()
@@ -178,6 +256,23 @@ class MarketingHandler(BaseHTTPRequestHandler):
             payload = self.server.runtime.add_uploaded_asset(project_id, filename, kind, self.rfile, length)
         self._json(payload, HTTPStatus.CREATED)
 
+    def _render_file(self, job_id: str) -> None:
+        row = self.server.runtime.renders.get(job_id)
+        if row.status != "PASS":
+            raise ValueError("render output is not available until the job passes")
+        path = self.server.runtime.renders.output_path(job_id)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        self._headers(
+            HTTPStatus.OK,
+            "video/mp4",
+            path.stat().st_size,
+            {"Content-Disposition": f'attachment; filename="{row.output_name}"'},
+        )
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                self.wfile.write(chunk)
+
     def do_GET(self) -> None:
         try:
             path = urlparse(self.path).path
@@ -199,14 +294,24 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self._json(self.server.runtime.project_detail(parts[2]))
             elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "editor":
                 self._json(self.server.runtime.editors.state(parts[2]))
+            elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "renders":
+                self._json([asdict(item) for item in self.server.runtime.renders.list(parts[2])])
+            elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "probe":
+                self._json(self.server.runtime.probe_asset(parts[2], parts[4]))
+            elif len(parts) == 3 and parts[:2] == ["api", "renders"]:
+                self._json(asdict(self.server.runtime.renders.get(parts[2])))
+            elif len(parts) == 4 and parts[:2] == ["api", "renders"] and parts[3] == "file":
+                self._render_file(parts[2])
             elif parts == ["api", "timeline"]:
                 self._json([entry.__dict__ for entry in self.server.runtime.workspace.registries.timeline.entries()])
             else:
                 self._error(HTTPStatus.NOT_FOUND, "not found")
         except KeyError as exc:
             self._error(HTTPStatus.NOT_FOUND, f"not found: {exc.args[0]}")
+        except FileNotFoundError as exc:
+            self._error(HTTPStatus.NOT_FOUND, f"file not found: {exc.filename or exc}")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            self._error(HTTPStatus.BAD_REQUEST, str(exc))
+            self._error(HTTPStatus.CONFLICT if "not available until" in str(exc) else HTTPStatus.BAD_REQUEST, str(exc))
         except Exception as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
@@ -224,8 +329,12 @@ class MarketingHandler(BaseHTTPRequestHandler):
                     self._json(self.server.runtime.add_asset(parts[2], str(payload["source_path"]), str(payload.get("kind", "file"))), HTTPStatus.CREATED)
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["editor", "actions"]:
                     self._json(self.server.runtime.editor_action(parts[2], payload))
+                elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "renders":
+                    self._json(self.server.runtime.start_render(parts[2], payload), HTTPStatus.ACCEPTED)
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "handoffs":
                     self._json(self.server.runtime.create_handoff(parts[2], payload), HTTPStatus.CREATED)
+                elif len(parts) == 4 and parts[:2] == ["api", "renders"] and parts[3] == "cancel":
+                    self._json(asdict(self.server.runtime.renders.cancel(parts[2])))
                 elif parts == ["api", "clipper", "select"]:
                     segments = [TranscriptSegment(float(row["start"]), float(row["end"]), str(row["text"])) for row in payload.get("segments", [])]
                     clips = select_clips(segments, int(payload.get("target_count", 3)), float(payload.get("min_duration", 15)), float(payload.get("max_duration", 75)))
@@ -292,4 +401,5 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
     except KeyboardInterrupt:
         pass
     finally:
+        runtime.renders.shutdown()
         server.server_close()

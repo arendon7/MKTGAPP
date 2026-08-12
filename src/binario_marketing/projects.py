@@ -185,8 +185,10 @@ class ProjectStore:
         match = next((item for item in current if item.id == asset_id), None)
         if match is None:
             return False
-        managed = self.asset_path(project_id, asset_id)
-        if managed.exists():
-            managed.unlink()
+        managed = self._managed_child(folder, match.relative_path)
+        assets_root = (folder / "assets").resolve()
+        if assets_root not in managed.parents:
+            raise ValueError("asset path escaped managed assets root")
+        managed.unlink(missing_ok=True)
         write_json_atomic(folder / "assets.json", [asdict(item) for item in current if item.id != asset_id])
         return True

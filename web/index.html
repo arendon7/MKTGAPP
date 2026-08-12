@@ -29,13 +29,13 @@
       <div id="empty-state" class="panel empty-state">
         <p class="eyebrow">BINARIO MARKETING</p>
         <h2>Selecciona o crea un proyecto</h2>
-        <p>El proyecto conserva assets, timeline, decisiones y handoffs en el Workspace unificado.</p>
+        <p>El proyecto conserva assets, timeline, renders, decisiones y handoffs en el Workspace unificado.</p>
       </div>
 
       <div id="project-view" class="hidden stack-lg">
         <section class="panel project-hero">
           <div><p class="eyebrow">PROYECTO ACTIVO</p><h2 id="active-project-name">—</h2><p id="active-project-meta" class="muted"></p></div>
-          <div class="hero-stats"><div><strong id="asset-count">0</strong><span>assets</span></div><div><strong id="clip-count">0</strong><span>clips</span></div><div><strong id="handoff-count">0</strong><span>handoffs</span></div></div>
+          <div class="hero-stats"><div><strong id="asset-count">0</strong><span>assets</span></div><div><strong id="clip-count">0</strong><span>clips</span></div><div><strong id="render-count">0</strong><span>renders</span></div><div><strong id="handoff-count">0</strong><span>handoffs</span></div></div>
         </section>
 
         <div class="grid-two">
@@ -61,23 +61,31 @@
         <div class="grid-two">
           <section class="panel">
             <div class="section-head"><div><p class="eyebrow">CLIPPER</p><h3>Clips para redes</h3></div></div>
-            <p class="muted">Pega segmentos como <code>inicio|fin|texto</code>, uno por línea.</p>
+            <p class="muted">Pega segmentos como <code>inicio|fin|texto</code>, uno por línea. Los candidatos pueden exportarse usando el asset seleccionado en el Editor.</p>
             <textarea id="clipper-input" rows="7" placeholder="0|8|¿Cómo evitar este error?&#10;8|20|La clave es definir el objetivo."></textarea>
             <div class="inline-form"><label>Cantidad<input id="clipper-count" type="number" min="1" max="20" value="3"></label><label>Mín. seg<input id="clipper-min" type="number" min="1" value="15"></label><label>Máx. seg<input id="clipper-max" type="number" min="1" value="75"></label><button id="clipper-run" class="secondary" type="button">Seleccionar</button></div>
             <div id="clipper-results" class="results"></div>
           </section>
 
           <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">RENDER</p><h3>Renders y exportaciones</h3></div><button id="refresh-renders" type="button">Actualizar</button></div>
+            <p class="muted">Los outputs se generan dentro del proyecto, se hashean y quedan registrados como artefactos.</p>
+            <div id="render-list" class="results"></div>
+          </section>
+        </div>
+
+        <div class="grid-two">
+          <section class="panel">
             <div class="section-head"><div><p class="eyebrow">HANDOFF</p><h3>Continuar en otra app</h3></div></div>
             <form id="handoff-form" class="stack"><label>Destino<select id="handoff-app" required></select></label><label>Resumen<textarea id="handoff-summary" rows="4" placeholder="Qué queda listo y qué debe continuar la siguiente app"></textarea></label><button class="secondary" type="submit">Crear handoff</button></form>
             <div id="handoff-list" class="handoff-list"></div>
           </section>
-        </div>
 
-        <section class="panel">
-          <div class="section-head"><div><p class="eyebrow">TRAZABILIDAD</p><h3>Unified Timeline</h3></div><button id="refresh-timeline" type="button">Actualizar</button></div>
-          <div id="unified-timeline" class="unified-timeline"></div>
-        </section>
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">TRAZABILIDAD</p><h3>Unified Timeline</h3></div><button id="refresh-timeline" type="button">Actualizar</button></div>
+            <div id="unified-timeline" class="unified-timeline"></div>
+          </section>
+        </div>
       </div>
     </section>
   </main>
