@@ -2,7 +2,7 @@ name: Canonical Source CI
 
 on:
   push:
-    branches: [main, "recovery/**", "wave/**", "feature/**"]
+    branches: [main, "recovery/**", "wave/**", "feature/**", "chore/**"]
   pull_request:
 
 permissions:
@@ -22,12 +22,21 @@ jobs:
           python-version: "3.12"
       - name: Source tree contract
         run: python scripts/check_source_tree.py
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/*.sh; do bash -n "$script"; done
       - name: Unit tests
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v
       - name: Compile source
-        run: python -m compileall -q src
+        run: python -m compileall -q src scripts
+      - name: Version contract
+        env:
+          PYTHONPATH: src
+        run: python scripts/version_info.py
       - name: Source snapshot
         run: python scripts/source_snapshot.py > SOURCE_MANIFEST.json
       - uses: actions/upload-artifact@v4

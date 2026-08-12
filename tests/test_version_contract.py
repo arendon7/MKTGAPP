@@ -24,6 +24,17 @@ class VersionContractTests(unittest.TestCase):
         self.assertRegex(MACOS_SHORT_VERSION, r"^[0-9]+(?:\.[0-9]+){1,2}$")
         self.assertRegex(MACOS_BUNDLE_VERSION, r"^[0-9]+(?:\.[0-9]+){0,2}$")
 
+    def test_full_mac_builder_consumes_canonical_version(self):
+        builder = (ROOT / "scripts/build_full_mac_app.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts/audit_full_mac_app.sh").read_text(encoding="utf-8")
+        self.assertIn("from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__", builder)
+        self.assertIn('<key>CFBundleShortVersionString</key><string>$MACOS_SHORT_VERSION</string>', builder)
+        self.assertIn('<key>CFBundleVersion</key><string>$MACOS_BUNDLE_VERSION</string>', builder)
+        self.assertNotIn('<key>CFBundleShortVersionString</key><string>0.9.0</string>', builder)
+        self.assertIn("provenance['product_version'] == __version__", audit)
+        self.assertIn("plist_short == MACOS_SHORT_VERSION", audit)
+        self.assertIn("plist_build == MACOS_BUNDLE_VERSION", audit)
+
     def test_release_is_fail_closed_until_explicitly_certified(self):
         self.assertFalse(RELEASE_READY)
         self.assertIsNone(RELEASE_TAG)
@@ -41,6 +52,13 @@ class VersionContractTests(unittest.TestCase):
         self.assertIn("release-preflight:", workflow)
         self.assertIn('python scripts/verify_release_tag.py --tag "$GITHUB_REF_NAME"', workflow)
         self.assertIn("needs: release-preflight", workflow)
+
+    def test_source_ci_covers_chore_branches_and_shell_syntax(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn('"chore/**"', workflow)
+        self.assertIn("Shell syntax", workflow)
+        self.assertIn('bash -n "$script"', workflow)
+        self.assertIn("python scripts/version_info.py", workflow)
 
 
 if __name__ == "__main__":
