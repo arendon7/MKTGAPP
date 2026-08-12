@@ -7,10 +7,12 @@ LAUNCHER="$APP/Contents/MacOS/Binario Marketing IA"
 PY="$RES/runtime/python/bin/python3"
 FFMPEG="$RES/runtime/media/bin/ffmpeg"
 FFPROBE="$RES/runtime/media/bin/ffprobe"
+PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -x "$LAUNCHER" ]] || { echo "missing launcher" >&2; exit 3; }
 [[ -x "$PY" ]] || { echo "missing embedded python" >&2; exit 3; }
 [[ -x "$FFMPEG" && -x "$FFPROBE" ]] || { echo "missing embedded media runtime" >&2; exit 3; }
 [[ -f "$RES/runtime/media/FULL_MAC_MEDIA_RUNTIME.json" ]] || { echo "missing media provenance" >&2; exit 3; }
+[[ -f "$PROVENANCE" ]] || { echo "missing build provenance" >&2; exit 3; }
 [[ -f "$RES/source/web/index.html" ]] || { echo "missing web UI" >&2; exit 3; }
 [[ -f "$RES/source/apps/editor-video/manifest.json" ]] || { echo "missing app manifests" >&2; exit 3; }
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
@@ -37,13 +39,18 @@ ENCODERS_FILE="$TMP/encoders.txt"
 PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$TMP/smoke.mp4")"
 [[ "$PROBE_DIMENSIONS" == "320,180" ]] || { echo "unexpected synthetic probe dimensions: $PROBE_DIMENSIONS" >&2; exit 3; }
 
-BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" "$PY" -I -B - "$RES/source/src" "$RES/source" <<'PY'
+PLIST_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+
+BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" <<'PY'
 import json, sys
 from pathlib import Path
-src, root = map(Path, sys.argv[1:3])
+src, root, provenance_path = map(Path, sys.argv[1:4])
+plist_short, plist_build = sys.argv[4:6]
 sys.path.insert(0, str(src))
 from binario_marketing.hub import discover_apps
 from binario_marketing.service import AppRuntime
+from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__
 from binario_marketing.video.render import media_runtime_status
 apps = discover_apps(root)
 assert len(apps) == 12, len(apps)
@@ -51,6 +58,12 @@ runtime = AppRuntime.create(root, Path('/tmp') / 'binario-audit-data')
 assert len(runtime.apps_payload()) == 12
 status = media_runtime_status()
 assert status['h264_videotoolbox'] is True, status
-print(json.dumps({'apps': len(apps), 'media': status, 'status': 'PASS'}))
+provenance = json.loads(provenance_path.read_text(encoding='utf-8'))
+assert provenance['product_version'] == __version__, provenance
+assert provenance['macos_short_version'] == MACOS_SHORT_VERSION, provenance
+assert provenance['macos_bundle_version'] == MACOS_BUNDLE_VERSION, provenance
+assert plist_short == MACOS_SHORT_VERSION, (plist_short, MACOS_SHORT_VERSION)
+assert plist_build == MACOS_BUNDLE_VERSION, (plist_build, MACOS_BUNDLE_VERSION)
+print(json.dumps({'apps': len(apps), 'media': status, 'version': __version__, 'status': 'PASS'}))
 PY
 printf 'FULL MAC AUDIT PASS: %s\n' "$APP"

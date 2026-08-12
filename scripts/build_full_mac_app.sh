@@ -31,6 +31,18 @@ rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
 
 "$ROOT/scripts/bootstrap_full_mac_python.sh" --target "$PY_RUNTIME" --arch "$ARCH"
+VERSION_FIELDS="$("$PY_RUNTIME/bin/python3" -I -B - "$ROOT/src" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__
+print(f"{__version__}\t{MACOS_SHORT_VERSION}\t{MACOS_BUNDLE_VERSION}")
+PY
+)"
+IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "$VERSION_FIELDS"
+[[ -n "$PRODUCT_VERSION" ]] || fail "canonical product version is empty"
+[[ "$MACOS_SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || fail "invalid macOS short version: $MACOS_SHORT_VERSION"
+[[ "$MACOS_BUNDLE_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "invalid macOS bundle version: $MACOS_BUNDLE_VERSION"
+
 "$ROOT/scripts/build_embedded_ffmpeg.sh" --target "$MEDIA_RUNTIME" --arch "$ARCH"
 /usr/bin/ditto "$ROOT/src" "$SOURCE/src"
 /usr/bin/ditto "$ROOT/apps" "$SOURCE/apps"
@@ -40,10 +52,13 @@ mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
 GIT_SHA="$(/usr/bin/git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')"
 cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
 {
-  "schema": "binario.marketing.full-mac-build.v2",
+  "schema": "binario.marketing.full-mac-build.v3",
   "git_sha": "$GIT_SHA",
   "architecture": "$ARCH",
   "app_name": "$APP_NAME",
+  "product_version": "$PRODUCT_VERSION",
+  "macos_short_version": "$MACOS_SHORT_VERSION",
+  "macos_bundle_version": "$MACOS_BUNDLE_VERSION",
   "embedded_python": "3.12.13",
   "embedded_ffmpeg": "$FULL_MAC_FFMPEG_VERSION",
   "ffmpeg_source_commit": "$FULL_MAC_FFMPEG_COMMIT_SHA"
@@ -84,7 +99,7 @@ exec "$PYTHON" -I -B "$RESOURCES/launch.py"
 SH
 chmod +x "$MACOS/Binario Marketing IA"
 
-cat > "$CONTENTS/Info.plist" <<'PLIST'
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -95,12 +110,12 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>CFBundleName</key><string>Binario Marketing IA</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.9.0</string>
-<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>$MACOS_SHORT_VERSION</string>
+<key>CFBundleVersion</key><string>$MACOS_BUNDLE_VERSION</string>
 <key>LSMinimumSystemVersion</key><string>12.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
 /usr/bin/codesign --force --deep --sign - "$APP"
-printf 'FULL MAC BUILD PASS: %s\n' "$APP"
+printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
