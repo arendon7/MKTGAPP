@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from . import RECOVERY_STATUS, __version__
 from .config import default_paths
@@ -21,6 +21,7 @@ from .workspace import Workspace
 
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
 
 
 @dataclass
@@ -36,25 +37,10 @@ class AppRuntime:
         root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
         user_root = (data_root or default_paths().home).expanduser().resolve()
         user_root.mkdir(parents=True, exist_ok=True)
-        return cls(
-            root,
-            user_root,
-            ProjectStore(user_root / "Projects"),
-            Workspace(user_root / "State" / "workspace"),
-            EditorStore(user_root / "State" / "editor"),
-        )
+        return cls(root, user_root, ProjectStore(user_root / "Projects"), Workspace(user_root / "State" / "workspace"), EditorStore(user_root / "State" / "editor"))
 
     def apps_payload(self) -> list[dict]:
-        return [
-            {
-                "id": app.app_id,
-                "name": app.name,
-                "service": app.service,
-                "entrypoint": app.entrypoint,
-                "capabilities": list(app.capabilities),
-            }
-            for app in discover_apps(self.repo_root)
-        ]
+        return [{"id": app.app_id, "name": app.name, "service": app.service, "entrypoint": app.entrypoint, "capabilities": list(app.capabilities)} for app in discover_apps(self.repo_root)]
 
     def projects_payload(self) -> list[dict]:
         return [asdict(item) for item in self.projects.list_projects()]
@@ -63,12 +49,7 @@ class AppRuntime:
         project = next((item for item in self.projects.list_projects() if item.id == project_id), None)
         if project is None:
             raise KeyError(project_id)
-        return {
-            "project": asdict(project),
-            "assets": [asdict(item) for item in self.projects.assets(project_id)],
-            "editor": self.editors.state(project_id),
-            "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
-        }
+        return {"project": asdict(project), "assets": [asdict(item) for item in self.projects.assets(project_id)], "editor": self.editors.state(project_id), "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id]}
 
     def create_project(self, name: str) -> dict:
         if not name.strip():
@@ -78,18 +59,19 @@ class AppRuntime:
         self.workspace.registries.timeline.append("project.created", {"project_id": project.id, "name": project.name})
         return asdict(project)
 
-    def add_asset(self, project_id: str, source_path: str, kind: str) -> dict:
-        asset = self.projects.add_asset(project_id, Path(source_path).expanduser(), kind.strip() or "file")
-        artifact = self.workspace.registries.record_artifact({
-            "project_id": project_id,
-            "asset_id": asset.id,
-            "name": asset.name,
-            "kind": asset.kind,
-            "relative_path": asset.relative_path,
-        })
+    def _record_asset(self, project_id: str, asset) -> dict:
+        artifact = self.workspace.registries.record_artifact({"project_id": project_id, "asset_id": asset.id, "name": asset.name, "kind": asset.kind, "relative_path": asset.relative_path, "sha256": asset.sha256, "bytes": asset.bytes})
         payload = asdict(asset)
         payload["artifact_ref"] = artifact.hash
         return payload
+
+    def add_asset(self, project_id: str, source_path: str, kind: str) -> dict:
+        asset = self.projects.add_asset(project_id, Path(source_path).expanduser(), kind.strip() or "file")
+        return self._record_asset(project_id, asset)
+
+    def add_uploaded_asset(self, project_id: str, filename: str, kind: str, stream, length: int) -> dict:
+        asset = self.projects.add_uploaded_asset(project_id, filename, kind.strip() or "file", stream, length)
+        return self._record_asset(project_id, asset)
 
     def remove_asset(self, project_id: str, asset_id: str) -> None:
         editor = self.editors.state(project_id)
@@ -103,14 +85,10 @@ class AppRuntime:
 
     def editor_action(self, project_id: str, payload: dict) -> dict:
         action = str(payload.get("action", ""))
-        if action == "add_clip":
+        if action in {"add_clip", "overlay_add"}:
             asset_ids = {item.id for item in self.projects.assets(project_id)}
             if str(payload.get("asset_id", "")) not in asset_ids:
                 raise ValueError("asset_id is not part of this project")
-        if action == "overlay_add":
-            asset_ids = {item.id for item in self.projects.assets(project_id)}
-            if str(payload.get("asset_id", "")) not in asset_ids:
-                raise ValueError("overlay asset_id is not part of this project")
         state = self.editors.apply(project_id, action, payload)
         self.workspace.registries.timeline.append("editor.action", {"project_id": project_id, "action": action})
         return state
@@ -123,14 +101,7 @@ class AppRuntime:
         project = next((item for item in self.workspace.projects() if item.id == project_id), None)
         if project is None:
             raise KeyError(project_id)
-        handoff = self.workspace.handoff(
-            project_id,
-            str(payload.get("from_app") or "05-editor-video-ia"),
-            to_app,
-            str(payload.get("summary") or ""),
-            tuple(payload.get("artifact_refs") or ()),
-            tuple(payload.get("evidence_refs") or ()),
-        )
+        handoff = self.workspace.handoff(project_id, str(payload.get("from_app") or "05-editor-video-ia"), to_app, str(payload.get("summary") or ""), tuple(payload.get("artifact_refs") or ()), tuple(payload.get("evidence_refs") or ()))
         self.workspace.upsert_project(project_id, project.name, handoff.to_app)
         return asdict(handoff)
 
@@ -180,14 +151,32 @@ class MarketingHandler(BaseHTTPRequestHandler):
             raise ValueError("request body too large")
         if length == 0:
             return {}
-        raw = self.rfile.read(length)
-        payload = json.loads(raw.decode("utf-8"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("JSON body must be an object")
         return payload
 
     def _segments(self) -> list[str]:
         return [part for part in urlparse(self.path).path.split("/") if part]
+
+    def _upload(self, project_id: str) -> None:
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            raise ValueError("Content-Length is required for file uploads")
+        try:
+            length = int(raw_length)
+        except ValueError as exc:
+            raise ValueError("invalid Content-Length") from exc
+        if length < 0 or length > MAX_UPLOAD_BYTES:
+            raise ValueError("upload exceeds 50 GiB limit")
+        query = parse_qs(urlparse(self.path).query)
+        filename = (query.get("filename") or [""])[0]
+        kind = (query.get("kind") or ["file"])[0]
+        if not filename.strip():
+            raise ValueError("filename is required")
+        with self.server.mutation_lock:
+            payload = self.server.runtime.add_uploaded_asset(project_id, filename, kind, self.rfile, length)
+        self._json(payload, HTTPStatus.CREATED)
 
     def do_GET(self) -> None:
         try:
@@ -223,8 +212,11 @@ class MarketingHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
-            payload = self._body()
             parts = self._segments()
+            if len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["assets", "upload"]:
+                self._upload(parts[2])
+                return
+            payload = self._body()
             with self.server.mutation_lock:
                 if parts == ["api", "projects"]:
                     self._json(self.server.runtime.create_project(str(payload.get("name", ""))), HTTPStatus.CREATED)

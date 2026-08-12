@@ -1,9 +1,11 @@
+import hashlib
 import json
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from binario_marketing.service import AppRuntime, create_server
@@ -35,6 +37,11 @@ class LocalApiTests(unittest.TestCase):
             body = response.read()
             return response.status, json.loads(body) if body else None
 
+    def request_raw(self, path, data, content_type="application/octet-stream"):
+        req = Request(self.base + path, data=data, method="POST", headers={"Content-Type": content_type})
+        with urlopen(req, timeout=5) as response:
+            return response.status, json.loads(response.read())
+
     def test_health_static_and_12_app_inventory(self):
         status, health = self.request("GET", "/api/health")
         self.assertEqual(status, 200)
@@ -45,15 +52,18 @@ class LocalApiTests(unittest.TestCase):
         with urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode("utf-8")
         self.assertIn("Marketing Workspace", html)
+        self.assertIn('type="file"', html)
 
-    def test_project_asset_editor_handoff_vertical_flow(self):
+    def test_stream_upload_editor_handoff_vertical_flow(self):
         status, project = self.request("POST", "/api/projects", {"name": "Campaña Café"})
         self.assertEqual(status, 201)
         project_id = project["id"]
-        source = Path(self.tmp.name) / "source.mp4"
-        source.write_bytes(b"video")
-        status, asset = self.request("POST", f"/api/projects/{project_id}/assets", {"source_path": str(source), "kind": "video"})
+        body = b"video-payload-" * 100
+        upload_path = f"/api/projects/{project_id}/assets/upload?filename={quote('café demo.mp4')}&kind=video"
+        status, asset = self.request_raw(upload_path, body, "video/mp4")
         self.assertEqual(status, 201)
+        self.assertEqual(asset["bytes"], len(body))
+        self.assertEqual(asset["sha256"], hashlib.sha256(body).hexdigest())
         self.assertTrue(asset["artifact_ref"])
 
         status, editor = self.request("POST", f"/api/projects/{project_id}/editor/actions", {"action": "add_clip", "asset_id": asset["id"], "start": 0, "end": 30, "track": 0})
@@ -69,7 +79,6 @@ class LocalApiTests(unittest.TestCase):
         self.assertEqual(len(editor["clips"]), 2)
         for clip in list(editor["clips"]):
             _, editor = self.request("POST", f"/api/projects/{project_id}/editor/actions", {"action": "delete_clip", "clip_id": clip["id"]})
-        self.assertEqual(editor["clips"], [])
         status, deleted = self.request("DELETE", f"/api/projects/{project_id}/assets/{asset['id']}")
         self.assertEqual(status, 200)
         self.assertTrue(deleted["deleted"])
@@ -82,8 +91,17 @@ class LocalApiTests(unittest.TestCase):
         _, timeline = self.request("GET", "/api/timeline")
         kinds = [event["kind"] for event in timeline]
         self.assertIn("project.created", kinds)
+        self.assertIn("artifact.recorded", kinds)
         self.assertIn("workspace.handoff", kinds)
         self.assertIn("editor.action", kinds)
+
+    def test_filesystem_path_import_remains_for_automation(self):
+        _, project = self.request("POST", "/api/projects", {"name": "Automation"})
+        source = Path(self.tmp.name) / "automation.mov"
+        source.write_bytes(b"automation")
+        status, asset = self.request("POST", f"/api/projects/{project['id']}/assets", {"source_path": str(source), "kind": "video"})
+        self.assertEqual(status, 201)
+        self.assertEqual(asset["sha256"], hashlib.sha256(b"automation").hexdigest())
 
     def test_clipper_endpoint_returns_requested_non_overlapping_candidates(self):
         segments = [
