@@ -76,6 +76,29 @@ class Timeline:
         right = self.clips.index(target)
         self.clips[left], self.clips[right] = self.clips[right], self.clips[left]
 
+    def reorder_to(self, clip_id: str, target_position: int) -> bool:
+        clip = next((c for c in self.clips if c.id == clip_id), None)
+        if clip is None:
+            raise KeyError(clip_id)
+        if clip.locked:
+            raise ValueError("clip is locked")
+        same_track = [c for c in self.clips if c.track == clip.track]
+        current = same_track.index(clip)
+        target = int(target_position)
+        if target < 0 or target >= len(same_track):
+            raise ValueError("target position is outside track bounds")
+        if target == current:
+            return False
+        direction = 1 if target > current else -1
+        while current != target:
+            neighbour = same_track[current + direction]
+            left = self.clips.index(clip)
+            right = self.clips.index(neighbour)
+            self.clips[left], self.clips[right] = self.clips[right], self.clips[left]
+            same_track[current], same_track[current + direction] = same_track[current + direction], same_track[current]
+            current += direction
+        return True
+
     def track(self, track: int = 0) -> list[Clip]:
         return [clip for clip in self.clips if clip.track == int(track)]
 
