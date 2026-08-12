@@ -58,5 +58,26 @@ class Timeline:
             raise KeyError(clip_id)
         clip.locked = value
 
+    def reorder(self, clip_id: str, direction: int) -> None:
+        if direction not in {-1, 1}:
+            raise ValueError("reorder direction must be -1 or 1")
+        clip = next((c for c in self.clips if c.id == clip_id), None)
+        if clip is None:
+            raise KeyError(clip_id)
+        if clip.locked:
+            raise ValueError("clip is locked")
+        same_track = [c for c in self.clips if c.track == clip.track]
+        position = same_track.index(clip)
+        target_position = position + direction
+        if target_position < 0 or target_position >= len(same_track):
+            raise ValueError("clip is already at the track boundary")
+        target = same_track[target_position]
+        left = self.clips.index(clip)
+        right = self.clips.index(target)
+        self.clips[left], self.clips[right] = self.clips[right], self.clips[left]
+
+    def track(self, track: int = 0) -> list[Clip]:
+        return [clip for clip in self.clips if clip.track == int(track)]
+
     def to_dict(self) -> list[dict]:
         return [asdict(clip) for clip in self.clips]
