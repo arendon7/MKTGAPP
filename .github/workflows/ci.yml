@@ -28,7 +28,10 @@ jobs:
           set -euo pipefail
           for script in scripts/*.sh; do bash -n "$script"; done
       - name: Browser JavaScript syntax
-        run: node --check web/app.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in web/*.js; do node --check "$script"; done
       - name: Unit tests
         env:
           PYTHONPATH: src
