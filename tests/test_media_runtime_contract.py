@@ -68,6 +68,19 @@ class MediaRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("libx264", command)
         self.assertIn("+faststart", command)
 
+    def test_videotoolbox_render_allows_apple_software_fallback(self):
+        spec = RenderSpec(Path("in.mov"), Path("out.mp4"), 1920, 1080, video_codec="h264_videotoolbox")
+        command = ffmpeg_command(spec, "/embedded/ffmpeg")
+        codec_index = command.index("h264_videotoolbox")
+        allow_index = command.index("-allow_sw")
+        self.assertGreater(allow_index, codec_index)
+        self.assertEqual(command[allow_index + 1], "1")
+
+    def test_non_videotoolbox_codec_does_not_receive_allow_sw(self):
+        spec = RenderSpec(Path("in.mov"), Path("out.mp4"), 1920, 1080, video_codec="mpeg4")
+        command = ffmpeg_command(spec, "/embedded/ffmpeg")
+        self.assertNotIn("-allow_sw", command)
+
 
 if __name__ == "__main__":
     unittest.main()

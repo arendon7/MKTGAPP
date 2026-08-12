@@ -70,31 +70,41 @@ jobs:
           if-no-files-found: warn
       - name: Audit bundle
         run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
-      - name: Smoke boot local API from bundled runtimes
+      - name: Smoke boot and render through bundled API
         shell: bash
         run: |
           set -euo pipefail
           APP="dist/Binario Marketing IA.app"
+          PY="$APP/Contents/Resources/runtime/python/bin/python3"
           MEDIA="$APP/Contents/Resources/runtime/media/bin"
+          DATA="$RUNNER_TEMP/binario-smoke-data"
+          BASE="http://127.0.0.1:18765"
           "$MEDIA/ffmpeg" -hide_banner -version > "$RUNNER_TEMP/ffmpeg-version.txt"
           "$MEDIA/ffprobe" -hide_banner -version > "$RUNNER_TEMP/ffprobe-version.txt"
           /usr/bin/head -n 1 "$RUNNER_TEMP/ffmpeg-version.txt"
           /usr/bin/head -n 1 "$RUNNER_TEMP/ffprobe-version.txt"
+
+          SOURCE="$RUNNER_TEMP/smoke-source.mp4"
+          "$MEDIA/ffmpeg" -hide_banner -loglevel error \
+            -f lavfi -i 'testsrc2=size=640x360:rate=24' \
+            -t 1.0 -c:v mpeg4 -an -y "$SOURCE"
+
           LOG="$RUNNER_TEMP/binario-smoke.log"
-          BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
+          BINARIO_IA_HOME="$DATA" BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 \
+            "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
           PID=$!
           cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
           trap cleanup EXIT
           READY=0
           for _ in $(seq 1 60); do
-            if /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/health > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
+            if /usr/bin/curl --fail --silent "$BASE/api/health" > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
             sleep 0.25
           done
           if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
           /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
-          /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/apps > "$RUNNER_TEMP/apps.json"
-          /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/runtime > "$RUNNER_TEMP/runtime.json"
-          "$APP/Contents/Resources/runtime/python/bin/python3" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
+          /usr/bin/curl --fail --silent "$BASE/api/apps" > "$RUNNER_TEMP/apps.json"
+          /usr/bin/curl --fail --silent "$BASE/api/runtime" > "$RUNNER_TEMP/runtime.json"
+          "$PY" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
           import json, sys
           apps=json.load(open(sys.argv[1], encoding='utf-8'))
           runtime=json.load(open(sys.argv[2], encoding='utf-8'))
@@ -106,6 +116,53 @@ jobs:
               assert '/runtime/media/bin/' in row['location'], row
           print('SMOKE PASS: 12/12 apps + embedded ffmpeg/ffprobe')
           PY
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data '{"name":"FULL MAC Render Smoke"}' "$BASE/api/projects" > "$RUNNER_TEMP/project.json"
+          PROJECT_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/project.json")"
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: video/mp4' \
+            --data-binary @"$SOURCE" \
+            "$BASE/api/projects/$PROJECT_ID/assets/upload?filename=smoke-source.mp4&kind=video" > "$RUNNER_TEMP/asset.json"
+          ASSET_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/asset.json")"
+
+          /usr/bin/curl --fail --silent "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/probe" > "$RUNNER_TEMP/probe.json"
+          "$PY" -I -B - "$RUNNER_TEMP/probe.json" <<'PY'
+          import json,sys
+          row=json.load(open(sys.argv[1], encoding='utf-8'))
+          assert row['duration'] is not None and row['duration'] > 0, row
+          assert any(stream.get('codec_type') == 'video' for stream in row['streams']), row
+          print('SMOKE PASS: managed asset probe')
+          PY
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data "{\"asset_id\":\"$ASSET_ID\",\"start\":0,\"end\":0.5,\"aspect\":\"16:9\",\"label\":\"ci-smoke\"}" \
+            "$BASE/api/projects/$PROJECT_ID/renders" > "$RUNNER_TEMP/render-start.json"
+          JOB_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/render-start.json")"
+
+          STATUS=""
+          for _ in $(seq 1 120); do
+            /usr/bin/curl --fail --silent "$BASE/api/renders/$JOB_ID" > "$RUNNER_TEMP/render.json"
+            STATUS="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$RUNNER_TEMP/render.json")"
+            case "$STATUS" in
+              PASS|FAIL|CANCELLED|INTERRUPTED) break ;;
+            esac
+            sleep 0.25
+          done
+          if [[ "$STATUS" != "PASS" ]]; then
+            cat "$RUNNER_TEMP/render.json" || true
+            cat "$LOG" || true
+            exit 1
+          fi
+
+          /usr/bin/curl --fail --silent "$BASE/api/renders/$JOB_ID/file" > "$RUNNER_TEMP/rendered.mp4"
+          test -s "$RUNNER_TEMP/rendered.mp4"
+          JOB_SHA="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["sha256"])' "$RUNNER_TEMP/render.json")"
+          FILE_SHA="$(/usr/bin/shasum -a 256 "$RUNNER_TEMP/rendered.mp4" | /usr/bin/awk '{print $1}')"
+          [[ "$JOB_SHA" == "$FILE_SHA" ]]
+          "$MEDIA/ffprobe" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$RUNNER_TEMP/rendered.mp4" > "$RUNNER_TEMP/rendered-dimensions.txt"
+          /usr/bin/grep -q '^1920,1080$' "$RUNNER_TEMP/rendered-dimensions.txt"
+          echo "SMOKE PASS: managed API render + download + SHA256 ($FILE_SHA)"
       - name: Package and hash
         shell: bash
         run: |
