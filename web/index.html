@@ -46,9 +46,53 @@
               <p class="eyebrow">ASSET ACTIVO</p>
               <strong id="preview-name">Sin selección</strong>
               <p id="preview-meta" class="muted">Selecciona “Preview” en Assets.</p>
+              <label class="preview-source-label">Fuente de preview<select id="preview-source-select"><option value="auto">Auto · proxy si existe</option><option value="original">Original</option><option value="proxy">Proxy</option></select></label>
+              <div id="proxy-status" class="proxy-status">Proxy: sin selección</div>
+              <button id="proxy-generate" type="button" disabled>Generar proxy optimizado</button>
               <div class="toolbar preview-toolbar"><button id="preview-add-timeline" type="button" disabled>+ Timeline completo</button><button id="preview-mark-start" type="button" disabled>Marcar inicio [</button><button id="preview-mark-end" type="button" disabled>Marcar fin ]</button></div>
               <div class="playhead"><span>Playhead</span><strong id="preview-time">0.00s</strong></div>
             </aside>
+          </div>
+        </section>
+
+        <section class="panel composition-panel">
+          <div class="section-head"><div><p class="eyebrow">COMPOSICIÓN</p><h3>Capas, subtítulos y audio externo</h3></div><span class="badge">persistente + undo</span></div>
+          <div class="composition-grid">
+            <div class="composer-card">
+              <div class="composer-head"><div><p class="eyebrow">CAPAS</p><h4>Overlays</h4></div><span id="overlay-count" class="count-chip">0</span></div>
+              <form id="overlay-form" class="stack composer-form">
+                <label>Asset<select id="overlay-asset" required><option value="">Imagen, logo o video</option></select></label>
+                <div class="mini-grid"><label>Inicio<input id="overlay-start" type="number" min="0" step="0.1" value="0"></label><label>Fin<input id="overlay-end" type="number" min="0.1" step="0.1" value="10"></label></div>
+                <div class="mini-grid four"><label>X<input id="overlay-x" type="number" min="0" max="1" step="0.01" value="0.8"></label><label>Y<input id="overlay-y" type="number" min="0" max="1" step="0.01" value="0.12"></label><label>Escala<input id="overlay-scale" type="number" min="0.05" max="8" step="0.05" value="0.4"></label><label>Opacidad<input id="overlay-opacity" type="number" min="0" max="1" step="0.05" value="1"></label></div>
+                <div class="mini-grid"><label>Z<input id="overlay-z" type="number" min="-1000" max="1000" step="1" value="10"></label><label class="check-label"><input id="overlay-behind" type="checkbox"> Capa inferior*</label></div>
+                <p class="microcopy">*Ordena la capa por debajo de otros overlays; la segmentación real del sujeto se incorporará como motor separado.</p>
+                <button class="secondary" type="submit">Añadir capa</button>
+              </form>
+              <div id="overlay-list" class="composer-list"></div>
+            </div>
+
+            <div class="composer-card">
+              <div class="composer-head"><div><p class="eyebrow">TEXTO</p><h4>Subtítulos</h4></div><span id="subtitle-count" class="count-chip">0</span></div>
+              <form id="subtitle-form" class="stack composer-form">
+                <div class="mini-grid"><label>Inicio<input id="subtitle-start" type="number" min="0" step="0.1" value="0"></label><label>Fin<input id="subtitle-end" type="number" min="0.1" step="0.1" value="3"></label></div>
+                <label>Texto<textarea id="subtitle-text" rows="3" required placeholder="Texto del subtítulo"></textarea></label>
+                <button class="secondary" type="submit">Añadir subtítulo</button>
+              </form>
+              <p class="microcopy">Se previsualizan en el Editor y cada render genera un SRT trazable junto al MP4.</p>
+              <div id="subtitle-list" class="composer-list"></div>
+            </div>
+
+            <div class="composer-card">
+              <div class="composer-head"><div><p class="eyebrow">AUDIO</p><h4>Pista externa</h4></div><span id="audio-state-chip" class="count-chip">OFF</span></div>
+              <form id="audio-form" class="stack composer-form">
+                <label>Audio<select id="audio-asset" required><option value="">Selecciona audio importado</option></select></label>
+                <div class="mini-grid"><label>Offset s<input id="audio-offset" type="number" step="0.01" value="0"></label><label>Ganancia dB<input id="audio-gain" type="number" min="-60" max="24" step="0.5" value="0"></label></div>
+                <div class="mini-grid"><label>Objetivo LUFS<input id="audio-lufs" type="number" min="-36" max="-5" step="0.5" value="-16"></label><label class="check-label"><input id="audio-normalize" type="checkbox" checked> Normalizar</label></div>
+                <label class="check-label"><input id="audio-replace" type="checkbox" checked> Reemplazar audio de cámara</label>
+                <div class="toolbar composer-toolbar"><button class="secondary" type="submit">Aplicar audio</button><button id="audio-clear" type="button">Quitar audio externo</button></div>
+              </form>
+              <div id="audio-current" class="audio-current muted">Sin pista externa.</div>
+            </div>
           </div>
         </section>
 
@@ -106,5 +150,6 @@
   </main>
   <div id="toast" class="toast hidden" role="status"></div>
   <script src="/app.js" defer></script>
+  <script src="/pro-media.js" defer></script>
 </body>
 </html>

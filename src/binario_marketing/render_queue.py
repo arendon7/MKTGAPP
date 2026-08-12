@@ -13,7 +13,15 @@ from pathlib import Path
 
 from .atomic import write_json_atomic
 from .projects import ProjectStore
-from .video.render import RenderSpec, ffmpeg_command
+from .video.render import (
+    AudioRenderSpec,
+    CompositeRenderSpec,
+    OverlayRenderSpec,
+    RenderSpec,
+    composite_ffmpeg_command,
+    ffmpeg_command,
+    subtitles_to_srt,
+)
 from .workspace import Workspace
 
 
@@ -40,6 +48,13 @@ def _safe_label(value: str) -> str:
     return cleaned[:80] or "clip"
 
 
+def _composition_hash(payload: dict | None) -> str | None:
+    if not payload:
+        return None
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True)
 class RenderRecord:
     id: str
@@ -59,6 +74,10 @@ class RenderRecord:
     sha256: str | None = None
     bytes: int | None = None
     artifact_ref: str | None = None
+    composition_sha256: str | None = None
+    source_asset_ids: list[str] | None = None
+    subtitle_relative_path: str | None = None
+    subtitle_artifact_ref: str | None = None
 
     @property
     def duration(self) -> float:
@@ -66,14 +85,7 @@ class RenderRecord:
 
 
 class RenderQueue:
-    def __init__(
-        self,
-        root: Path,
-        projects: ProjectStore,
-        workspace: Workspace,
-        ffmpeg: str | None = None,
-        video_codec: str | None = None,
-    ):
+    def __init__(self, root: Path, projects: ProjectStore, workspace: Workspace, ffmpeg: str | None = None, video_codec: str | None = None):
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.registry_path = self.root / "jobs.json"
@@ -81,8 +93,6 @@ class RenderQueue:
         self.logs.mkdir(parents=True, exist_ok=True)
         self.projects = projects
         self.workspace = workspace
-        # Runtime resolution is deliberately lazy so the app can boot in source/dev mode
-        # even when FFmpeg is not installed. A real render remains fail-closed.
         self.ffmpeg = ffmpeg
         self.video_codec = video_codec
         self._lock = threading.RLock()
@@ -121,8 +131,7 @@ class RenderQueue:
         updated: list[RenderRecord] = []
         for row in rows:
             if row.status in ACTIVE:
-                output = self.projects.export_path(row.project_id, row.output_name)
-                output.unlink(missing_ok=True)
+                self.projects.export_path(row.project_id, row.output_name).unlink(missing_ok=True)
                 row = replace(row, status="INTERRUPTED", updated_at=_now(), error="application stopped before render completed")
                 changed = True
             updated.append(row)
@@ -146,13 +155,65 @@ class RenderQueue:
         row = self.get(job_id)
         return self.projects.export_path(row.project_id, row.output_name)
 
+    def subtitle_path(self, job_id: str) -> Path | None:
+        row = self.get(job_id)
+        if not row.subtitle_relative_path:
+            return None
+        return self.projects.export_path(row.project_id, Path(row.subtitle_relative_path).name)
+
     def _fail_before_thread(self, record: RenderRecord, exc: Exception) -> RenderRecord:
         failed = replace(record, status="FAIL", updated_at=_now(), error=f"{type(exc).__name__}: {exc}")
         self._replace(failed)
         self.workspace.registries.timeline.append("render.failed", {"job_id": record.id, "project_id": record.project_id, "exception": type(exc).__name__})
         return failed
 
-    def start(self, project_id: str, asset_id: str, start: float, end: float, width: int, height: int, label: str = "clip") -> RenderRecord:
+    def _composition_spec(self, project_id: str, input_path: Path, output: Path, start: float, duration: float, width: int, height: int, composition: dict) -> tuple[CompositeRenderSpec, list[str]]:
+        source_asset_ids: list[str] = []
+        overlays: list[OverlayRenderSpec] = []
+        for row in composition.get("overlays", []):
+            asset_id = str(row["asset_id"])
+            path = self.projects.asset_path(project_id, asset_id)
+            source_asset_ids.append(asset_id)
+            overlays.append(OverlayRenderSpec(
+                input_path=path,
+                start=float(row["start"]),
+                end=float(row["end"]),
+                x=float(row.get("x", 0.5)),
+                y=float(row.get("y", 0.5)),
+                scale=float(row.get("scale", 1.0)),
+                opacity=float(row.get("opacity", 1.0)),
+                z_index=int(row.get("z_index", 10)),
+                behind_subject=bool(row.get("behind_subject", False)),
+            ))
+        audio = None
+        row = composition.get("audio_track")
+        if isinstance(row, dict) and bool(row.get("enabled", True)):
+            asset_id = str(row["asset_id"])
+            path = self.projects.asset_path(project_id, asset_id)
+            source_asset_ids.append(asset_id)
+            audio = AudioRenderSpec(
+                input_path=path,
+                enabled=True,
+                offset_seconds=float(row.get("offset_seconds", 0.0)),
+                gain_db=float(row.get("gain_db", 0.0)),
+                normalize=bool(row.get("normalize", True)),
+                target_lufs=float(row.get("target_lufs", -16.0)),
+                replace_original=bool(row.get("replace_original", True)),
+            )
+        return CompositeRenderSpec(
+            input_path=input_path,
+            output_path=output,
+            width=width,
+            height=height,
+            start=start,
+            duration=duration,
+            overlays=tuple(overlays),
+            audio=audio,
+            video_codec=self.video_codec,
+            progress=True,
+        ), source_asset_ids
+
+    def start(self, project_id: str, asset_id: str, start: float, end: float, width: int, height: int, label: str = "clip", composition: dict | None = None) -> RenderRecord:
         start = float(start)
         end = float(end)
         width, height = int(width), int(height)
@@ -164,6 +225,8 @@ class RenderQueue:
         job_id = uuid.uuid4().hex[:12]
         output_name = f"{job_id}-{_safe_label(label)}.mp4"
         output = self.projects.export_path(project_id, output_name)
+        composition_payload = composition or {}
+        source_asset_ids = [asset_id]
         record = RenderRecord(
             id=job_id,
             project_id=project_id,
@@ -178,19 +241,29 @@ class RenderQueue:
             progress=0.0,
             created_at=_now(),
             updated_at=_now(),
+            composition_sha256=_composition_hash(composition_payload),
+            source_asset_ids=source_asset_ids,
         )
         self._replace(record)
-        self.workspace.registries.timeline.append("render.queued", {"job_id": job_id, "project_id": project_id, "asset_id": asset_id, "start": start, "end": end})
+        self.workspace.registries.timeline.append("render.queued", {"job_id": job_id, "project_id": project_id, "asset_id": asset_id, "start": start, "end": end, "composition_sha256": record.composition_sha256})
         if self.ffmpeg is not None:
             candidate = Path(self.ffmpeg)
             if not candidate.is_file() or not os.access(candidate, os.X_OK):
                 return self._fail_before_thread(record, FileNotFoundError(f"ffmpeg executable unavailable: {self.ffmpeg}"))
-        spec = RenderSpec(input_path, output, width, height, video_codec=self.video_codec, start=start, duration=end - start, progress=True)
         try:
-            command = ffmpeg_command(spec, self.ffmpeg)
+            if composition_payload.get("overlays") or composition_payload.get("audio_track"):
+                spec, extra_sources = self._composition_spec(project_id, input_path, output, start, end - start, width, height, composition_payload)
+                source_asset_ids = list(dict.fromkeys([asset_id, *extra_sources]))
+                record = replace(record, source_asset_ids=source_asset_ids)
+                self._replace(record)
+                command = composite_ffmpeg_command(spec, self.ffmpeg)
+            else:
+                spec = RenderSpec(input_path, output, width, height, video_codec=self.video_codec, start=start, duration=end - start, progress=True)
+                command = ffmpeg_command(spec, self.ffmpeg)
         except Exception as exc:
             return self._fail_before_thread(record, exc)
-        thread = threading.Thread(target=self._run, args=(job_id, command), daemon=True, name=f"render-{job_id}")
+        subtitles = composition_payload.get("subtitles", []) if isinstance(composition_payload.get("subtitles"), list) else []
+        thread = threading.Thread(target=self._run, args=(job_id, command, subtitles), daemon=True, name=f"render-{job_id}")
         with self._lock:
             self._threads[job_id] = thread
         thread.start()
@@ -203,7 +276,6 @@ class RenderQueue:
             return None
         try:
             if key in {"out_time_us", "out_time_ms"}:
-                # FFmpeg historically labels out_time_ms as milliseconds while reporting microseconds.
                 return float(value) / 1_000_000.0
             if key == "out_time":
                 hours, minutes, seconds = value.split(":")
@@ -212,7 +284,28 @@ class RenderQueue:
             return None
         return None
 
-    def _run(self, job_id: str, command: list[str]) -> None:
+    def _write_subtitle_sidecar(self, row: RenderRecord, subtitles: list[dict]) -> tuple[str | None, str | None]:
+        if not subtitles:
+            return None, None
+        content = subtitles_to_srt(subtitles, row.start, row.end)
+        if not content.strip():
+            return None, None
+        name = f"{Path(row.output_name).stem}.srt"
+        path = self.projects.export_path(row.project_id, name)
+        path.write_text(content, encoding="utf-8")
+        digest, size = _sha256_file(path)
+        artifact = self.workspace.registries.record_artifact({
+            "project_id": row.project_id,
+            "render_job_id": row.id,
+            "name": name,
+            "kind": "subtitle_srt",
+            "relative_path": f"exports/{name}",
+            "sha256": digest,
+            "bytes": size,
+        })
+        return f"exports/{name}", artifact.hash
+
+    def _run(self, job_id: str, command: list[str], subtitles: list[dict]) -> None:
         row = self.get(job_id)
         log_path = self.logs / f"{job_id}.log"
         output = self.output_path(job_id)
@@ -256,22 +349,13 @@ class RenderQueue:
                 self.workspace.registries.timeline.append("render.cancelled", {"job_id": job_id, "project_id": row.project_id})
             elif code == 0 and output.is_file():
                 digest, size = _sha256_file(output)
-                artifact = self.workspace.registries.record_artifact({
-                    "project_id": row.project_id,
-                    "render_job_id": job_id,
-                    "name": row.output_name,
-                    "kind": "rendered_video",
-                    "relative_path": row.output_relative_path,
-                    "sha256": digest,
-                    "bytes": size,
-                })
+                artifact = self.workspace.registries.record_artifact({"project_id": row.project_id, "render_job_id": job_id, "name": row.output_name, "kind": "rendered_video", "relative_path": row.output_relative_path, "sha256": digest, "bytes": size, "composition_sha256": row.composition_sha256})
+                subtitle_path, subtitle_ref = self._write_subtitle_sidecar(row, subtitles)
                 current = self.get(job_id)
-                self._replace(replace(current, status="PASS", progress=1.0, updated_at=_now(), sha256=digest, bytes=size, artifact_ref=artifact.hash, error=None))
-                self.workspace.registries.timeline.append("render.completed", {"job_id": job_id, "project_id": row.project_id, "artifact_ref": artifact.hash})
+                self._replace(replace(current, status="PASS", progress=1.0, updated_at=_now(), sha256=digest, bytes=size, artifact_ref=artifact.hash, subtitle_relative_path=subtitle_path, subtitle_artifact_ref=subtitle_ref, error=None))
+                self.workspace.registries.timeline.append("render.completed", {"job_id": job_id, "project_id": row.project_id, "artifact_ref": artifact.hash, "subtitle_artifact_ref": subtitle_ref, "composition_sha256": row.composition_sha256})
             else:
-                tail = ""
-                if log_path.exists():
-                    tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+                tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:] if log_path.exists() else ""
                 output.unlink(missing_ok=True)
                 current = self.get(job_id)
                 self._replace(replace(current, status="FAIL", updated_at=_now(), error=tail or f"ffmpeg exited with code {code}"))

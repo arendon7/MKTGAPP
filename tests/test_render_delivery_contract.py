@@ -16,6 +16,25 @@ class RenderDeliveryContractTests(unittest.TestCase):
         self.assertIn('[[ "$JOB_SHA" == "$FILE_SHA" ]]', workflow)
         self.assertIn("^1920,1080$", workflow)
 
+    def test_full_mac_smoke_covers_proxy_composition_audio_and_subtitles(self):
+        workflow = (ROOT / ".github/workflows/full-mac-app.yml").read_text(encoding="utf-8")
+        for token in (
+            "smoke-overlay.mp4&kind=video",
+            "smoke-audio.wav&kind=audio",
+            "/assets/$ASSET_ID/proxy",
+            "/assets/$ASSET_ID/proxy/file",
+            "overlay_add",
+            "subtitle_add",
+            "audio_set",
+            "composition_sha256",
+            "source_asset_ids",
+            "/api/renders/$JOB_ID/subtitles",
+            "Smoke subtitle",
+            "^audio$",
+            "/pro-media.js",
+        ):
+            self.assertIn(token, workflow)
+
     def test_smoke_uses_isolated_user_data_root(self):
         workflow = (ROOT / ".github/workflows/full-mac-app.yml").read_text(encoding="utf-8")
         self.assertIn('BINARIO_IA_HOME="$DATA"', workflow)

@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .atomic import write_json_atomic
-from .video.session import EditorSession, Overlay, Subtitle
+from .video.session import AudioTrack, EditorSession, Overlay, Subtitle
 
 
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -67,13 +67,49 @@ class EditorStore:
             elif action == "subtitle_add":
                 session.add_subtitle(Subtitle(str(payload["id"]), float(payload["start"]), float(payload["end"]), str(payload["text"])))
             elif action == "subtitle_edit":
-                session.edit_subtitle(str(payload["id"]), str(payload["text"]))
+                session.edit_subtitle(
+                    str(payload["id"]),
+                    start=float(payload["start"]) if "start" in payload else None,
+                    end=float(payload["end"]) if "end" in payload else None,
+                    text=str(payload["text"]) if "text" in payload else None,
+                )
+            elif action == "subtitle_delete":
+                if not session.delete_subtitle(str(payload["id"])):
+                    raise KeyError(str(payload["id"]))
             elif action == "overlay_add":
                 session.add_overlay(Overlay(
                     id=str(payload["id"]), asset_id=str(payload["asset_id"]), start=float(payload["start"]), end=float(payload["end"]),
                     x=float(payload.get("x", 0.5)), y=float(payload.get("y", 0.5)), scale=float(payload.get("scale", 1.0)),
                     opacity=float(payload.get("opacity", 1.0)), z_index=int(payload.get("z_index", 10)), behind_subject=bool(payload.get("behind_subject", False)),
                 ))
+            elif action == "overlay_edit":
+                session.edit_overlay(
+                    str(payload["id"]),
+                    start=float(payload["start"]) if "start" in payload else None,
+                    end=float(payload["end"]) if "end" in payload else None,
+                    x=float(payload["x"]) if "x" in payload else None,
+                    y=float(payload["y"]) if "y" in payload else None,
+                    scale=float(payload["scale"]) if "scale" in payload else None,
+                    opacity=float(payload["opacity"]) if "opacity" in payload else None,
+                    z_index=int(payload["z_index"]) if "z_index" in payload else None,
+                    behind_subject=bool(payload["behind_subject"]) if "behind_subject" in payload else None,
+                )
+            elif action == "overlay_delete":
+                if not session.delete_overlay(str(payload["id"])):
+                    raise KeyError(str(payload["id"]))
+            elif action == "audio_set":
+                session.set_audio_track(AudioTrack(
+                    asset_id=str(payload["asset_id"]),
+                    enabled=bool(payload.get("enabled", True)),
+                    offset_seconds=float(payload.get("offset_seconds", 0.0)),
+                    gain_db=float(payload.get("gain_db", 0.0)),
+                    normalize=bool(payload.get("normalize", True)),
+                    target_lufs=float(payload.get("target_lufs", -16.0)),
+                    replace_original=bool(payload.get("replace_original", True)),
+                ))
+            elif action == "audio_clear":
+                if not session.clear_audio_track():
+                    raise ValueError("no external audio track configured")
             elif action == "undo":
                 if not session.undo():
                     raise ValueError("nothing to undo")

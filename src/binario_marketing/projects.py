@@ -70,6 +70,7 @@ class ProjectStore:
         folder = self.root / directory
         (folder / "assets").mkdir(parents=True, exist_ok=False)
         (folder / "exports").mkdir()
+        (folder / "proxies").mkdir()
         write_json_atomic(folder / "project.json", asdict(project))
         write_json_atomic(folder / "assets.json", [])
         registry = self._registry()
@@ -125,6 +126,21 @@ class ProjectStore:
         path = (root / safe).resolve()
         if root not in path.parents:
             raise ValueError("export path escaped managed exports root")
+        return path
+
+    def proxies_dir(self, project_id: str) -> Path:
+        path = self.path_for(project_id) / "proxies"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def proxy_path(self, project_id: str, filename: str) -> Path:
+        safe = Path(filename).name
+        if not safe or safe in {".", ".."}:
+            raise ValueError("invalid proxy filename")
+        root = self.proxies_dir(project_id).resolve()
+        path = (root / safe).resolve()
+        if root not in path.parents:
+            raise ValueError("proxy path escaped managed proxies root")
         return path
 
     def _target(self, project_id: str, filename: str) -> tuple[str, Path, str]:
