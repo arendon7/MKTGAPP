@@ -17,6 +17,9 @@ class RenderSpec:
     height: int
     video_codec: str | None = None
     audio_codec: str = "aac"
+    start: float = 0.0
+    duration: float | None = None
+    progress: bool = False
 
 
 def resolve_ffmpeg(explicit: str | None = None) -> str:
@@ -58,12 +61,25 @@ def ffmpeg_command(spec: RenderSpec, ffmpeg: str | None = None) -> list[str]:
     codec = spec.video_codec or preferred_video_codec(binary)
     if spec.width <= 0 or spec.height <= 0:
         raise ValueError("render dimensions must be positive")
-    return [
-        binary, "-y", "-i", str(spec.input_path),
+    if spec.start < 0:
+        raise ValueError("render start must be >= 0")
+    if spec.duration is not None and spec.duration <= 0:
+        raise ValueError("render duration must be > 0")
+    command = [binary, "-y"]
+    if spec.start > 0:
+        command += ["-ss", f"{spec.start:.6f}"]
+    command += ["-i", str(spec.input_path)]
+    if spec.duration is not None:
+        command += ["-t", f"{spec.duration:.6f}"]
+    command += [
         "-vf", f"scale={spec.width}:{spec.height}:force_original_aspect_ratio=decrease,pad={spec.width}:{spec.height}:(ow-iw)/2:(oh-ih)/2",
         "-c:v", codec, "-pix_fmt", "yuv420p", "-c:a", spec.audio_codec,
-        "-movflags", "+faststart", str(spec.output_path),
+        "-movflags", "+faststart",
     ]
+    if spec.progress:
+        command += ["-progress", "pipe:1", "-nostats"]
+    command.append(str(spec.output_path))
+    return command
 
 
 def probe_media(path: Path, ffprobe: str | None = None) -> dict:
@@ -78,6 +94,24 @@ def probe_media(path: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("ffprobe returned invalid JSON")
     return payload
+
+
+def media_duration(payload: dict) -> float | None:
+    values: list[float] = []
+    format_duration = payload.get("format", {}).get("duration") if isinstance(payload.get("format"), dict) else None
+    if format_duration not in (None, "N/A"):
+        try:
+            values.append(float(format_duration))
+        except (TypeError, ValueError):
+            pass
+    for stream in payload.get("streams", []) if isinstance(payload.get("streams"), list) else []:
+        duration = stream.get("duration") if isinstance(stream, dict) else None
+        if duration not in (None, "N/A"):
+            try:
+                values.append(float(duration))
+            except (TypeError, ValueError):
+                pass
+    return max(values) if values else None
 
 
 def media_runtime_status(ffmpeg: str | None = None, ffprobe: str | None = None) -> dict:

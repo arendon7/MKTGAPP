@@ -87,6 +87,46 @@ class ProjectStore:
         path = self.path_for(project_id) / "assets.json"
         return [Asset(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
+    def asset(self, project_id: str, asset_id: str) -> Asset:
+        match = next((item for item in self.assets(project_id) if item.id == asset_id), None)
+        if match is None:
+            raise KeyError(asset_id)
+        return match
+
+    @staticmethod
+    def _managed_child(root: Path, relative_path: str) -> Path:
+        root = root.resolve()
+        candidate = (root / relative_path).resolve()
+        if root != candidate and root not in candidate.parents:
+            raise ValueError("managed path escaped project root")
+        return candidate
+
+    def asset_path(self, project_id: str, asset_id: str) -> Path:
+        project_root = self.path_for(project_id)
+        asset = self.asset(project_id, asset_id)
+        path = self._managed_child(project_root, asset.relative_path)
+        assets_root = (project_root / "assets").resolve()
+        if assets_root not in path.parents:
+            raise ValueError("asset path escaped managed assets root")
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+
+    def exports_dir(self, project_id: str) -> Path:
+        path = self.path_for(project_id) / "exports"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def export_path(self, project_id: str, filename: str) -> Path:
+        safe = Path(filename).name
+        if not safe or safe in {".", ".."}:
+            raise ValueError("invalid export filename")
+        root = self.exports_dir(project_id).resolve()
+        path = (root / safe).resolve()
+        if root not in path.parents:
+            raise ValueError("export path escaped managed exports root")
+        return path
+
     def _target(self, project_id: str, filename: str) -> tuple[str, Path, str]:
         folder = self.path_for(project_id)
         original_name = Path(filename).name.strip() or "upload.bin"
@@ -145,10 +185,7 @@ class ProjectStore:
         match = next((item for item in current if item.id == asset_id), None)
         if match is None:
             return False
-        managed = (folder / match.relative_path).resolve()
-        assets_root = (folder / "assets").resolve()
-        if assets_root not in managed.parents:
-            raise ValueError("asset path escaped managed root")
+        managed = self.asset_path(project_id, asset_id)
         if managed.exists():
             managed.unlink()
         write_json_atomic(folder / "assets.json", [asdict(item) for item in current if item.id != asset_id])
