@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import RECOVERY_STATUS, __version__
 from .config import default_paths
+from .clipper_service import select_clips_payload
 from .editor_store import EditorStore
 from .hub import discover_apps
 from .projects import ProjectStore
@@ -22,6 +23,8 @@ from .proxy_manager import ProxyManager
 from .render_queue import ACTIVE, RenderQueue
 from .runtime_center import diagnose
 from .sequence_service import start_sequence_render
+from .transcription_manager import TranscriptionManager
+from .transcription_service import select_transcript_clips
 from .video.clipper import TranscriptSegment, select_clips
 from .video.render import media_duration, probe_media
 from .workspace import Workspace
@@ -72,6 +75,7 @@ class AppRuntime:
     workspace: Workspace
     editors: EditorStore
     proxies: ProxyManager
+    transcriptions: TranscriptionManager
     renders: RenderQueue
 
     @classmethod
@@ -83,8 +87,9 @@ class AppRuntime:
         workspace = Workspace(user_root / "State" / "workspace")
         editors = EditorStore(user_root / "State" / "editor")
         proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)
+        transcriptions = TranscriptionManager(user_root / "State" / "transcriptions", projects, workspace)
         renders = RenderQueue(user_root / "State" / "renders", projects, workspace)
-        return cls(root, user_root, projects, workspace, editors, proxies, renders)
+        return cls(root, user_root, projects, workspace, editors, proxies, transcriptions, renders)
 
     def apps_payload(self) -> list[dict]:
         return [{"id": app.app_id, "name": app.name, "service": app.service, "entrypoint": app.entrypoint, "capabilities": list(app.capabilities)} for app in discover_apps(self.repo_root)]
@@ -99,10 +104,14 @@ class AppRuntime:
         project_root = self.projects.path_for(project_id).resolve()
         assets = self.projects.assets(project_id)
         proxies = {}
+        transcriptions = {}
         for asset in assets:
             record = self.proxies.get(project_id, asset.id)
             if record is not None:
                 proxies[asset.id] = asdict(record)
+            transcript = self.transcriptions.get(project_id, asset.id)
+            if transcript is not None:
+                transcriptions[asset.id] = asdict(transcript)
         return {
             "project": asdict(project),
             "paths": {
@@ -113,6 +122,7 @@ class AppRuntime:
             },
             "assets": [asdict(item) for item in assets],
             "proxies": proxies,
+            "transcriptions": transcriptions,
             "editor": self.editors.state(project_id),
             "renders": [asdict(item) for item in self.renders.list(project_id)],
             "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
@@ -165,11 +175,14 @@ class AppRuntime:
             raise ValueError("asset is configured as the editor external audio track")
         if self.proxies.active_for_asset(project_id, asset_id):
             raise ValueError("asset is referenced by an active preview proxy job")
+        if self.transcriptions.active_for_asset(project_id, asset_id):
+            raise ValueError("asset is referenced by an active transcription job")
         for row in self.renders.list(project_id):
             sources = getattr(row, "source_asset_ids", None) or [row.asset_id]
             if row.status in ACTIVE and asset_id in sources:
                 raise ValueError("asset is referenced by an active render job")
         self.proxies.invalidate(project_id, asset_id)
+        self.transcriptions.invalidate(project_id, asset_id)
         if not self.projects.remove_asset(project_id, asset_id):
             raise KeyError(asset_id)
         self.workspace.registries.timeline.append("asset.deleted", {"project_id": project_id, "asset_id": asset_id})
@@ -358,6 +371,13 @@ class MarketingHandler(BaseHTTPRequestHandler):
         path = self.server.runtime.proxies.file_path(project_id, asset_id)
         self._stream_file(path, "video/mp4")
 
+    def _transcript_file(self, project_id: str, asset_id: str) -> None:
+        row = self.server.runtime.transcriptions.get(project_id, asset_id)
+        if row is None or row.status != "PASS":
+            raise ValueError("transcript is not available until transcription passes")
+        path = self.server.runtime.transcriptions.transcript_path(project_id, asset_id)
+        self._stream_file(path, "application/json; charset=utf-8", attachment=path.name)
+
     def _render_file(self, job_id: str) -> None:
         row = self.server.runtime.renders.get(job_id)
         if row.status != "PASS":
@@ -377,7 +397,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             path = urlparse(self.path).path
-            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/styles.css"}:
+            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/transcription.js", "/clipper-modes.js", "/styles.css"}:
                 self._static(path)
                 return
             parts = self._segments()
@@ -405,6 +425,13 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self._json(self.server.runtime.proxy_status(parts[2], parts[4]))
             elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["proxy", "file"]:
                 self._proxy_file(parts[2], parts[4])
+            elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":
+                row = self.server.runtime.transcriptions.get(parts[2], parts[4])
+                self._json(asdict(row) if row is not None else {"project_id": parts[2], "asset_id": parts[4], "status": "NONE"})
+            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "segments"]:
+                self._json(self.server.runtime.transcriptions.segments(parts[2], parts[4]))
+            elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "file"]:
+                self._transcript_file(parts[2], parts[4])
             elif len(parts) == 3 and parts[:2] == ["api", "renders"]:
                 self._json(asdict(self.server.runtime.renders.get(parts[2])))
             elif len(parts) == 4 and parts[:2] == ["api", "renders"] and parts[3] == "file":
@@ -438,6 +465,12 @@ class MarketingHandler(BaseHTTPRequestHandler):
                     self._json(self.server.runtime.add_asset(parts[2], str(payload["source_path"]), str(payload.get("kind", "file"))), HTTPStatus.CREATED)
                 elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":
                     self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)
+                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":
+                    self._json(asdict(self.server.runtime.transcriptions.ensure(parts[2], parts[4], str(payload.get("language", "auto")), bool(payload.get("force", False)))), HTTPStatus.ACCEPTED)
+                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "cancel"]:
+                    self._json(asdict(self.server.runtime.transcriptions.cancel(parts[2], parts[4])))
+                elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "clips"]:
+                    self._json(select_transcript_clips(self.server.runtime, parts[2], parts[4], payload))
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["editor", "actions"]:
                     self._json(self.server.runtime.editor_action(parts[2], payload))
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["renders", "sequence"]:
@@ -452,7 +485,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
                     self._json(asdict(self.server.runtime.renders.cancel(parts[2])))
                 elif parts == ["api", "clipper", "select"]:
                     segments = [TranscriptSegment(float(row["start"]), float(row["end"]), str(row["text"])) for row in payload.get("segments", [])]
-                    self._json([asdict(item) for item in select_clips(segments, int(payload.get("target_count", 3)), float(payload.get("min_duration", 15)), float(payload.get("max_duration", 75)))])
+                    self._json(select_clips_payload(segments, payload))
                 else:
                     self._error(HTTPStatus.NOT_FOUND, "not found")
         except KeyError as exc:
@@ -518,5 +551,6 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
         pass
     finally:
         runtime.proxies.shutdown()
+        runtime.transcriptions.shutdown()
         runtime.renders.shutdown()
         server.server_close()

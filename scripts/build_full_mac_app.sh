@@ -20,12 +20,15 @@ case "$ARCH" in arm64|aarch64) ARCH="arm64" ;; x86_64|amd64) ARCH="x86_64" ;; *)
 
 # shellcheck disable=SC1091
 source "$ROOT/scripts/full_mac_media_runtime.env"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/full_mac_transcription_runtime.env"
 APP="$OUT/$APP_NAME"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 PY_RUNTIME="$RESOURCES/runtime/python"
 MEDIA_RUNTIME="$RESOURCES/runtime/media"
+TRANSCRIPTION_RUNTIME="$RESOURCES/runtime/transcription"
 SOURCE="$RESOURCES/source"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
@@ -44,6 +47,8 @@ IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "
 [[ "$MACOS_BUNDLE_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "invalid macOS bundle version: $MACOS_BUNDLE_VERSION"
 
 "$ROOT/scripts/build_embedded_ffmpeg.sh" --target "$MEDIA_RUNTIME" --arch "$ARCH"
+"$ROOT/scripts/build_embedded_whisper.sh" --arch "$ARCH" --output "$TRANSCRIPTION_RUNTIME"
+"$ROOT/scripts/audit_embedded_whisper.sh" "$APP" "$ARCH"
 /usr/bin/ditto "$ROOT/src" "$SOURCE/src"
 /usr/bin/ditto "$ROOT/apps" "$SOURCE/apps"
 /usr/bin/ditto "$ROOT/web" "$SOURCE/web"
@@ -61,7 +66,11 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "macos_bundle_version": "$MACOS_BUNDLE_VERSION",
   "embedded_python": "3.12.13",
   "embedded_ffmpeg": "$FULL_MAC_FFMPEG_VERSION",
-  "ffmpeg_source_commit": "$FULL_MAC_FFMPEG_COMMIT_SHA"
+  "ffmpeg_source_commit": "$FULL_MAC_FFMPEG_COMMIT_SHA",
+  "embedded_whisper": "$WHISPER_TAG",
+  "whisper_source_commit": "$WHISPER_COMMIT",
+  "whisper_model": "$WHISPER_MODEL_NAME",
+  "whisper_model_sha256": "$WHISPER_MODEL_SHA256"
 }
 JSON
 
@@ -74,6 +83,8 @@ resources = Path(__file__).resolve().parent
 sys.path.insert(0, str(resources / "source" / "src"))
 os.environ.setdefault("BINARIO_FFMPEG", str(resources / "runtime" / "media" / "bin" / "ffmpeg"))
 os.environ.setdefault("BINARIO_FFPROBE", str(resources / "runtime" / "media" / "bin" / "ffprobe"))
+os.environ.setdefault("BINARIO_WHISPER_CLI", str(resources / "runtime" / "transcription" / "bin" / "whisper-cli"))
+os.environ.setdefault("BINARIO_WHISPER_MODEL", str(resources / "runtime" / "transcription" / "models" / "ggml-tiny.bin"))
 from binario_marketing.service import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
@@ -87,11 +98,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 RESOURCES="$(cd "$HERE/../Resources" && pwd)"
 PYTHON="$RESOURCES/runtime/python/bin/python3"
 MEDIA_BIN="$RESOURCES/runtime/media/bin"
+TRANSCRIPTION="$RESOURCES/runtime/transcription"
 [[ -x "$PYTHON" ]] || { echo "BINARIO Marketing Python runtime missing" >&2; exit 5; }
 [[ -x "$MEDIA_BIN/ffmpeg" && -x "$MEDIA_BIN/ffprobe" ]] || { echo "BINARIO Marketing media runtime missing" >&2; exit 5; }
-export PATH="$MEDIA_BIN:$RESOURCES/runtime/python/bin:/usr/bin:/bin"
+[[ -x "$TRANSCRIPTION/bin/whisper-cli" && -f "$TRANSCRIPTION/models/ggml-tiny.bin" ]] || { echo "BINARIO Marketing transcription runtime missing" >&2; exit 5; }
+export PATH="$MEDIA_BIN:$TRANSCRIPTION/bin:$RESOURCES/runtime/python/bin:/usr/bin:/bin"
 export BINARIO_FFMPEG="$MEDIA_BIN/ffmpeg"
 export BINARIO_FFPROBE="$MEDIA_BIN/ffprobe"
+export BINARIO_WHISPER_CLI="$TRANSCRIPTION/bin/whisper-cli"
+export BINARIO_WHISPER_MODEL="$TRANSCRIPTION/models/ggml-tiny.bin"
 unset PYTHONHOME PYTHONPATH
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1

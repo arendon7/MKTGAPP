@@ -59,7 +59,7 @@ print('SMOKE PASS: local whisper.cpp transcription + managed transcript artifact
 PY
 
 /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
-  --data '{"target_count":1,"min_duration":1,"max_duration":30}' \
+  --data '{"target_count":1,"min_duration":1,"max_duration":30,"mode":"objective","target_duration":8}' \
   "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/transcription/clips" > "$TMP/transcription-clips.json"
 "$PY" -I -B - "$TMP/transcription-clips.json" <<'PY'
 import json,sys
@@ -68,7 +68,10 @@ assert len(clips)>=1,clips
 row=clips[0]
 assert float(row['end'])>float(row['start'])>=0,row
 assert str(row.get('text','')).strip(),row
-print('SMOKE PASS: automatic transcript-driven Clipper')
+assert row.get('tone') in {'educativo','accionable','narrativo','provocativo'},row
+assert isinstance(row.get('reasons'),list),row
+assert 'hook_score' in row and 'closure_score' in row and 'duration_fit' in row,row
+print('SMOKE PASS: narrative objective-duration transcript-driven Clipper')
 PY
 
 echo 'SMOKE PASS: offline transcription -> transcript -> automatic Clipper'

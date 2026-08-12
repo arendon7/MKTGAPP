@@ -1,0 +1,260 @@
+name: Full Mac App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "apps/**"
+      - "web/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/full-mac-app.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "apps/**"
+      - "web/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/full-mac-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache verified FFmpeg runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-media-${{ matrix.arch }}
+          key: ffmpeg-8.1.2-${{ runner.os }}-${{ matrix.arch }}-38b88335f99e76ed89ff3c93f877fdefce736c13
+      - name: Cache verified Whisper runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-whisper-${{ matrix.arch }}
+          key: whisper-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
+      - name: Build native app
+        shell: bash
+        env:
+          FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
+          FULL_MAC_WHISPER_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-whisper-${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_embedded_ffmpeg.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh scripts/build_embedded_whisper.sh scripts/audit_embedded_whisper.sh scripts/smoke_full_mac_transcription.sh
+          LOG="$RUNNER_TEMP/full-mac-build-${{ matrix.arch }}.log"
+          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}" 2>&1 | /usr/bin/tee "$LOG"
+      - name: Preserve build diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/full-mac-build-${{ matrix.arch }}.log"
+          {
+            echo '### FULL MAC build failure — ${{ matrix.arch }}'
+            echo '```text'
+            /usr/bin/tail -n 160 "$LOG" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-mac-build-diagnostics-${{ matrix.arch }}
+          path: ${{ runner.temp }}/full-mac-build-${{ matrix.arch }}.log
+          if-no-files-found: warn
+      - name: Audit bundle
+        run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+      - name: Audit embedded local transcription runtime
+        shell: bash
+        run: bash scripts/audit_embedded_whisper.sh "dist/Binario Marketing IA.app" "${{ matrix.arch }}"
+      - name: Smoke boot and render through bundled API
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="dist/Binario Marketing IA.app"
+          PY="$APP/Contents/Resources/runtime/python/bin/python3"
+          MEDIA="$APP/Contents/Resources/runtime/media/bin"
+          DATA="$RUNNER_TEMP/binario-smoke-data"
+          BASE="http://127.0.0.1:18765"
+          "$MEDIA/ffmpeg" -hide_banner -version > "$RUNNER_TEMP/ffmpeg-version.txt"
+          "$MEDIA/ffprobe" -hide_banner -version > "$RUNNER_TEMP/ffprobe-version.txt"
+          /usr/bin/head -n 1 "$RUNNER_TEMP/ffmpeg-version.txt"
+          /usr/bin/head -n 1 "$RUNNER_TEMP/ffprobe-version.txt"
+
+          SOURCE="$RUNNER_TEMP/smoke-source.mp4"
+          OVERLAY="$RUNNER_TEMP/smoke-overlay.mp4"
+          AUDIO="$RUNNER_TEMP/smoke-audio.wav"
+          "$MEDIA/ffmpeg" -hide_banner -loglevel error \
+            -f lavfi -i 'testsrc2=size=640x360:rate=24' \
+            -t 1.0 -c:v mpeg4 -an -y "$SOURCE"
+          "$MEDIA/ffmpeg" -hide_banner -loglevel error \
+            -f lavfi -i 'color=c=red:size=160x90:rate=24' \
+            -t 1.0 -c:v mpeg4 -an -y "$OVERLAY"
+          "$MEDIA/ffmpeg" -hide_banner -loglevel error \
+            -f lavfi -i 'sine=frequency=880:sample_rate=48000' \
+            -t 1.0 -c:a pcm_s16le -y "$AUDIO"
+
+          LOG="$RUNNER_TEMP/binario-smoke.log"
+          BINARIO_IA_HOME="$DATA" BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 \
+            "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
+          PID=$!
+          cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          READY=0
+          for _ in $(seq 1 60); do
+            if /usr/bin/curl --fail --silent "$BASE/api/health" > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
+            sleep 0.25
+          done
+          if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
+          /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
+          /usr/bin/curl --fail --silent "$BASE/api/apps" > "$RUNNER_TEMP/apps.json"
+          /usr/bin/curl --fail --silent "$BASE/api/runtime" > "$RUNNER_TEMP/runtime.json"
+          /usr/bin/curl --fail --silent "$BASE/pro-media.js" > "$RUNNER_TEMP/pro-media.js"
+          /usr/bin/grep -q 'ensureActiveProxy' "$RUNNER_TEMP/pro-media.js"
+          /usr/bin/curl --fail --silent "$BASE/visual-timeline.js" > "$RUNNER_TEMP/visual-timeline.js"
+          /usr/bin/grep -q 'reorder_to' "$RUNNER_TEMP/visual-timeline.js"
+          /usr/bin/curl --fail --silent "$BASE/transcription.js" > "$RUNNER_TEMP/transcription.js"
+          /usr/bin/grep -q 'startTranscription' "$RUNNER_TEMP/transcription.js"
+          /usr/bin/curl --fail --silent "$BASE/clipper-modes.js" > "$RUNNER_TEMP/clipper-modes.js"
+          /usr/bin/grep -q 'clipperModePayload' "$RUNNER_TEMP/clipper-modes.js"
+          "$PY" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
+          import json, sys
+          apps=json.load(open(sys.argv[1], encoding='utf-8'))
+          runtime=json.load(open(sys.argv[2], encoding='utf-8'))
+          assert len(apps)==12, len(apps)
+          by_name={row['name']: row for row in runtime}
+          for name in ('ffmpeg','ffprobe'):
+              row=by_name[name]
+              assert row['available'] is True, row
+              assert '/runtime/media/bin/' in row['location'], row
+          print('SMOKE PASS: 12/12 apps + embedded ffmpeg/ffprobe + pro-media bundle')
+          PY
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data '{"name":"FULL MAC Pro Media Smoke"}' "$BASE/api/projects" > "$RUNNER_TEMP/project.json"
+          PROJECT_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/project.json")"
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: video/mp4' \
+            --data-binary @"$SOURCE" \
+            "$BASE/api/projects/$PROJECT_ID/assets/upload?filename=smoke-source.mp4&kind=video" > "$RUNNER_TEMP/asset.json"
+          ASSET_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/asset.json")"
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: video/mp4' \
+            --data-binary @"$OVERLAY" \
+            "$BASE/api/projects/$PROJECT_ID/assets/upload?filename=smoke-overlay.mp4&kind=video" > "$RUNNER_TEMP/overlay.json"
+          OVERLAY_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/overlay.json")"
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: audio/wav' \
+            --data-binary @"$AUDIO" \
+            "$BASE/api/projects/$PROJECT_ID/assets/upload?filename=smoke-audio.wav&kind=audio" > "$RUNNER_TEMP/audio.json"
+          AUDIO_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/audio.json")"
+
+          /usr/bin/curl --fail --silent "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/probe" > "$RUNNER_TEMP/probe.json"
+          "$PY" -I -B - "$RUNNER_TEMP/probe.json" <<'PY'
+          import json,sys
+          row=json.load(open(sys.argv[1], encoding='utf-8'))
+          assert row['duration'] is not None and row['duration'] > 0, row
+          assert any(stream.get('codec_type') == 'video' for stream in row['streams']), row
+          print('SMOKE PASS: managed asset probe')
+          PY
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' --data '{}' \
+            "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/proxy" > "$RUNNER_TEMP/proxy-start.json"
+          PROXY_STATUS=""
+          for _ in $(seq 1 120); do
+            /usr/bin/curl --fail --silent "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/proxy" > "$RUNNER_TEMP/proxy.json"
+            PROXY_STATUS="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$RUNNER_TEMP/proxy.json")"
+            case "$PROXY_STATUS" in
+              PASS|FAIL|CANCELLED|INTERRUPTED) break ;;
+            esac
+            sleep 0.25
+          done
+          if [[ "$PROXY_STATUS" != "PASS" ]]; then cat "$RUNNER_TEMP/proxy.json"; cat "$LOG"; exit 1; fi
+          /usr/bin/curl --fail --silent --range 0-99 -D "$RUNNER_TEMP/proxy-headers.txt" \
+            "$BASE/api/projects/$PROJECT_ID/assets/$ASSET_ID/proxy/file" -o "$RUNNER_TEMP/proxy-range.bin"
+          /usr/bin/grep -q ' 206 ' "$RUNNER_TEMP/proxy-headers.txt"
+          test "$(/usr/bin/wc -c < "$RUNNER_TEMP/proxy-range.bin" | tr -d ' ')" = "100"
+          echo 'SMOKE PASS: SHA-addressed managed proxy + HTTP Range'
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data "{\"action\":\"overlay_add\",\"id\":\"smoke-overlay\",\"asset_id\":\"$OVERLAY_ID\",\"start\":0,\"end\":0.5,\"x\":0.72,\"y\":0.12,\"scale\":0.4,\"opacity\":0.8,\"z_index\":10}" \
+            "$BASE/api/projects/$PROJECT_ID/editor/actions" > "$RUNNER_TEMP/editor-overlay.json"
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data '{"action":"subtitle_add","id":"smoke-sub","start":0.05,"end":0.45,"text":"Smoke subtitle"}' \
+            "$BASE/api/projects/$PROJECT_ID/editor/actions" > "$RUNNER_TEMP/editor-subtitle.json"
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data "{\"action\":\"audio_set\",\"asset_id\":\"$AUDIO_ID\",\"offset_seconds\":0,\"gain_db\":-2,\"normalize\":true,\"target_lufs\":-16,\"replace_original\":true}" \
+            "$BASE/api/projects/$PROJECT_ID/editor/actions" > "$RUNNER_TEMP/editor-audio.json"
+
+          /usr/bin/curl --fail --silent -X POST -H 'Content-Type: application/json' \
+            --data "{\"asset_id\":\"$ASSET_ID\",\"start\":0,\"end\":0.5,\"aspect\":\"16:9\",\"label\":\"ci-pro-media\"}" \
+            "$BASE/api/projects/$PROJECT_ID/renders" > "$RUNNER_TEMP/render-start.json"
+          JOB_ID="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$RUNNER_TEMP/render-start.json")"
+
+          STATUS=""
+          for _ in $(seq 1 120); do
+            /usr/bin/curl --fail --silent "$BASE/api/renders/$JOB_ID" > "$RUNNER_TEMP/render.json"
+            STATUS="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$RUNNER_TEMP/render.json")"
+            case "$STATUS" in
+              PASS|FAIL|CANCELLED|INTERRUPTED) break ;;
+            esac
+            sleep 0.25
+          done
+          if [[ "$STATUS" != "PASS" ]]; then
+            cat "$RUNNER_TEMP/render.json" || true
+            cat "$LOG" || true
+            exit 1
+          fi
+
+          "$PY" -I -B - "$RUNNER_TEMP/render.json" "$ASSET_ID" "$OVERLAY_ID" "$AUDIO_ID" <<'PY'
+          import json,sys
+          row=json.load(open(sys.argv[1], encoding='utf-8'))
+          expected={sys.argv[2],sys.argv[3],sys.argv[4]}
+          assert row.get('composition_sha256'), row
+          assert row.get('subtitle_relative_path'), row
+          assert expected.issubset(set(row.get('source_asset_ids') or [])), row
+          print('SMOKE PASS: composition snapshot + source refs + subtitle sidecar metadata')
+          PY
+
+          /usr/bin/curl --fail --silent "$BASE/api/renders/$JOB_ID/file" > "$RUNNER_TEMP/rendered.mp4"
+          /usr/bin/curl --fail --silent "$BASE/api/renders/$JOB_ID/subtitles" > "$RUNNER_TEMP/rendered.srt"
+          /usr/bin/grep -q 'Smoke subtitle' "$RUNNER_TEMP/rendered.srt"
+          test -s "$RUNNER_TEMP/rendered.mp4"
+          JOB_SHA="$("$PY" -I -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["sha256"])' "$RUNNER_TEMP/render.json")"
+          FILE_SHA="$(/usr/bin/shasum -a 256 "$RUNNER_TEMP/rendered.mp4" | /usr/bin/awk '{print $1}')"
+          [[ "$JOB_SHA" == "$FILE_SHA" ]]
+          "$MEDIA/ffprobe" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$RUNNER_TEMP/rendered.mp4" > "$RUNNER_TEMP/rendered-dimensions.txt"
+          /usr/bin/grep -q '^1920,1080$' "$RUNNER_TEMP/rendered-dimensions.txt"
+          "$MEDIA/ffprobe" -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$RUNNER_TEMP/rendered.mp4" > "$RUNNER_TEMP/rendered-audio.txt"
+          /usr/bin/grep -q '^audio$' "$RUNNER_TEMP/rendered-audio.txt"
+          echo "SMOKE PASS: managed pro-media render + audio + SRT + SHA256 ($FILE_SHA)"
+
+          bash scripts/smoke_full_mac_sequence.sh "$BASE" "$PY" "$MEDIA" "$RUNNER_TEMP"
+      - name: Package and hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="Binario-Marketing-IA-${{ matrix.arch }}-${GITHUB_SHA::12}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
+          /usr/bin/shasum -a 256 "$ZIP" > "$ZIP.sha256"
+          printf '{"git_sha":"%s","architecture":"%s","artifact":"%s","ffmpeg":"8.1.2","ffmpeg_commit":"38b88335f99e76ed89ff3c93f877fdefce736c13"}\n' "$GITHUB_SHA" "${{ matrix.arch }}" "$ZIP" > FULL_MAC_DELIVERY.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binario-marketing-full-mac-${{ matrix.arch }}
+          path: |
+            Binario-Marketing-IA-*.zip
+            Binario-Marketing-IA-*.zip.sha256
+            FULL_MAC_DELIVERY.json
+          if-no-files-found: error

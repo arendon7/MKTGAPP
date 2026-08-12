@@ -25,6 +25,7 @@ class TranscriptionRuntimeContractTests(unittest.TestCase):
         builder=(ROOT/'scripts/build_full_mac_app.sh').read_text(encoding='utf-8')
         self.assertIn('build_embedded_whisper.sh',builder)
         self.assertIn('runtime/transcription',builder)
+        self.assertLess(builder.index('build_embedded_whisper.sh'),builder.index('/usr/bin/codesign'))
 
     def test_native_gate_audits_and_executes_offline_transcription(self):
         workflow=(ROOT/'.github/workflows/full-mac-app.yml').read_text(encoding='utf-8')
@@ -39,8 +40,8 @@ class TranscriptionRuntimeContractTests(unittest.TestCase):
 
     def test_source_runtime_resolves_embedded_bundle_before_external_path(self):
         source=(ROOT/'src/binario_marketing/video/transcription.py').read_text(encoding='utf-8')
-        self.assertIn('runtime/transcription/bin/whisper-cli',source)
-        self.assertIn('runtime/transcription/models',source)
+        self.assertIn('transcription/bin/whisper-cli',source)
+        self.assertIn('transcription/models/ggml-tiny.bin',source)
         self.assertIn('BINARIO_WHISPER_CLI',source)
         self.assertIn('BINARIO_WHISPER_MODEL',source)
 
