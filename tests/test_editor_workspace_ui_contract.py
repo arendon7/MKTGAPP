@@ -17,9 +17,27 @@ class EditorWorkspaceUiContractTests(unittest.TestCase):
         self.assertIn("event.code==='Space'", js)
         self.assertIn("event.metaKey||event.ctrlKey", js)
 
-    def test_ci_syntax_checks_browser_javascript(self):
+    def test_pro_media_inspector_and_managed_endpoints_are_wired(self):
+        html = (ROOT / "web/index.html").read_text(encoding="utf-8")
+        pro = (ROOT / "web/pro-media.js").read_text(encoding="utf-8")
+        service = (ROOT / "src/binario_marketing/service.py").read_text(encoding="utf-8")
+        for token in (
+            "preview-source-select", "proxy-generate", "overlay-form", "overlay-list",
+            "subtitle-form", "subtitle-list", "audio-form", "audio-clear", "pro-media.js",
+        ):
+            self.assertIn(token, html)
+        for token in ("overlay_add", "overlay_edit", "subtitle_add", "subtitle_edit", "audio_set", "audio_clear"):
+            self.assertIn(token, pro)
+        self.assertIn("proxy/file", pro)
+        self.assertIn("/subtitles", pro)
+        self.assertIn('"/pro-media.js"', service)
+        self.assertIn('parts[5] == "proxy"', service)
+        self.assertIn('parts[3] == "subtitles"', service)
+
+    def test_ci_syntax_checks_every_browser_javascript_file(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        self.assertIn("node --check web/app.js", workflow)
+        self.assertIn("for script in web/*.js", workflow)
+        self.assertIn('node --check "$script"', workflow)
 
 
 if __name__ == "__main__":
