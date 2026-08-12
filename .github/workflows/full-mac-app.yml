@@ -225,6 +225,8 @@ jobs:
           "$MEDIA/ffprobe" -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$RUNNER_TEMP/rendered.mp4" > "$RUNNER_TEMP/rendered-audio.txt"
           /usr/bin/grep -q '^audio$' "$RUNNER_TEMP/rendered-audio.txt"
           echo "SMOKE PASS: managed pro-media render + audio + SRT + SHA256 ($FILE_SHA)"
+
+          bash scripts/smoke_full_mac_sequence.sh "$BASE" "$PY" "$MEDIA" "$RUNNER_TEMP"
       - name: Package and hash
         shell: bash
         run: |
