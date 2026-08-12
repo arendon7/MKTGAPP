@@ -131,8 +131,6 @@ class ProxyManager:
         if asset.kind != "video":
             raise ValueError("proxy generation is only supported for video assets")
         path = self.projects.asset_path(project_id, asset_id)
-        if asset.sha256:
-            return asset.sha256, path
         digest, _ = _sha256_file(path)
         return digest, path
 
@@ -221,11 +219,13 @@ class ProxyManager:
 
     def invalidate(self, project_id: str, asset_id: str) -> None:
         key = (project_id, asset_id)
+        row = self.get(project_id, asset_id)
+        if row is not None and row.status in PROXY_ACTIVE:
+            raise ValueError("asset has an active preview proxy job")
         with self._lock:
             process = self._processes.get(key)
             if process is not None and process.poll() is None:
                 raise ValueError("asset has an active preview proxy job")
-        row = self.get(project_id, asset_id)
         if row is not None:
             self.projects.proxy_path(project_id, row.filename).unlink(missing_ok=True)
             self._remove_record(project_id, asset_id)
