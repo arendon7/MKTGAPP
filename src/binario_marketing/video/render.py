@@ -33,6 +33,7 @@ class OverlayRenderSpec:
     opacity: float = 1.0
     z_index: int = 10
     behind_subject: bool = False
+    kind: str = "image"
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,18 @@ def _overlay_filter(index: int, label: str, item: OverlayRenderSpec, render_star
         active_end = min(active_end, render_duration)
     if active_end <= 0 or active_end <= active_start:
         return None
-    prep = f"[{index}:v]scale=iw*{item.scale:.6f}:ih*{item.scale:.6f},format=rgba,colorchannelmixer=aa={item.opacity:.6f}[{label}]"
+    filters: list[str] = []
+    if item.kind == "video":
+        source_skip = max(0.0, render_start - item.start)
+        if source_skip > 0:
+            filters.append(f"trim=start={source_skip:.6f}")
+    filters.extend([
+        f"scale=iw*{item.scale:.6f}:ih*{item.scale:.6f}",
+        "format=rgba",
+        f"colorchannelmixer=aa={item.opacity:.6f}",
+        f"setpts=PTS-STARTPTS+{active_start:.6f}/TB",
+    ])
+    prep = f"[{index}:v]" + ",".join(filters) + f"[{label}]"
     return prep, active_start, active_end
 
 
@@ -185,12 +197,13 @@ def composite_ffmpeg_command(spec: CompositeRenderSpec, ffmpeg: str | None = Non
     audio_label: str | None = None
     if audio_index is not None and spec.audio is not None:
         audio_filters = [f"[{audio_index}:a]aresample=async=1:first_pts=0"]
-        if spec.audio.offset_seconds > 0:
-            delay_ms = int(round(spec.audio.offset_seconds * 1000))
-            audio_filters.append(f"adelay={delay_ms}:all=1")
-        elif spec.audio.offset_seconds < 0:
-            audio_filters.append(f"atrim=start={abs(spec.audio.offset_seconds):.6f}")
+        source_position = spec.start - spec.audio.offset_seconds
+        if source_position > 0:
+            audio_filters.append(f"atrim=start={source_position:.6f}")
             audio_filters.append("asetpts=PTS-STARTPTS")
+        elif source_position < 0:
+            delay_ms = int(round(abs(source_position) * 1000))
+            audio_filters.append(f"adelay={delay_ms}:all=1")
         if abs(spec.audio.gain_db) > 1e-9:
             audio_filters.append(f"volume={spec.audio.gain_db:.3f}dB")
         if spec.audio.normalize:
