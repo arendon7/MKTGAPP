@@ -44,13 +44,16 @@ jobs:
           for script in web/*.js; do node --check "$script"; done
           python -m unittest discover -s tests -v
           python -m compileall -q src scripts
-      - name: Commit reconciled source
+      - name: Publish validated source staging
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p staging
+          cp .github/workflows/full-mac-app.yml staging/full-mac-app.yml
+          git restore --source=HEAD -- .github/workflows scripts/reconcile_incomplete_features.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --check
-          git commit -m "fix: reconcile standalone transcription and narrative clipper source"
+          git commit -m "fix: stage reconciled transcription and narrative clipper source"
           git push origin HEAD:fix/transcription-reconciliation
