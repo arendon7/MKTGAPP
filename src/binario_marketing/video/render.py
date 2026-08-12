@@ -73,7 +73,16 @@ def ffmpeg_command(spec: RenderSpec, ffmpeg: str | None = None) -> list[str]:
         command += ["-t", f"{spec.duration:.6f}"]
     command += [
         "-vf", f"scale={spec.width}:{spec.height}:force_original_aspect_ratio=decrease,pad={spec.width}:{spec.height}:(ow-iw)/2:(oh-ih)/2",
-        "-c:v", codec, "-pix_fmt", "yuv420p", "-c:a", spec.audio_codec,
+        "-c:v", codec,
+    ]
+    # VideoToolbox can advertise h264_videotoolbox even when a hardware compression
+    # session is unavailable (notably some Intel/virtualized Macs). FFmpeg explicitly
+    # supports -allow_sw 1 so the same H.264 pipeline can fall back to Apple's software
+    # implementation instead of failing the whole render.
+    if codec == "h264_videotoolbox":
+        command += ["-allow_sw", "1"]
+    command += [
+        "-pix_fmt", "yuv420p", "-c:a", spec.audio_codec,
         "-movflags", "+faststart",
     ]
     if spec.progress:
