@@ -1,0 +1,78 @@
+name: Whisper Build Hardening
+
+on:
+  push:
+    branches: [feature/auto-transcription-clipper]
+    paths: [.github/workflows/whisper-build-hardening.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Harden build script and builder execution order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          script=Path('scripts/build_embedded_whisper.sh');text=script.read_text(encoding='utf-8')
+          old='''  SRC="$WORK/whisper.cpp"\n  git clone --quiet --no-checkout "$WHISPER_REPOSITORY" "$SRC"\n  git -C "$SRC" fetch --quiet --depth 1 origin "$WHISPER_COMMIT"\n  git -C "$SRC" checkout --quiet --detach "$WHISPER_COMMIT"\n  ACTUAL="$(git -C "$SRC" rev-parse HEAD)"\n'''
+          new='''  SRC="$WORK/whisper.cpp"\n  git clone --quiet --depth 1 --branch "$WHISPER_TAG" "$WHISPER_REPOSITORY" "$SRC"\n  ACTUAL="$(git -C "$SRC" rev-parse HEAD)"\n'''
+          if old in text:text=text.replace(old,new,1)
+          old='''  cmake --build "$BUILD" --config Release --target whisper-cli --parallel "$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"\n  BUILT="$(find "$BUILD" -type f -name whisper-cli -perm -111 | head -n 1)"\n'''
+          new='''  JOBS="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"\n  if ! cmake --build "$BUILD" --config Release --target whisper-cli --parallel "$JOBS"; then\n    cmake --build "$BUILD" --config Release --parallel "$JOBS"\n  fi\n  BUILT="$(find "$BUILD" -type f -name whisper-cli -perm -111 | head -n 1)"\n'''
+          if old in text:text=text.replace(old,new,1)
+          text=text.replace('''  "$CACHE_BIN" --help >/dev/null 2>&1 || { echo "whisper-cli smoke help failed" >&2; exit 7; }\n''','''  HELP="$WORK/whisper-help.txt"\n  "$CACHE_BIN" --help >"$HELP" 2>&1 || true\n  grep -Eqi 'whisper|usage|model' "$HELP" || { echo "whisper-cli help smoke failed" >&2; cat "$HELP" >&2; exit 7; }\n''',1)
+          text=text.replace('''"$CLI" --help >/dev/null 2>&1 || { echo "embedded whisper-cli help smoke failed" >&2; exit 7; }\n''','''HELP="$(mktemp "${TMPDIR:-/tmp}/whisper-help.XXXXXX")"\n"$CLI" --help >"$HELP" 2>&1 || true\ngrep -Eqi 'whisper|usage|model' "$HELP" || { echo "embedded whisper-cli help smoke failed" >&2; cat "$HELP" >&2; rm -f "$HELP"; exit 7; }\nrm -f "$HELP"\n''')
+          script.write_text(text,encoding='utf-8')
+
+          builder=Path('scripts/build_full_mac_app.sh');text=builder.read_text(encoding='utf-8')
+          marker='# Pinned local transcription runtime: added after the canonical app bundle is assembled.'
+          if marker in text:
+              start=text.index(marker)
+              block=text[start:]
+              text=text[:start].rstrip()+"\n"
+              exit_index=text.find('\nexit 0')
+              if exit_index>=0:text=text[:exit_index]+"\n\n"+block.rstrip()+"\n"+text[exit_index:]
+              else:text=text.rstrip()+"\n\n"+block.rstrip()+"\n"
+              builder.write_text(text,encoding='utf-8')
+
+          contract=Path('tests/test_transcription_runtime_contract.py');text=contract.read_text(encoding='utf-8')
+          needle="self.assertIn('runtime/transcription',builder)"
+          addition=needle+"\n        exit_pos=builder.find('\\nexit 0')\n        if exit_pos>=0:self.assertLess(builder.index('build_embedded_whisper.sh'),exit_pos)"
+          if addition not in text:
+              if needle not in text:raise SystemExit('builder contract anchor missing')
+              text=text.replace(needle,addition,1)
+          contract.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate hardened source
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+      - name: Commit hardening and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/whisper-build-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: harden native whisper build and execution order"
+          git push origin HEAD:feature/auto-transcription-clipper
