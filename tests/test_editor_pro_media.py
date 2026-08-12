@@ -57,7 +57,7 @@ class EditorProMediaTests(unittest.TestCase):
             self.assertEqual(store.apply(project_id, "overlay_delete", {"id": "o"})["overlays"], [])
             self.assertEqual(store.apply(project_id, "subtitle_delete", {"id": "s"})["subtitles"], [])
 
-    def test_composite_command_maps_overlay_and_normalized_external_audio(self):
+    def test_composite_command_maps_overlay_and_timeline_aligned_external_audio(self):
         spec = CompositeRenderSpec(
             input_path=Path("/managed/main.mp4"),
             output_path=Path("/managed/out.mp4"),
@@ -76,10 +76,31 @@ class EditorProMediaTests(unittest.TestCase):
         self.assertIn("/managed/voice.wav", text)
         self.assertIn("overlay=", text)
         self.assertIn("colorchannelmixer=aa=0.700000", text)
-        self.assertIn("adelay=250:all=1", text)
+        self.assertIn("atrim=start=4.750000", text)
         self.assertIn("loudnorm=I=-16.0", text)
         self.assertIn("-allow_sw 1", text)
         self.assertIn("-progress pipe:1", text)
+
+    def test_external_audio_delays_when_it_starts_after_render_origin(self):
+        spec = CompositeRenderSpec(
+            input_path=Path("/managed/main.mp4"), output_path=Path("/managed/out.mp4"),
+            width=640, height=360, start=0, duration=2,
+            audio=AudioRenderSpec(Path("/managed/voice.wav"), offset_seconds=0.25, normalize=False),
+            video_codec="mpeg4",
+        )
+        text = " ".join(composite_ffmpeg_command(spec, ffmpeg="/usr/local/bin/ffmpeg"))
+        self.assertIn("adelay=250:all=1", text)
+
+    def test_video_overlay_can_skip_elapsed_source_when_render_starts_mid_layer(self):
+        spec = CompositeRenderSpec(
+            input_path=Path("/managed/main.mp4"), output_path=Path("/managed/out.mp4"),
+            width=640, height=360, start=5, duration=3,
+            overlays=(OverlayRenderSpec(Path("/managed/broll.mp4"), 2, 9, kind="video"),),
+            video_codec="mpeg4",
+        )
+        text = " ".join(composite_ffmpeg_command(spec, ffmpeg="/usr/local/bin/ffmpeg"))
+        self.assertIn("trim=start=3.000000", text)
+        self.assertIn("setpts=PTS-STARTPTS+0.000000/TB", text)
 
     def test_srt_is_clipped_and_rebased_to_render_range(self):
         srt = subtitles_to_srt([
