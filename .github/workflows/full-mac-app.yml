@@ -2,7 +2,7 @@ name: Full Mac App
 
 on:
   push:
-    branches: [main, "feature/**", "wave/**"]
+    branches: [main]
     paths:
       - "src/**"
       - "apps/**"
