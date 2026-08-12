@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BINARIO Marketing</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">SISTEMA BINARIO</p>
+      <h1>Marketing Workspace</h1>
+    </div>
+    <div class="status-wrap">
+      <span id="health-dot" class="dot"></span>
+      <span id="health-text">Conectando…</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <aside class="rail">
+      <section class="panel compact">
+        <div class="section-head">
+          <div><p class="eyebrow">PROYECTOS</p><h2>Workspace</h2></div>
+        </div>
+        <form id="create-project" class="stack">
+          <label>Nuevo proyecto<input id="project-name" required placeholder="Campaña agosto"></label>
+          <button type="submit" class="primary">Crear proyecto</button>
+        </form>
+        <div id="project-list" class="project-list"></div>
+      </section>
+
+      <section class="panel compact">
+        <p class="eyebrow">APPS</p>
+        <div id="app-list" class="app-list"></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div id="empty-state" class="panel empty-state">
+        <p class="eyebrow">BINARIO MARKETING</p>
+        <h2>Selecciona o crea un proyecto</h2>
+        <p>El proyecto conserva assets, timeline, decisiones y handoffs en el Workspace unificado.</p>
+      </div>
+
+      <div id="project-view" class="hidden stack-lg">
+        <section class="panel project-hero">
+          <div>
+            <p class="eyebrow">PROYECTO ACTIVO</p>
+            <h2 id="active-project-name">—</h2>
+            <p id="active-project-meta" class="muted"></p>
+          </div>
+          <div class="hero-stats">
+            <div><strong id="asset-count">0</strong><span>assets</span></div>
+            <div><strong id="clip-count">0</strong><span>clips</span></div>
+            <div><strong id="handoff-count">0</strong><span>handoffs</span></div>
+          </div>
+        </section>
+
+        <div class="grid-two">
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">MEDIA</p><h3>Assets</h3></div></div>
+            <form id="asset-form" class="stack">
+              <label>Ruta local del archivo<input id="asset-path" required placeholder="/Users/tuusuario/Movies/video.mp4"></label>
+              <label>Tipo<select id="asset-kind"><option value="video">Video</option><option value="audio">Audio</option><option value="image">Imagen</option><option value="logo">Logo</option><option value="document">Documento</option></select></label>
+              <button class="secondary" type="submit">Importar al proyecto</button>
+            </form>
+            <div id="asset-list" class="asset-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">EDITOR</p><h3>Timeline</h3></div><span id="aspect-badge" class="badge">16:9</span></div>
+            <div class="toolbar">
+              <button data-editor-action="undo">Deshacer</button>
+              <button data-editor-action="redo">Rehacer</button>
+              <button data-editor-action="reset">Reset</button>
+              <select id="aspect-select" aria-label="Relación de aspecto"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:5</option></select>
+            </div>
+            <form id="clip-form" class="clip-form">
+              <select id="clip-asset" required><option value="">Selecciona asset</option></select>
+              <input id="clip-start" type="number" min="0" step="0.1" value="0" aria-label="Inicio">
+              <input id="clip-end" type="number" min="0.1" step="0.1" value="10" aria-label="Fin">
+              <input id="clip-track" type="number" min="0" step="1" value="0" aria-label="Track">
+              <button class="primary" type="submit">Añadir clip</button>
+            </form>
+            <div id="timeline" class="timeline"></div>
+          </section>
+        </div>
+
+        <div class="grid-two">
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">CLIPPER</p><h3>Clips para redes</h3></div></div>
+            <p class="muted">Pega segmentos como <code>inicio|fin|texto</code>, uno por línea.</p>
+            <textarea id="clipper-input" rows="7" placeholder="0|8|¿Cómo evitar este error?&#10;8|20|La clave es definir el objetivo."></textarea>
+            <div class="inline-form">
+              <label>Cantidad<input id="clipper-count" type="number" min="1" max="20" value="3"></label>
+              <label>Mín. seg<input id="clipper-min" type="number" min="1" value="15"></label>
+              <label>Máx. seg<input id="clipper-max" type="number" min="1" value="75"></label>
+              <button id="clipper-run" class="secondary" type="button">Seleccionar</button>
+            </div>
+            <div id="clipper-results" class="results"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">HANDOFF</p><h3>Continuar en otra app</h3></div></div>
+            <form id="handoff-form" class="stack">
+              <label>Destino<select id="handoff-app" required></select></label>
+              <label>Resumen<textarea id="handoff-summary" rows="4" placeholder="Qué queda listo y qué debe continuar la siguiente app"></textarea></label>
+              <button class="secondary" type="submit">Crear handoff</button>
+            </form>
+            <div id="handoff-list" class="handoff-list"></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="section-head"><div><p class="eyebrow">TRAZABILIDAD</p><h3>Unified Timeline</h3></div><button id="refresh-timeline" type="button">Actualizar</button></div>
+          <div id="unified-timeline" class="unified-timeline"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

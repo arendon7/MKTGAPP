@@ -49,6 +49,32 @@ class EditorSession:
         self._redo: list[EditorState] = []
         self._initial = self.snapshot()
 
+    @staticmethod
+    def _state_from_dict(payload: dict) -> EditorState:
+        return EditorState(
+            clips=copy.deepcopy(payload.get("clips", [])),
+            subtitles=copy.deepcopy(payload.get("subtitles", [])),
+            overlays=copy.deepcopy(payload.get("overlays", [])),
+            aspect_ratio=str(payload.get("aspect_ratio", "16:9")),
+        )
+
+    @classmethod
+    def from_export(cls, payload: dict) -> "EditorSession":
+        session = cls()
+        session._restore(cls._state_from_dict(payload.get("state", {})))
+        session._undo = [cls._state_from_dict(row) for row in payload.get("undo", [])]
+        session._redo = [cls._state_from_dict(row) for row in payload.get("redo", [])]
+        session._initial = cls._state_from_dict(payload.get("initial", {}))
+        return session
+
+    def export(self) -> dict:
+        return {
+            "state": asdict(self.snapshot()),
+            "undo": [asdict(item) for item in self._undo],
+            "redo": [asdict(item) for item in self._redo],
+            "initial": asdict(self._initial),
+        }
+
     def snapshot(self) -> EditorState:
         return EditorState(
             clips=copy.deepcopy(self.timeline.to_dict()),
@@ -62,6 +88,8 @@ class EditorSession:
         self._redo.clear()
 
     def _restore(self, state: EditorState) -> None:
+        if state.aspect_ratio not in ASPECT_RATIOS:
+            raise ValueError(f"invalid aspect ratio: {state.aspect_ratio}")
         self.timeline = Timeline([Clip(**item) for item in copy.deepcopy(state.clips)])
         self.subtitles = [Subtitle(**item) for item in copy.deepcopy(state.subtitles)]
         self.overlays = [Overlay(**item) for item in copy.deepcopy(state.overlays)]
@@ -89,15 +117,30 @@ class EditorSession:
         if clip.locked:
             raise ValueError("clip is locked")
         self._checkpoint()
-        clip.track = track
+        clip.track = int(track)
 
     def split(self, clip_id: str, at: float):
         self._checkpoint()
-        return self.timeline.split(clip_id, at)
+        try:
+            return self.timeline.split(clip_id, at)
+        except Exception:
+            self._undo.pop()
+            raise
+
+    def lock(self, clip_id: str, value: bool = True) -> None:
+        clip = next((item for item in self.timeline.clips if item.id == clip_id), None)
+        if clip is None:
+            raise KeyError(clip_id)
+        self._checkpoint()
+        self.timeline.lock(clip_id, value)
 
     def delete_clip(self, clip_id: str) -> bool:
         self._checkpoint()
-        deleted = self.timeline.delete(clip_id)
+        try:
+            deleted = self.timeline.delete(clip_id)
+        except Exception:
+            self._undo.pop()
+            raise
         if not deleted:
             self._undo.pop()
         return deleted

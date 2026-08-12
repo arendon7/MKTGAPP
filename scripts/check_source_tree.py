@@ -15,6 +15,16 @@ REQUIRED = {
     "src/binario_marketing/projects.py",
     "src/binario_marketing/video/clipper.py",
     "src/binario_marketing/video/session.py",
+    "src/binario_marketing/editor_store.py",
+    "src/binario_marketing/service.py",
+    "web/index.html",
+    "web/app.js",
+    "web/styles.css",
+    "scripts/full_mac_python_runtime.env",
+    "scripts/bootstrap_full_mac_python.sh",
+    "scripts/build_full_mac_app.sh",
+    "scripts/audit_full_mac_app.sh",
+    ".github/workflows/full-mac-app.yml",
 }
 
 
@@ -28,23 +38,18 @@ def main() -> int:
     missing = sorted(REQUIRED - set(tracked))
     forbidden = [path for path in tracked if Path(path).suffix.lower() in FORBIDDEN_SUFFIXES]
     manifests = sorted(ROOT.glob("apps/*/manifest.json"))
-    manifest_ids = []
-    for path in manifests:
-        manifest_ids.append(json.loads(path.read_text(encoding="utf-8"))["id"])
+    manifest_ids = [json.loads(path.read_text(encoding="utf-8"))["id"] for path in manifests]
     errors = []
     if len(manifests) != 12:
         errors.append(f"expected 12 app manifests, found {len(manifests)}")
     if len(manifest_ids) != len(set(manifest_ids)):
         errors.append("duplicate app manifest ids")
     if missing or forbidden or errors:
-        for item in errors:
-            print("ERROR:", item)
-        if missing:
-            print("missing required source:", *missing, sep="\n- ")
-        if forbidden:
-            print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
+        for item in errors: print("ERROR:", item)
+        if missing: print("missing required source:", *missing, sep="\n- ")
+        if forbidden: print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
         return 1
-    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps)")
+    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, local web + FULL MAC builders present)")
     return 0
 
 

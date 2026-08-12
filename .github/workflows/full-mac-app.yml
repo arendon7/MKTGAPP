@@ -1,0 +1,84 @@
+name: Full Mac App
+
+on:
+  push:
+    branches: [main, "feature/**", "wave/**"]
+    paths:
+      - "src/**"
+      - "apps/**"
+      - "web/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/full-mac-app.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "apps/**"
+      - "web/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/full-mac-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native app
+        run: |
+          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh
+          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}"
+      - name: Audit bundle
+        run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+      - name: Smoke boot local API from bundled runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="dist/Binario Marketing IA.app"
+          LOG="$RUNNER_TEMP/binario-smoke.log"
+          BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
+          PID=$!
+          cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          READY=0
+          for _ in $(seq 1 40); do
+            if /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/health > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
+            sleep 0.25
+          done
+          if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
+          /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
+          /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/apps > "$RUNNER_TEMP/apps.json"
+          "$APP/Contents/Resources/runtime/python/bin/python3" -I -B - "$RUNNER_TEMP/apps.json" <<'PY'
+          import json, sys
+          rows=json.load(open(sys.argv[1], encoding='utf-8'))
+          assert len(rows)==12, len(rows)
+          print('SMOKE PASS: 12/12 apps')
+          PY
+      - name: Package and hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="Binario-Marketing-IA-${{ matrix.arch }}-${GITHUB_SHA::12}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
+          /usr/bin/shasum -a 256 "$ZIP" > "$ZIP.sha256"
+          printf '{"git_sha":"%s","architecture":"%s","artifact":"%s"}\n' "$GITHUB_SHA" "${{ matrix.arch }}" "$ZIP" > FULL_MAC_DELIVERY.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binario-marketing-full-mac-${{ matrix.arch }}
+          path: |
+            Binario-Marketing-IA-*.zip
+            Binario-Marketing-IA-*.zip.sha256
+            FULL_MAC_DELIVERY.json
+          if-no-files-found: error
