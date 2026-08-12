@@ -21,6 +21,7 @@ from .providers import PROVIDERS, diagnose_provider
 from .proxy_manager import ProxyManager
 from .render_queue import ACTIVE, RenderQueue
 from .runtime_center import diagnose
+from .sequence_service import start_sequence_render
 from .video.clipper import TranscriptSegment, select_clips
 from .video.render import media_duration, probe_media
 from .workspace import Workspace
@@ -28,7 +29,7 @@ from .workspace import Workspace
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
-STREAM_CHUNK_BYTES = 1024 * 1024
+STREAM_CHUNK_BYTES = 1024 * 1024 * 1024 // 1024
 RENDER_DIMENSIONS = {
     "16:9": (1920, 1080),
     "9:16": (1080, 1920),
@@ -439,6 +440,8 @@ class MarketingHandler(BaseHTTPRequestHandler):
                     self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["editor", "actions"]:
                     self._json(self.server.runtime.editor_action(parts[2], payload))
+                elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["renders", "sequence"]:
+                    self._json(start_sequence_render(self.server.runtime, parts[2], payload), HTTPStatus.ACCEPTED)
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "renders":
                     self._json(self.server.runtime.start_render(parts[2], payload), HTTPStatus.ACCEPTED)
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "handoffs":
