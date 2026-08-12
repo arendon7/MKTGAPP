@@ -1,5 +1,4 @@
 import hashlib
-import json
 import os
 import sys
 import tempfile
@@ -93,9 +92,10 @@ class ProxyManagerTests(unittest.TestCase):
         self.assertIn("ffmpeg executable unavailable", row.error)
         other.shutdown()
 
-    def test_proxy_path_rejects_escape(self):
-        with self.assertRaises(ValueError):
-            self.projects.proxy_path(self.project.id, "../escape.mp4")
+    def test_proxy_path_forces_managed_basename(self):
+        path = self.projects.proxy_path(self.project.id, "../escape.mp4")
+        self.assertEqual(path.name, "escape.mp4")
+        self.assertEqual(path.parent, self.projects.proxies_dir(self.project.id).resolve())
 
 
 if __name__ == "__main__":
