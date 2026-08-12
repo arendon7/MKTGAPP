@@ -108,9 +108,11 @@ phase "audit binary linkage"
 for binary in "$TARGET/bin/ffmpeg" "$TARGET/bin/ffprobe"; do
   /usr/bin/codesign --force --sign - "$binary" >/dev/null
   "$binary" -hide_banner -version >/dev/null
-  DEPS="$(/usr/bin/otool -L "$binary")"
-  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$DEPS"; then
-    printf '%s\n' "$DEPS" >&2
+  OTOOL_OUTPUT="$(/usr/bin/otool -L "$binary")"
+  # otool line 1 is the inspected binary path itself, not a linked dependency.
+  LINKED_DEPS="${OTOOL_OUTPUT#*$'\n'}"
+  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$LINKED_DEPS"; then
+    printf '%s\n' "$OTOOL_OUTPUT" >&2
     fail "FFmpeg binary links to non-system build-host dependency"
   fi
 done

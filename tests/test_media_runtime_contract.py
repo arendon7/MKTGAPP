@@ -28,6 +28,15 @@ class MediaRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("--enable-gpl", script)
         self.assertNotIn("--enable-nonfree", script)
 
+    def test_otool_header_is_not_misclassified_as_linked_dependency(self):
+        builder = (ROOT / "scripts/build_embedded_ffmpeg.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts/audit_full_mac_app.sh").read_text(encoding="utf-8")
+        for text in (builder, audit):
+            self.assertIn("OTOOL_OUTPUT=", text)
+            self.assertIn("LINKED_DEPS=", text)
+            self.assertIn("OTOOL_OUTPUT#*$'\\n'", text)
+            self.assertIn('<<<"$LINKED_DEPS"', text)
+
     def test_pipefail_sensitive_checks_use_files_not_early_closing_pipelines(self):
         builder = (ROOT / "scripts/build_embedded_ffmpeg.sh").read_text(encoding="utf-8")
         audit = (ROOT / "scripts/audit_full_mac_app.sh").read_text(encoding="utf-8")

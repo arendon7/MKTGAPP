@@ -19,9 +19,11 @@ if /usr/bin/grep -Eq '(^|[;&|[:space:]])python3([[:space:]]|$)' "$LAUNCHER"; the
 /usr/bin/grep -q 'runtime/media/bin' "$LAUNCHER" || { echo "launcher does not prioritize embedded media runtime" >&2; exit 3; }
 
 for binary in "$FFMPEG" "$FFPROBE"; do
-  DEPS="$(/usr/bin/otool -L "$binary")"
-  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$DEPS"; then
-    printf '%s\n' "$DEPS" >&2
+  OTOOL_OUTPUT="$(/usr/bin/otool -L "$binary")"
+  # The first otool line is the inspected binary path; only subsequent lines are dependencies.
+  LINKED_DEPS="${OTOOL_OUTPUT#*$'\n'}"
+  if /usr/bin/grep -Eq '(/opt/homebrew|/usr/local|/private/tmp|/Users/runner)' <<<"$LINKED_DEPS"; then
+    printf '%s\n' "$OTOOL_OUTPUT" >&2
     echo "media runtime has non-system dependency" >&2
     exit 3
   fi
