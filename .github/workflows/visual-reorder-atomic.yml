@@ -1,0 +1,89 @@
+name: Visual Reorder Atomic Wiring
+
+on:
+  push:
+    branches: [feature/editor-visual-timeline]
+    paths: [.github/workflows/visual-reorder-atomic.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply atomic reorder contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          timeline=Path('src/binario_marketing/video/timeline.py')
+          text=timeline.read_text(encoding='utf-8')
+          anchor='''    def track(self, track: int = 0) -> list[Clip]:\n        return [clip for clip in self.clips if clip.track == int(track)]\n'''
+          method='''    def reorder_to(self, clip_id: str, target_position: int) -> bool:\n        clip = next((c for c in self.clips if c.id == clip_id), None)\n        if clip is None:\n            raise KeyError(clip_id)\n        if clip.locked:\n            raise ValueError("clip is locked")\n        same_track = [c for c in self.clips if c.track == clip.track]\n        current = same_track.index(clip)\n        target = int(target_position)\n        if target < 0 or target >= len(same_track):\n            raise ValueError("target position is outside track bounds")\n        if target == current:\n            return False\n        direction = 1 if target > current else -1\n        while current != target:\n            neighbour = same_track[current + direction]\n            left = self.clips.index(clip)\n            right = self.clips.index(neighbour)\n            self.clips[left], self.clips[right] = self.clips[right], self.clips[left]\n            same_track[current], same_track[current + direction] = same_track[current + direction], same_track[current]\n            current += direction\n        return True\n\n'''
+          if 'def reorder_to(' not in text:
+              if anchor not in text: raise SystemExit('timeline track anchor missing')
+              text=text.replace(anchor,method+anchor,1)
+              timeline.write_text(text,encoding='utf-8')
+
+          session=Path('src/binario_marketing/video/session.py')
+          text=session.read_text(encoding='utf-8')
+          anchor='''    def split(self, clip_id: str, at: float):\n'''
+          method='''    def reorder_clip_to(self, clip_id: str, target_position: int) -> None:\n        self._checkpoint()\n        try:\n            changed = self.timeline.reorder_to(clip_id, int(target_position))\n        except Exception:\n            self._undo.pop()\n            raise\n        if not changed:\n            self._undo.pop()\n\n'''
+          if 'def reorder_clip_to(' not in text:
+              if anchor not in text: raise SystemExit('session split anchor missing')
+              text=text.replace(anchor,method+anchor,1)
+              session.write_text(text,encoding='utf-8')
+
+          store=Path('src/binario_marketing/editor_store.py')
+          text=store.read_text(encoding='utf-8')
+          anchor='''            elif action == "split":\n                session.split(str(payload["clip_id"]), float(payload["at"]))\n'''
+          replacement='''            elif action == "reorder_to":\n                session.reorder_clip_to(str(payload["clip_id"]), int(payload["target_position"]))\n            elif action == "split":\n                session.split(str(payload["clip_id"]), float(payload["at"]))\n'''
+          if 'action == "reorder_to"' not in text:
+              if anchor not in text: raise SystemExit('editor store split anchor missing')
+              text=text.replace(anchor,replacement,1)
+              store.write_text(text,encoding='utf-8')
+
+          visual=Path('web/visual-timeline.js')
+          text=visual.read_text(encoding='utf-8')
+          old='''async function visualReorderTo(clipId,targetIndex){\n  const clips=visualTrackZero(),sourceIndex=clips.findIndex(row=>row.id===clipId);if(sourceIndex<0||sourceIndex===targetIndex)return;const direction=targetIndex>sourceIndex?1:-1,steps=Math.abs(targetIndex-sourceIndex);\n  try{for(let step=0;step<steps;step++)await editorAction({action:'reorder',clip_id:clipId,direction});toast('Orden del master actualizado')}catch(err){toast(err.message)}\n}\n'''
+          new='''async function visualReorderTo(clipId,targetIndex){\n  const clips=visualTrackZero(),sourceIndex=clips.findIndex(row=>row.id===clipId);if(sourceIndex<0||sourceIndex===targetIndex)return;\n  try{await editorAction({action:'reorder_to',clip_id:clipId,target_position:targetIndex});toast('Orden del master actualizado')}catch(err){toast(err.message)}\n}\n'''
+          if old not in text: raise SystemExit('visual reorder anchor missing')
+          text=text.replace(old,new,1)
+          hook='''const visualBaseRenderProject=renderProject;\n'''
+          wrapper='''const visualBaseEditorAction=editorAction;\neditorAction=async function(payload){if(state.visualTimeline.masterActive)visualStopMaster(false);return visualBaseEditorAction(payload)};\n\n'''
+          if 'const visualBaseEditorAction=editorAction;' not in text:
+              if hook not in text: raise SystemExit('visual render hook missing')
+              text=text.replace(hook,wrapper+hook,1)
+          visual.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate atomic reorder
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python scripts/check_source_tree.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+      - name: Commit validated patch and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/visual-reorder-atomic.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "editor: make visual drag reorder atomic"
+          git push origin HEAD:feature/editor-visual-timeline
