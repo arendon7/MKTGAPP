@@ -18,16 +18,20 @@ done
 [[ -n "$ARCH" ]] || ARCH="$(uname -m)"
 case "$ARCH" in arm64|aarch64) ARCH="arm64" ;; x86_64|amd64) ARCH="x86_64" ;; *) fail "unsupported architecture: $ARCH" ;; esac
 
+# shellcheck disable=SC1091
+source "$ROOT/scripts/full_mac_media_runtime.env"
 APP="$OUT/$APP_NAME"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
-RUNTIME="$RESOURCES/runtime/python"
+PY_RUNTIME="$RESOURCES/runtime/python"
+MEDIA_RUNTIME="$RESOURCES/runtime/media"
 SOURCE="$RESOURCES/source"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
 
-"$ROOT/scripts/bootstrap_full_mac_python.sh" --target "$RUNTIME" --arch "$ARCH"
+"$ROOT/scripts/bootstrap_full_mac_python.sh" --target "$PY_RUNTIME" --arch "$ARCH"
+"$ROOT/scripts/build_embedded_ffmpeg.sh" --target "$MEDIA_RUNTIME" --arch "$ARCH"
 /usr/bin/ditto "$ROOT/src" "$SOURCE/src"
 /usr/bin/ditto "$ROOT/apps" "$SOURCE/apps"
 /usr/bin/ditto "$ROOT/web" "$SOURCE/web"
@@ -36,10 +40,13 @@ mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
 GIT_SHA="$(/usr/bin/git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')"
 cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
 {
-  "schema": "binario.marketing.full-mac-build.v1",
+  "schema": "binario.marketing.full-mac-build.v2",
   "git_sha": "$GIT_SHA",
   "architecture": "$ARCH",
-  "app_name": "$APP_NAME"
+  "app_name": "$APP_NAME",
+  "embedded_python": "3.12.13",
+  "embedded_ffmpeg": "$FULL_MAC_FFMPEG_VERSION",
+  "ffmpeg_source_commit": "$FULL_MAC_FFMPEG_COMMIT_SHA"
 }
 JSON
 
@@ -50,6 +57,8 @@ import sys
 from pathlib import Path
 resources = Path(__file__).resolve().parent
 sys.path.insert(0, str(resources / "source" / "src"))
+os.environ.setdefault("BINARIO_FFMPEG", str(resources / "runtime" / "media" / "bin" / "ffmpeg"))
+os.environ.setdefault("BINARIO_FFPROBE", str(resources / "runtime" / "media" / "bin" / "ffprobe"))
 from binario_marketing.service import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
@@ -62,8 +71,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RESOURCES="$(cd "$HERE/../Resources" && pwd)"
 PYTHON="$RESOURCES/runtime/python/bin/python3"
-[[ -x "$PYTHON" ]] || { echo "BINARIO Marketing runtime missing" >&2; exit 5; }
-export PATH="$RESOURCES/runtime/python/bin:/usr/bin:/bin"
+MEDIA_BIN="$RESOURCES/runtime/media/bin"
+[[ -x "$PYTHON" ]] || { echo "BINARIO Marketing Python runtime missing" >&2; exit 5; }
+[[ -x "$MEDIA_BIN/ffmpeg" && -x "$MEDIA_BIN/ffprobe" ]] || { echo "BINARIO Marketing media runtime missing" >&2; exit 5; }
+export PATH="$MEDIA_BIN:$RESOURCES/runtime/python/bin:/usr/bin:/bin"
+export BINARIO_FFMPEG="$MEDIA_BIN/ffmpeg"
+export BINARIO_FFPROBE="$MEDIA_BIN/ffprobe"
 unset PYTHONHOME PYTHONPATH
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
@@ -83,7 +96,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Binario Marketing IA</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.9.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleVersion</key><string>2</string>
 <key>LSMinimumSystemVersion</key><string>12.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

@@ -15,13 +15,16 @@ REQUIRED = {
     "src/binario_marketing/projects.py",
     "src/binario_marketing/video/clipper.py",
     "src/binario_marketing/video/session.py",
+    "src/binario_marketing/video/render.py",
     "src/binario_marketing/editor_store.py",
     "src/binario_marketing/service.py",
     "web/index.html",
     "web/app.js",
     "web/styles.css",
     "scripts/full_mac_python_runtime.env",
+    "scripts/full_mac_media_runtime.env",
     "scripts/bootstrap_full_mac_python.sh",
+    "scripts/build_embedded_ffmpeg.sh",
     "scripts/build_full_mac_app.sh",
     "scripts/audit_full_mac_app.sh",
     ".github/workflows/full-mac-app.yml",
@@ -49,7 +52,7 @@ def main() -> int:
         if missing: print("missing required source:", *missing, sep="\n- ")
         if forbidden: print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
         return 1
-    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, local web + FULL MAC builders present)")
+    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, local web + Python/FFmpeg FULL MAC builders present)")
     return 0
 
 

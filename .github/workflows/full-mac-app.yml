@@ -36,35 +36,52 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Cache verified FFmpeg runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-media-${{ matrix.arch }}
+          key: ffmpeg-8.1.2-${{ runner.os }}-${{ matrix.arch }}-38b88335f99e76ed89ff3c93f877fdefce736c13
       - name: Build native app
+        env:
+          FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
         run: |
-          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh
+          chmod +x scripts/bootstrap_full_mac_python.sh scripts/build_embedded_ffmpeg.sh scripts/build_full_mac_app.sh scripts/audit_full_mac_app.sh
           scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}"
       - name: Audit bundle
         run: scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
-      - name: Smoke boot local API from bundled runtime
+      - name: Smoke boot local API from bundled runtimes
         shell: bash
         run: |
           set -euo pipefail
           APP="dist/Binario Marketing IA.app"
+          MEDIA="$APP/Contents/Resources/runtime/media/bin"
+          "$MEDIA/ffmpeg" -hide_banner -version | head -n 1
+          "$MEDIA/ffprobe" -hide_banner -version | head -n 1
           LOG="$RUNNER_TEMP/binario-smoke.log"
           BINARIO_NO_BROWSER=1 BINARIO_PORT=18765 "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
           PID=$!
           cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
           trap cleanup EXIT
           READY=0
-          for _ in $(seq 1 40); do
+          for _ in $(seq 1 60); do
             if /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/health > "$RUNNER_TEMP/health.json"; then READY=1; break; fi
             sleep 0.25
           done
           if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
           /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
           /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/apps > "$RUNNER_TEMP/apps.json"
-          "$APP/Contents/Resources/runtime/python/bin/python3" -I -B - "$RUNNER_TEMP/apps.json" <<'PY'
+          /usr/bin/curl --fail --silent http://127.0.0.1:18765/api/runtime > "$RUNNER_TEMP/runtime.json"
+          "$APP/Contents/Resources/runtime/python/bin/python3" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
           import json, sys
-          rows=json.load(open(sys.argv[1], encoding='utf-8'))
-          assert len(rows)==12, len(rows)
-          print('SMOKE PASS: 12/12 apps')
+          apps=json.load(open(sys.argv[1], encoding='utf-8'))
+          runtime=json.load(open(sys.argv[2], encoding='utf-8'))
+          assert len(apps)==12, len(apps)
+          by_name={row['name']: row for row in runtime}
+          for name in ('ffmpeg','ffprobe'):
+              row=by_name[name]
+              assert row['available'] is True, row
+              assert '/runtime/media/bin/' in row['location'], row
+          print('SMOKE PASS: 12/12 apps + embedded ffmpeg/ffprobe')
           PY
       - name: Package and hash
         shell: bash
@@ -73,7 +90,7 @@ jobs:
           ZIP="Binario-Marketing-IA-${{ matrix.arch }}-${GITHUB_SHA::12}.zip"
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
           /usr/bin/shasum -a 256 "$ZIP" > "$ZIP.sha256"
-          printf '{"git_sha":"%s","architecture":"%s","artifact":"%s"}\n' "$GITHUB_SHA" "${{ matrix.arch }}" "$ZIP" > FULL_MAC_DELIVERY.json
+          printf '{"git_sha":"%s","architecture":"%s","artifact":"%s","ffmpeg":"8.1.2","ffmpeg_commit":"38b88335f99e76ed89ff3c93f877fdefce736c13"}\n' "$GITHUB_SHA" "${{ matrix.arch }}" "$ZIP" > FULL_MAC_DELIVERY.json
       - uses: actions/upload-artifact@v4
         with:
           name: binario-marketing-full-mac-${{ matrix.arch }}
