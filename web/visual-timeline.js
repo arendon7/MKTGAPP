@@ -86,8 +86,8 @@ async function visualBeginTrim(event,clip,side){
   handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',cancel);
 }
 async function visualReorderTo(clipId,targetIndex){
-  const clips=visualTrackZero(),sourceIndex=clips.findIndex(row=>row.id===clipId);if(sourceIndex<0||sourceIndex===targetIndex)return;const direction=targetIndex>sourceIndex?1:-1,steps=Math.abs(targetIndex-sourceIndex);
-  try{for(let step=0;step<steps;step++)await editorAction({action:'reorder',clip_id:clipId,direction});toast('Orden del master actualizado')}catch(err){toast(err.message)}
+  const clips=visualTrackZero(),sourceIndex=clips.findIndex(row=>row.id===clipId);if(sourceIndex<0||sourceIndex===targetIndex)return;
+  try{await editorAction({action:'reorder_to',clip_id:clipId,target_position:targetIndex});toast('Orden del master actualizado')}catch(err){toast(err.message)}
 }
 
 function visualStopMaster(reset=false){
@@ -128,6 +128,9 @@ function visualApplyMasterCompositionTime(masterTime){
 function visualHighlightCurrent(){
   const located=visualLocateMasterTime(state.visualTimeline.masterTime||0);document.querySelectorAll('#visual-sequence-rail .visual-sequence-clip').forEach(node=>{const active=located&&node.dataset.clipId===located.clip.id;node.style.boxShadow=active?'inset 0 0 0 2px #171717':'none'})
 }
+
+const visualBaseEditorAction=editorAction;
+editorAction=async function(payload){if(state.visualTimeline.masterActive)visualStopMaster(false);return visualBaseEditorAction(payload)};
 
 const visualBaseRenderProject=renderProject;
 renderProject=function(){visualBaseRenderProject();visualRender()};

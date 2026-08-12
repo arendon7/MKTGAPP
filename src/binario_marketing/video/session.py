@@ -181,6 +181,16 @@ class EditorSession:
             self._undo.pop()
             raise
 
+    def reorder_clip_to(self, clip_id: str, target_position: int) -> None:
+        self._checkpoint()
+        try:
+            changed = self.timeline.reorder_to(clip_id, int(target_position))
+        except Exception:
+            self._undo.pop()
+            raise
+        if not changed:
+            self._undo.pop()
+
     def split(self, clip_id: str, at: float):
         self._checkpoint()
         try:
