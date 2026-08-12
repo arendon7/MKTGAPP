@@ -1,0 +1,81 @@
+name: Visual Timeline FULL MAC Wiring
+
+on:
+  push:
+    branches: [feature/editor-visual-timeline]
+    paths: [.github/workflows/visual-full-mac-wiring.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Patch native delivery gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow=Path('.github/workflows/full-mac-app.yml')
+          text=workflow.read_text(encoding='utf-8')
+          old='''          /usr/bin/curl --fail --silent "$BASE/pro-media.js" > "$RUNNER_TEMP/pro-media.js"\n          /usr/bin/grep -q 'ensureActiveProxy' "$RUNNER_TEMP/pro-media.js"\n'''
+          new='''          /usr/bin/curl --fail --silent "$BASE/pro-media.js" > "$RUNNER_TEMP/pro-media.js"\n          /usr/bin/grep -q 'ensureActiveProxy' "$RUNNER_TEMP/pro-media.js"\n          /usr/bin/curl --fail --silent "$BASE/visual-timeline.js" > "$RUNNER_TEMP/visual-timeline.js"\n          /usr/bin/grep -q 'visualLoadMasterTime' "$RUNNER_TEMP/visual-timeline.js"\n          /usr/bin/grep -q 'reorder_to' "$RUNNER_TEMP/visual-timeline.js"\n'''
+          if 'visual-timeline.js" > "$RUNNER_TEMP/visual-timeline.js"' not in text:
+              if old not in text: raise SystemExit('FULL MAC browser smoke anchor missing')
+              text=text.replace(old,new,1)
+              workflow.write_text(text,encoding='utf-8')
+
+          smoke=Path('scripts/smoke_full_mac_sequence.sh')
+          text=smoke.read_text(encoding='utf-8')
+          old='''  --data "{\\"action\\":\\"reorder\\",\\"clip_id\\":\\"$CLIP2_ID\\",\\"direction\\":-1}" \\\n'''
+          new='''  --data "{\\"action\\":\\"reorder_to\\",\\"clip_id\\":\\"$CLIP2_ID\\",\\"target_position\\":0}" \\\n'''
+          if 'reorder_to' not in text:
+              if old not in text: raise SystemExit('sequence smoke reorder anchor missing')
+              text=text.replace(old,new,1)
+              smoke.write_text(text,encoding='utf-8')
+
+          contract=Path('tests/test_render_delivery_contract.py')
+          text=contract.read_text(encoding='utf-8')
+          text=text.replace('"action":"reorder"','reorder_to')
+          if 'visual-timeline.js' not in text:
+              needle='''        self.assertIn('/pro-media.js', workflow)\n'''
+              if needle not in text:
+                  needle='''            "/pro-media.js",\n'''
+                  replacement='''            "/pro-media.js",\n            "/visual-timeline.js",\n            "visualLoadMasterTime",\n            "reorder_to",\n'''
+                  if needle not in text: raise SystemExit('render delivery contract anchor missing')
+                  text=text.replace(needle,replacement,1)
+              else:
+                  text=text.replace(needle,needle+'''        self.assertIn('/visual-timeline.js', workflow)\n        self.assertIn('visualLoadMasterTime', workflow)\n''',1)
+          contract.write_text(text,encoding='utf-8')
+          PY
+      - name: Validate native gate wiring
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          python scripts/check_source_tree.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          for script in web/*.js; do node --check "$script"; done
+          python -m unittest discover -s tests -v
+          python -m compileall -q src scripts
+      - name: Commit validated gate and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/visual-full-mac-wiring.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "ci: smoke visual timeline in native Mac bundles"
+          git push origin HEAD:feature/editor-visual-timeline
