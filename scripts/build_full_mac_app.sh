@@ -79,7 +79,7 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "whisper_source_commit": "$WHISPER_COMMIT",
   "whisper_model": "$WHISPER_MODEL_NAME",
   "whisper_model_sha256": "$WHISPER_MODEL_SHA256",
-  "meta_keychain_helper": "SecItem/data-protection"
+  "meta_keychain_helper": "SecItem/data-protection-first"
 }
 JSON
 
