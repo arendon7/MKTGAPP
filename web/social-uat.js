@@ -1,5 +1,24 @@
 const metaUatState={timer:null,lastProjectId:null};
 
+function ensureMetaUatStyles(){
+  if($('#meta-uat-style'))return;
+  const style=document.createElement('style');style.id='meta-uat-style';style.textContent=`
+    .meta-uat-panel{margin:14px 0 18px;background:#fff}
+    .meta-uat-progress{height:7px;margin:12px 0 14px;border-radius:999px;background:#e8e6df;overflow:hidden}
+    .meta-uat-progress span{display:block;width:0;height:100%;background:#171717;transition:width .2s ease}
+    .meta-uat-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+    .meta-uat-step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;align-items:flex-start;padding:10px;border:1px solid #e4e1d8;border-radius:12px;background:#fff}
+    .meta-uat-step.done{background:#f2f1eb}
+    .meta-uat-marker{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#dedbd2;color:#5e5a52;font-size:10px;font-weight:900}
+    .meta-uat-step.done .meta-uat-marker{background:#171717;color:#fff}
+    .meta-uat-copy strong{display:block;font-size:11px}
+    .meta-uat-copy p{margin-top:3px;color:#77756d;font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+    .meta-uat-actions{margin:0 0 8px}
+    @media(max-width:980px){.meta-uat-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:640px){.meta-uat-steps{grid-template-columns:1fr}.meta-uat-actions button{width:100%}}
+  `;document.head.append(style);
+}
+
 function metaUatEligibleReels(){
   if(typeof socialEligibleReels==='function')return socialEligibleReels();
   return (state.current?.renders||[]).filter(row=>row.status==='PASS'&&Number(row.width)*16===Number(row.height)*9&&Number(row.width)>=540&&Number(row.height)>=960&&(Number(row.end)-Number(row.start))>=4&&(Number(row.end)-Number(row.start))<=60);
@@ -31,7 +50,7 @@ function metaUatSteps(){
 }
 
 function ensureMetaUatPanel(){
-  const distribution=$('#social-distribution');if(!distribution)return null;
+  const distribution=$('#social-distribution');if(!distribution)return null;ensureMetaUatStyles();
   let panel=$('#meta-uat-panel');if(panel)return panel;
   panel=document.createElement('section');panel.id='meta-uat-panel';panel.className='composer-card meta-uat-panel';
   panel.innerHTML=`
