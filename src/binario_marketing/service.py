@@ -222,7 +222,24 @@ class MarketingHandler(core.MarketingHandler):
         else:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
+    def _social_bundle(self) -> None:
+        root = self.server.runtime.repo_root / "web"
+        social = root / "social.js"
+        readiness = root / "meta-readiness.js"
+        if not social.is_file() or not readiness.is_file():
+            raise FileNotFoundError("social browser bundle is incomplete")
+        body = social.read_bytes() + b"\n" + readiness.read_bytes()
+        self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
+        path = core.urlparse(self.path).path
+        if path == "/social.js":
+            try:
+                self._social_bundle()
+            except Exception as exc:
+                self._extension_error(exc)
+            return
         parts = self._segments()
         if parts == ["api", "meta", "readiness"]:
             try:
