@@ -17,6 +17,7 @@ from .config import default_paths
 from .clipper_service import select_clips_payload
 from .editor_store import EditorStore
 from .hub import discover_apps
+from .meta_graph import MetaGraphClient, MetaGraphError
 from .projects import ProjectStore
 from .providers import PROVIDERS, diagnose_provider
 from .proxy_manager import ProxyManager
@@ -24,6 +25,8 @@ from .quick_clip_service import clear_selection, clear_selection_for_asset, save
 from .render_queue import ACTIVE, RenderQueue
 from .runtime_center import diagnose
 from .sequence_service import start_sequence_render
+from .social_service import MetaSocialPublisher, SocialScheduler
+from .social_store import SocialStore
 from .transcription_manager import TranscriptionManager
 from .transcription_service import select_transcript_clips
 from .video.clipper import TranscriptSegment, select_clips
@@ -78,6 +81,8 @@ class AppRuntime:
     proxies: ProxyManager
     transcriptions: TranscriptionManager
     renders: RenderQueue
+    social: SocialStore
+    social_scheduler: SocialScheduler | None = None
 
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
@@ -90,7 +95,11 @@ class AppRuntime:
         proxies = ProxyManager(user_root / "State" / "proxies", projects, workspace)
         transcriptions = TranscriptionManager(user_root / "State" / "transcriptions", projects, workspace)
         renders = RenderQueue(user_root / "State" / "renders", projects, workspace)
-        return cls(root, user_root, projects, workspace, editors, proxies, transcriptions, renders)
+        social = SocialStore(user_root / "State" / "social")
+        runtime = cls(root, user_root, projects, workspace, editors, proxies, transcriptions, renders, social)
+        runtime.social_scheduler = SocialScheduler(social, on_results=runtime._record_social_results)
+        runtime.social_scheduler.start()
+        return runtime
 
     def apps_payload(self) -> list[dict]:
         return [{"id": app.app_id, "name": app.name, "service": app.service, "entrypoint": app.entrypoint, "capabilities": list(app.capabilities)} for app in discover_apps(self.repo_root)]
@@ -127,6 +136,7 @@ class AppRuntime:
             "quick_clips": selection_for_project(self, project_id),
             "editor": self.editors.state(project_id),
             "renders": [asdict(item) for item in self.renders.list(project_id)],
+            "publications": [asdict(item) for item in self.social.list(project_id)],
             "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
         }
 
@@ -255,6 +265,115 @@ class AppRuntime:
         )
         self.workspace.upsert_project(project_id, project.name, handoff.to_app)
         return asdict(handoff)
+
+    def _ensure_project(self, project_id: str) -> None:
+        if not any(item.id == project_id for item in self.projects.list_projects()):
+            raise KeyError(project_id)
+
+    def _publication_for_project(self, project_id: str, publication_id: str):
+        self._ensure_project(project_id)
+        row = self.social.get(publication_id)
+        if row.project_id != project_id:
+            raise KeyError(publication_id)
+        return row
+
+    def meta_status(self) -> dict:
+        payload = asdict(MetaGraphClient.diagnose_env())
+        payload["scheduler"] = self.social_scheduler.status() if self.social_scheduler is not None else {"running": False}
+        return payload
+
+    def meta_pages(self) -> list[dict]:
+        return MetaGraphClient.from_env().pages()
+
+    def meta_ad_accounts(self) -> list[dict]:
+        return MetaGraphClient.from_env().ad_accounts()
+
+    def create_publication(self, project_id: str, payload: dict) -> dict:
+        self._ensure_project(project_id)
+        asset_id = str(payload.get("asset_id") or "").strip()
+        if asset_id:
+            self.projects.asset(project_id, asset_id)
+        row = self.social.create(project_id, payload)
+        self.workspace.registries.timeline.append("publication.created", {
+            "project_id": project_id,
+            "publication_id": row.id,
+            "channel": row.channel,
+            "kind": row.kind,
+            "target_id": row.target_id,
+            "status": row.status,
+            "scheduled_for": row.scheduled_for,
+        })
+        return asdict(row)
+
+    def queue_publication(self, project_id: str, publication_id: str, payload: dict) -> dict:
+        self._publication_for_project(project_id, publication_id)
+        row = self.social.queue(publication_id, payload.get("scheduled_for"))
+        self.workspace.registries.timeline.append("publication.queued", {
+            "project_id": project_id,
+            "publication_id": row.id,
+            "scheduled_for": row.scheduled_for,
+        })
+        return asdict(row)
+
+    def cancel_publication(self, project_id: str, publication_id: str) -> dict:
+        row = self._publication_for_project(project_id, publication_id)
+        if row.status not in {"DRAFT", "QUEUED", "FAILED"}:
+            raise ValueError("only draft, queued or failed publications can be cancelled")
+        row = self.social.transition(publication_id, "CANCELLED")
+        self.workspace.registries.timeline.append("publication.cancelled", {
+            "project_id": project_id,
+            "publication_id": row.id,
+        })
+        return asdict(row)
+
+    def _record_social_results(self, rows: list[dict]) -> None:
+        for row in rows:
+            status = str(row.get("status") or "").lower()
+            if status not in {"published", "failed"}:
+                continue
+            self.workspace.registries.timeline.append(f"publication.{status}", {
+                "project_id": row.get("project_id"),
+                "publication_id": row.get("id"),
+                "channel": row.get("channel"),
+                "remote_id": row.get("remote_id"),
+                "attempts": row.get("attempts"),
+                "error": row.get("error"),
+            })
+
+    def publish_publication_now(self, project_id: str, publication_id: str) -> dict:
+        row = self._publication_for_project(project_id, publication_id)
+        if row.status in {"DRAFT", "FAILED"}:
+            row = self.social.queue(publication_id)
+        if row.status != "QUEUED":
+            raise ValueError("publication cannot be published from its current state")
+        result = asdict(MetaSocialPublisher(self.social, MetaGraphClient.from_env()).publish(publication_id))
+        self._record_social_results([result])
+        return result
+
+    def run_social_due(self, limit: int = 20) -> list[dict]:
+        if self.social_scheduler is not None:
+            rows = self.social_scheduler.run_once(limit=limit)
+        else:
+            rows = MetaSocialPublisher(self.social, MetaGraphClient.from_env()).run_due(limit=limit)
+            self._record_social_results(rows)
+        return rows
+
+    def create_meta_campaign(self, payload: dict) -> dict:
+        remote_id = MetaGraphClient.from_env().create_paused_campaign(
+            str(payload.get("ad_account_id") or ""),
+            name=str(payload.get("name") or ""),
+            objective=str(payload.get("objective") or ""),
+            special_ad_categories=list(payload.get("special_ad_categories") or []),
+        )
+        result = {
+            "id": remote_id,
+            "ad_account_id": str(payload.get("ad_account_id") or ""),
+            "name": str(payload.get("name") or ""),
+            "objective": str(payload.get("objective") or "").upper(),
+            "status": "PAUSED",
+        }
+        self.workspace.registries.timeline.append("meta.campaign.created", result)
+        return result
 
 
 class MarketingHTTPServer(ThreadingHTTPServer):
@@ -412,6 +531,14 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self._json([asdict(item) for item in diagnose()])
             elif parts == ["api", "providers"]:
                 self._json([diagnose_provider(item.id) for item in PROVIDERS])
+            elif parts == ["api", "meta", "status"]:
+                self._json(self.server.runtime.meta_status())
+            elif parts == ["api", "meta", "pages"]:
+                self._json(self.server.runtime.meta_pages())
+            elif parts == ["api", "meta", "ad-accounts"]:
+                self._json(self.server.runtime.meta_ad_accounts())
+            elif parts == ["api", "social", "scheduler"]:
+                self._json(self.server.runtime.social_scheduler.status() if self.server.runtime.social_scheduler is not None else {"running": False})
             elif parts == ["api", "projects"]:
                 self._json(self.server.runtime.projects_payload())
             elif len(parts) == 3 and parts[:2] == ["api", "projects"]:
@@ -420,6 +547,9 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 self._json(self.server.runtime.editors.state(parts[2]))
             elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "renders":
                 self._json([asdict(item) for item in self.server.runtime.renders.list(parts[2])])
+            elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "publications":
+                self.server.runtime._ensure_project(parts[2])
+                self._json([asdict(item) for item in self.server.runtime.social.list(parts[2])])
             elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "probe":
                 self._json(self.server.runtime.probe_asset(parts[2], parts[4]))
             elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "file":
@@ -449,6 +579,8 @@ class MarketingHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, f"not found: {exc.args[0]}")
         except FileNotFoundError as exc:
             self._error(HTTPStatus.NOT_FOUND, f"file not found: {exc.filename or exc}")
+        except MetaGraphError as exc:
+            self._error(HTTPStatus.BAD_GATEWAY, str(exc))
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._error(HTTPStatus.CONFLICT if "not available until" in str(exc) else HTTPStatus.BAD_REQUEST, str(exc))
         except Exception as exc:
@@ -464,8 +596,18 @@ class MarketingHandler(BaseHTTPRequestHandler):
             with self.server.mutation_lock:
                 if parts == ["api", "projects"]:
                     self._json(self.server.runtime.create_project(str(payload.get("name", ""))), HTTPStatus.CREATED)
+                elif parts == ["api", "social", "run-due"]:
+                    self._json(self.server.runtime.run_social_due(int(payload.get("limit", 20))))
+                elif parts == ["api", "meta", "campaigns"]:
+                    self._json(self.server.runtime.create_meta_campaign(payload), HTTPStatus.CREATED)
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "assets":
                     self._json(self.server.runtime.add_asset(parts[2], str(payload["source_path"]), str(payload.get("kind", "file"))), HTTPStatus.CREATED)
+                elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "publications":
+                    self._json(self.server.runtime.create_publication(parts[2], payload), HTTPStatus.CREATED)
+                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "publications" and parts[5] == "queue":
+                    self._json(self.server.runtime.queue_publication(parts[2], parts[4], payload))
+                elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "publications" and parts[5] == "publish-now":
+                    self._json(self.server.runtime.publish_publication_now(parts[2], parts[4]))
                 elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":
                     self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)
                 elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":
@@ -500,6 +642,8 @@ class MarketingHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, f"file not found: {exc.filename or exc}")
         except subprocess.CalledProcessError as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Finder failed with exit code {exc.returncode}")
+        except MetaGraphError as exc:
+            self._error(HTTPStatus.BAD_GATEWAY, str(exc))
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._error(HTTPStatus.BAD_REQUEST, str(exc))
         except Exception as exc:
@@ -512,6 +656,9 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 with self.server.mutation_lock:
                     self.server.runtime.remove_asset(parts[2], parts[4])
                 self._json({"deleted": True, "asset_id": parts[4]})
+            elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3] == "publications":
+                with self.server.mutation_lock:
+                    self._json(self.server.runtime.cancel_publication(parts[2], parts[4]))
             elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "quick-clips":
                 with self.server.mutation_lock:
                     deleted = clear_selection(self.server.runtime, parts[2], reason="user")
@@ -560,6 +707,8 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
     except KeyboardInterrupt:
         pass
     finally:
+        if runtime.social_scheduler is not None:
+            runtime.social_scheduler.shutdown()
         runtime.proxies.shutdown()
         runtime.transcriptions.shutdown()
         runtime.renders.shutdown()
