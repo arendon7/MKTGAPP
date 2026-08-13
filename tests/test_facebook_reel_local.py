@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -66,7 +67,8 @@ class ManagedFacebookReelTests(unittest.TestCase):
         self.directory = 'demo-project-1'
         self.export = self.projects_root / self.directory / 'exports' / 'reel.mp4'
         self.export.parent.mkdir(parents=True)
-        self.export.write_bytes(b'local-facebook-reel')
+        self.original_bytes = b'local-facebook-reel'
+        self.export.write_bytes(self.original_bytes)
         (self.projects_root / 'projects.json').write_text(json.dumps([{
             'id': self.project_id,
             'name': 'Demo',
@@ -83,6 +85,7 @@ class ManagedFacebookReelTests(unittest.TestCase):
             'end': 10.0,
             'output_name': 'reel.mp4',
             'bytes': self.export.stat().st_size,
+            'sha256': hashlib.sha256(self.original_bytes).hexdigest(),
         }
         self._write_renders()
         self.fake = FakeGraph()
@@ -115,12 +118,14 @@ class ManagedFacebookReelTests(unittest.TestCase):
         self.assertEqual(result.remote_id, 'reel-900')
         self.assertEqual(self.fake.binary_calls[0][1], self.export.resolve())
 
-    def test_tampered_render_is_rejected_before_meta_binary_upload(self):
+    def test_same_size_tampered_render_is_rejected_by_sha_before_meta_upload(self):
         row = self._publication()
-        self.export.write_bytes(b'changed-after-certification')
+        tampered = b'X' * len(self.original_bytes)
+        self.assertEqual(len(tampered), len(self.original_bytes))
+        self.export.write_bytes(tampered)
         result = MetaSocialPublisher(self.store, self.client).publish(row.id)
         self.assertEqual(result.status, 'FAILED')
-        self.assertIn('size no longer matches', result.error)
+        self.assertIn('SHA-256 no longer matches', result.error)
         self.assertEqual(self.fake.binary_calls, [])
 
     def test_wrong_aspect_or_duration_is_rejected(self):
