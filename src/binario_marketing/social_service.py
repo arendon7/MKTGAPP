@@ -4,6 +4,7 @@ import threading
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from .meta_graph import MetaGraphClient, MetaGraphError
@@ -14,6 +15,9 @@ class SocialPublishError(RuntimeError):
     pass
 
 
+LocalMediaResolver = Callable[[Publication], Path]
+
+
 class MetaSocialPublisher:
     """Executes queued publications using the real Meta Graph API client."""
 
@@ -22,6 +26,7 @@ class MetaSocialPublisher:
         store: SocialStore,
         client: MetaGraphClient,
         *,
+        local_media_resolver: LocalMediaResolver | None = None,
         sleep: Callable[[float], None] = time.sleep,
         reel_poll_interval: float = 2.0,
         reel_poll_attempts: int = 30,
@@ -32,6 +37,7 @@ class MetaSocialPublisher:
             raise ValueError("reel_poll_attempts must be between 1 and 300")
         self.store = store
         self.client = client
+        self.local_media_resolver = local_media_resolver
         self.sleep = sleep
         self.reel_poll_interval = reel_poll_interval
         self.reel_poll_attempts = reel_poll_attempts
@@ -63,7 +69,14 @@ class MetaSocialPublisher:
             if not row.media_url:
                 raise SocialPublishError("Facebook image automation currently requires a public media URL")
             return self.client.publish_page_photo(row.target_id, row.media_url, row.message)
-        raise SocialPublishError("Facebook automation currently supports text, link and image publications")
+        if row.kind == "reel":
+            if not row.render_id:
+                raise SocialPublishError("Facebook Reel requires a completed local render")
+            if self.local_media_resolver is None:
+                raise SocialPublishError("local render resolver is unavailable")
+            path = self.local_media_resolver(row)
+            return self.client.publish_page_reel_local(row.target_id, path, row.message)
+        raise SocialPublishError("Facebook automation currently supports text, link, image and local Reel publications")
 
     def publish(self, publication_id: str) -> Publication:
         row = self.store.get(publication_id)
@@ -78,7 +91,7 @@ class MetaSocialPublisher:
             else:
                 raise SocialPublishError(f"unsupported social channel: {row.channel}")
             return self.store.transition(publication_id, "PUBLISHED", remote_id=remote_id)
-        except (MetaGraphError, SocialPublishError, ValueError) as exc:
+        except (MetaGraphError, SocialPublishError, ValueError, FileNotFoundError) as exc:
             return self.store.transition(publication_id, "FAILED", error=str(exc))
         except Exception as exc:
             return self.store.transition(publication_id, "FAILED", error=f"{type(exc).__name__}: publication failed")
@@ -99,6 +112,7 @@ class SocialScheduler:
         store: SocialStore,
         *,
         client_factory: Callable[[], MetaGraphClient] = MetaGraphClient.from_env,
+        local_media_resolver: LocalMediaResolver | None = None,
         interval_seconds: float = 30.0,
         on_results: Callable[[list[dict]], None] | None = None,
     ):
@@ -106,6 +120,7 @@ class SocialScheduler:
             raise ValueError("social scheduler interval must be between 1 and 3600 seconds")
         self.store = store
         self.client_factory = client_factory
+        self.local_media_resolver = local_media_resolver
         self.interval_seconds = interval_seconds
         self.on_results = on_results
         self._stop = threading.Event()
@@ -140,7 +155,11 @@ class SocialScheduler:
             self.last_error = None
             return []
         try:
-            results = MetaSocialPublisher(self.store, self.client_factory()).run_due(now=now, limit=limit)
+            results = MetaSocialPublisher(
+                self.store,
+                self.client_factory(),
+                local_media_resolver=self.local_media_resolver,
+            ).run_due(now=now, limit=limit)
             self.last_error = None
             if results and self.on_results is not None:
                 self.on_results(results)
