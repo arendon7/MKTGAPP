@@ -15,6 +15,7 @@ from .meta_credentials import MetaCredentialStore
 
 
 _GRAPH_VERSION_RE = re.compile(r"^v\d+\.\d+$")
+_MAX_TOKEN_CHARS = 8192
 
 
 class MetaGraphError(RuntimeError):
@@ -27,20 +28,20 @@ BinaryTransport = Callable[[str, Path, str], dict]
 
 def _default_transport(method: str, url: str, params: dict[str, str]) -> dict:
     method = method.upper()
-    encoded = urlencode(params).encode("utf-8")
+    clean = dict(params)
+    access_token = str(clean.pop("access_token", "") or "").strip()
+    encoded = urlencode(clean).encode("utf-8")
     request_url = url
     data = None
     if method == "GET":
-        if params:
-            request_url = f"{url}?{urlencode(params)}"
+        if clean:
+            request_url = f"{url}?{urlencode(clean)}"
     else:
         data = encoded
-    request = Request(
-        request_url,
-        data=data,
-        method=method,
-        headers={"Accept": "application/json", "User-Agent": "BinarioMarketing/1.0"},
-    )
+    headers = {"Accept": "application/json", "User-Agent": "BinarioMarketing/1.0"}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    request = Request(request_url, data=data, method=method, headers=headers)
     try:
         with urlopen(request, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -130,6 +131,8 @@ class MetaGraphClient:
         token = str(access_token or "").strip()
         if not token:
             raise ValueError("Meta access token is required")
+        if len(token) > _MAX_TOKEN_CHARS:
+            raise ValueError("Meta access token is unexpectedly large")
         version = str(graph_version or "").strip()
         if not _GRAPH_VERSION_RE.fullmatch(version):
             raise ValueError("invalid Meta Graph API version")
