@@ -122,6 +122,8 @@ class SocialScheduler:
             recovered = self.store.recover_interrupted()
             self.recovered_on_start = len(recovered)
             self._stop.clear()
+            if not MetaGraphClient.diagnose_env().configured:
+                return
             self._thread = threading.Thread(target=self._loop, name="binario-social-scheduler", daemon=True)
             self._thread.start()
 
