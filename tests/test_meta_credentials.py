@@ -84,6 +84,8 @@ class NativeKeychainSourceContractTests(unittest.TestCase):
             self.assertIn(token, builder)
         for token in ('BINARIO_META_KEYCHAIN_HELPER', 'binario-meta-keychain', 'MetaCredentialStore().status()', 'SecItem/data-protection-first'):
             self.assertIn(token, audit)
+        self.assertIn('KEYCHAIN_STATUS="$("$KEYCHAIN_HELPER" status)"', audit)
+        self.assertNotIn('KEYCHAIN_STATUS="$($KEYCHAIN_HELPER status)"', audit)
 
 
 class MetaGraphCredentialResolutionTests(unittest.TestCase):
