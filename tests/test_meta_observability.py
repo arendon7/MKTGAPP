@@ -77,6 +77,13 @@ class MetaObservabilityTests(unittest.TestCase):
     def client(self, transport):
         return MetaGraphClient('user-secret', 'v25.0', transport=transport)
 
+    def test_unpublished_or_unconfirmed_publication_never_calls_meta(self):
+        transport = FakeTransport()
+        result = MetaObservability(self.client(transport)).publication(publication(status='QUEUED', remote_id=None))
+        self.assertFalse(result['available'])
+        self.assertIn('no confirmed remote Meta object', result['reason'])
+        self.assertEqual(transport.calls, [])
+
     def test_instagram_publication_returns_metadata_and_metrics_without_token_echo(self):
         transport = FakeTransport()
         result = MetaObservability(self.client(transport)).publication(publication())
