@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import service as base
 from .wave27_instagram_local import install_wave27_social
@@ -17,7 +18,16 @@ class AppRuntime(base.AppRuntime):
 
 
 MarketingHTTPServer = base.MarketingHTTPServer
-MarketingHandler = base.MarketingHandler
+
+
+class MarketingHandler(base.MarketingHandler):
+    """Adds only the Wave 27 static bundle; every API route stays canonical."""
+
+    def do_GET(self) -> None:
+        if urlparse(self.path).path == "/instagram-local-reel.js":
+            self._static("/instagram-local-reel.js")
+            return
+        super().do_GET()
 
 
 def create_server(runtime: AppRuntime, host: str = "127.0.0.1", port: int = 8765) -> MarketingHTTPServer:
