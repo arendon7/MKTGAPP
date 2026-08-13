@@ -5,12 +5,14 @@ import os
 from dataclasses import asdict
 from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from . import service_core as core
 from .service_core import *  # re-export the certified Wave 22/23 HTTP/runtime surface
 from .meta_ads import LinkCreativeSpec, MetaAdsBuilder, PausedAdSetSpec, PausedAdSpec
 from .meta_credentials import MetaCredentialError, MetaCredentialStore
 from .meta_graph import MetaGraphClient, MetaGraphError
+from .meta_observability import MetaObservability
 from .paid_media_store import PaidMediaStore
 
 
@@ -30,7 +32,7 @@ from .paid_media_store import PaidMediaStore
 
 
 class AppRuntime(core.AppRuntime):
-    """Thin Wave 23 extension over the certified service core."""
+    """Thin Wave 23/24 extension over the certified service core."""
 
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
@@ -73,12 +75,27 @@ class AppRuntime(core.AppRuntime):
         self.workspace.registries.timeline.append("meta.disconnected", {"credential_source": current.source})
         return self.meta_status()
 
+    def _publication_for_project(self, project_id: str, publication_id: str):
+        self._ensure_project(project_id)
+        row = self.social.get(publication_id)
+        if row.project_id != project_id:
+            raise KeyError(publication_id)
+        return row
+
+    def publication_observability(self, project_id: str, publication_id: str) -> dict:
+        row = self._publication_for_project(project_id, publication_id)
+        return MetaObservability.from_env().publication(row)
+
     def _paid_media_for_project(self, project_id: str, draft_id: str):
         self._ensure_project(project_id)
         row = self.paid_media.get(draft_id)
         if row.project_id != project_id:
             raise KeyError(draft_id)
         return row
+
+    def paid_media_observability(self, project_id: str, draft_id: str, *, date_preset: str = "maximum") -> dict:
+        row = self._paid_media_for_project(project_id, draft_id)
+        return MetaObservability.from_env().paid_media(row, date_preset=date_preset)
 
     def create_paid_media_draft(self, project_id: str, payload: dict) -> dict:
         self._ensure_project(project_id)
@@ -193,7 +210,7 @@ MarketingHTTPServer = core.MarketingHTTPServer
 
 
 class MarketingHandler(core.MarketingHandler):
-    """Intercept only Wave 23 extension routes; delegate every legacy route unchanged."""
+    """Intercept only Wave 23/24 extension routes; delegate every legacy route unchanged."""
 
     def _extension_error(self, exc: Exception) -> None:
         if isinstance(exc, KeyError):
@@ -208,11 +225,28 @@ class MarketingHandler(core.MarketingHandler):
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
     def do_GET(self) -> None:
-        path = self.path.split("?", 1)[0]
+        path = urlparse(self.path).path
         if path == "/social-uat.js":
             self._static(path)
             return
+        if path in {"/meta-observability.js", "/meta-observability.css"}:
+            self._static(path)
+            return
         parts = self._segments()
+        if len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "publications" and parts[5] == "observability":
+            try:
+                self._json(self.server.runtime.publication_observability(parts[2], parts[4]))
+            except Exception as exc:
+                self._extension_error(exc)
+            return
+        if len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "paid-media" and parts[5] == "observability":
+            try:
+                query = parse_qs(urlparse(self.path).query)
+                date_preset = (query.get("date_preset") or ["maximum"])[0]
+                self._json(self.server.runtime.paid_media_observability(parts[2], parts[4], date_preset=date_preset))
+            except Exception as exc:
+                self._extension_error(exc)
+            return
         if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "paid-media":
             try:
                 self.server.runtime._ensure_project(parts[2])
