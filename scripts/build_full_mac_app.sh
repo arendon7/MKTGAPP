@@ -31,6 +31,7 @@ MEDIA_RUNTIME="$RESOURCES/runtime/media"
 TRANSCRIPTION_RUNTIME="$RESOURCES/runtime/transcription"
 SOURCE="$RESOURCES/source"
 KEYCHAIN_HELPER="$MACOS/binario-meta-keychain"
+BACKGROUND_SERVICE_HELPER="$MACOS/binario-background-service"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
 
@@ -62,10 +63,13 @@ IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "
 HELPER_ARCHS="$(/usr/bin/lipo -archs "$KEYCHAIN_HELPER")"
 [[ " $HELPER_ARCHS " == *" $ARCH "* ]] || fail "Meta Keychain helper architecture mismatch: $HELPER_ARCHS"
 
+bash "$ROOT/scripts/build_wave28_background_bundle.sh" "$APP" "$ARCH" "$ROOT"
+[[ -x "$BACKGROUND_SERVICE_HELPER" ]] || fail "Wave 28 background service helper missing after bundle build"
+
 GIT_SHA="$(/usr/bin/git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')"
 cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
 {
-  "schema": "binario.marketing.full-mac-build.v3",
+  "schema": "binario.marketing.full-mac-build.v4",
   "git_sha": "$GIT_SHA",
   "architecture": "$ARCH",
   "app_name": "$APP_NAME",
@@ -79,7 +83,8 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "whisper_source_commit": "$WHISPER_COMMIT",
   "whisper_model": "$WHISPER_MODEL_NAME",
   "whisper_model_sha256": "$WHISPER_MODEL_SHA256",
-  "meta_keychain_helper": "SecItem/data-protection-first"
+  "meta_keychain_helper": "SecItem/data-protection-first",
+  "background_scheduler": "SMAppService-agent"
 }
 JSON
 
@@ -94,7 +99,7 @@ os.environ.setdefault("BINARIO_FFMPEG", str(resources / "runtime" / "media" / "b
 os.environ.setdefault("BINARIO_FFPROBE", str(resources / "runtime" / "media" / "bin" / "ffprobe"))
 os.environ.setdefault("BINARIO_WHISPER_CLI", str(resources / "runtime" / "transcription" / "bin" / "whisper-cli"))
 os.environ.setdefault("BINARIO_WHISPER_MODEL", str(resources / "runtime" / "transcription" / "models" / "ggml-tiny.bin"))
-from binario_marketing.service_wave27 import serve
+from binario_marketing.service_wave28 import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
 serve("127.0.0.1", port, open_browser=open_browser)
@@ -109,16 +114,19 @@ PYTHON="$RESOURCES/runtime/python/bin/python3"
 MEDIA_BIN="$RESOURCES/runtime/media/bin"
 TRANSCRIPTION="$RESOURCES/runtime/transcription"
 KEYCHAIN_HELPER="$HERE/binario-meta-keychain"
+BACKGROUND_SERVICE_HELPER="$HERE/binario-background-service"
 [[ -x "$PYTHON" ]] || { echo "BINARIO Marketing Python runtime missing" >&2; exit 5; }
 [[ -x "$MEDIA_BIN/ffmpeg" && -x "$MEDIA_BIN/ffprobe" ]] || { echo "BINARIO Marketing media runtime missing" >&2; exit 5; }
 [[ -x "$TRANSCRIPTION/bin/whisper-cli" && -f "$TRANSCRIPTION/models/ggml-tiny.bin" ]] || { echo "BINARIO Marketing transcription runtime missing" >&2; exit 5; }
 [[ -x "$KEYCHAIN_HELPER" ]] || { echo "BINARIO Marketing Keychain helper missing" >&2; exit 5; }
+[[ -x "$BACKGROUND_SERVICE_HELPER" ]] || { echo "BINARIO Marketing background service helper missing" >&2; exit 5; }
 export PATH="$MEDIA_BIN:$TRANSCRIPTION/bin:$RESOURCES/runtime/python/bin:/usr/bin:/bin"
 export BINARIO_FFMPEG="$MEDIA_BIN/ffmpeg"
 export BINARIO_FFPROBE="$MEDIA_BIN/ffprobe"
 export BINARIO_WHISPER_CLI="$TRANSCRIPTION/bin/whisper-cli"
 export BINARIO_WHISPER_MODEL="$TRANSCRIPTION/models/ggml-tiny.bin"
 export BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER"
+export BINARIO_BACKGROUND_SERVICE_HELPER="$BACKGROUND_SERVICE_HELPER"
 unset PYTHONHOME PYTHONPATH
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
