@@ -87,16 +87,34 @@ function quickStatusText(row){
   if(typeof transcriptionPhase==='function')return transcriptionPhase(row);
   return row.status||'Sin transcribir';
 }
+function quickRenderLabel(index){return `quick-clip-${index+1}`}
+function quickRenderJob(asset,clip,index){
+  if(!asset)return null;const marker=`-${quickRenderLabel(index)}.mp4`,start=Number(clip.start),end=Number(clip.end);
+  return [...(state.current?.renders||[])].reverse().find(job=>job.asset_id===asset.id&&String(job.output_name||'').endsWith(marker)&&Math.abs(Number(job.start)-start)<.05&&Math.abs(Number(job.end)-end)<.05)||null
+}
+function quickRenderStatus(job){
+  if(!job)return '';return ({PENDING:'En cola',RUNNING:'Exportando',CANCELLING:'Cancelando',PASS:'Listo',FAIL:'Error',CANCELLED:'Cancelado',INTERRUPTED:'Interrumpido'})[job.status]||job.status
+}
+async function quickStartRender(clip,index){
+  const asset=quickAsset();if(!asset||!state.current)return null;const start=Number(clip.start),end=Number(clip.end),aspect=$('#quick-aspect')?.value||'9:16',label=quickRenderLabel(index);
+  try{const job=await api(`/api/projects/${state.current.project.id}/renders`,{method:'POST',body:{asset_id:asset.id,start,end,label,aspect}});state.current.renders=[...(state.current.renders||[]),job];renderProject();scheduleRenderPoll();toast(job.status==='FAIL'?`Render bloqueado: ${job.error}`:`Exportación ${aspect} iniciada`);return job}catch(err){toast(err.message);return null}
+}
+function renderQuickRenderState(card,job){
+  if(!job)return;const wrap=el('div','result-item quick-render-state'),pct=Math.round((Number(job.progress)||0)*100);wrap.append(el('strong','',`${quickRenderStatus(job)} · ${job.width}×${job.height}`));
+  if(ACTIVE_RENDERS.has(job.status)){const progress=document.createElement('progress');progress.max=100;progress.value=pct;progress.title=`${pct}%`;wrap.append(progress,el('span','',` ${pct}%`));const cancel=el('button','','Cancelar');cancel.type='button';cancel.addEventListener('click',()=>cancelRender(job.id));wrap.append(cancel)}
+  if(job.status==='PASS'){const meta=el('span','',`${job.bytes?fmtBytes(job.bytes):''}${job.sha256?` · ${job.sha256.slice(0,10)}…`:''}`);wrap.append(meta);const link=el('a','','Descargar');link.href=`/api/renders/${job.id}/file`;link.download=job.output_name;wrap.append(link)}
+  if(job.status==='FAIL'&&job.error)wrap.append(el('p','muted',String(job.error).slice(-280)));card.append(wrap)
+}
 function renderQuickResults(){
   const root=$('#quick-clip-results');if(!root)return;root.replaceChildren();const asset=quickAsset();
   if(!state.quickFlow.clips.length){root.append(el('p','quick-empty',quickTranscriptionRow()?.status==='PASS'?'Genera los mejores clips para verlos aquí.':'Aquí aparecerán tus clips seleccionados.'));return}
   state.quickFlow.clips.forEach((clip,index)=>{
-    const start=Number(clip.start),end=Number(clip.end),duration=Math.max(0,end-start);const card=el('div','quick-clip-card');
+    const start=Number(clip.start),end=Number(clip.end),duration=Math.max(0,end-start),job=quickRenderJob(asset,clip,index);const card=el('div','quick-clip-card');
     const top=el('div','quick-clip-top');top.append(el('strong','',`Clip ${index+1} · ${duration.toFixed(1)}s`),el('span','',`${start.toFixed(1)}–${end.toFixed(1)}s`));card.append(top,el('p','',clip.text||''));
     if(clip.tone||clip.reasons?.length)card.append(el('span','quick-clip-meta',[clip.tone,...(clip.reasons||[])].filter(Boolean).join(' · ')));
     const actions=el('div','quick-clip-actions');const preview=el('button','','▶ Preview');preview.type='button';preview.addEventListener('click',()=>previewAsset(asset.id,start));
     const timeline=el('button','','+ Timeline');timeline.type='button';timeline.addEventListener('click',async()=>{await editorAction({action:'add_clip',asset_id:asset.id,start,end,track:0});toast(`Clip ${index+1} añadido al timeline`)});
-    const exportBtn=el('button','primary','Exportar');exportBtn.type='button';exportBtn.addEventListener('click',()=>startRender({asset_id:asset.id,start,end,aspect:$('#quick-aspect').value,label:`quick-clip-${index+1}`}));actions.append(preview,timeline,exportBtn);card.append(actions);root.append(card)
+    const exportBtn=el('button','primary',job&&ACTIVE_RENDERS.has(job.status)?'Exportando…':job?.status==='PASS'?'Exportar de nuevo':'Exportar');exportBtn.type='button';exportBtn.disabled=Boolean(job&&ACTIVE_RENDERS.has(job.status));exportBtn.addEventListener('click',()=>quickStartRender(clip,index));actions.append(preview,timeline,exportBtn);card.append(actions);renderQuickRenderState(card,job);root.append(card)
   })
 }
 function renderQuickEditor(){
@@ -139,6 +157,8 @@ function bindQuickEditor(){
 ensureClipperModeControls();
 const quickBaseRenderProject=renderProject;
 renderProject=function(){quickBaseRenderProject();ensureQuickEditorPanel();renderQuickEditor()};
+const quickBaseRenderRenders=renderRenders;
+renderRenders=function(){quickBaseRenderRenders();if($('#quick-editor'))renderQuickResults()};
 const quickBaseRenderTranscriptionPanel=renderTranscriptionPanel;
 renderTranscriptionPanel=function(){quickBaseRenderTranscriptionPanel();renderQuickEditor()};
 ensureQuickEditorPanel();

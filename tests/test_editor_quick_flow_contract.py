@@ -13,16 +13,33 @@ class EditorQuickFlowContractTests(unittest.TestCase):
             'quickUploadVideo',
             'quickStartTranscription',
             'quickGenerateClips',
+            'quickStartRender',
             'transcriptionUrl(asset.id',
             "'/clips'",
             "action:'add_clip'",
-            'startRender',
             'Natural · idea completa',
             'Duración objetivo',
             'quick-aspect',
-            "aspect:$('#quick-aspect').value",
+            "const start=Number(clip.start),end=Number(clip.end),aspect=$('#quick-aspect')?.value||'9:16'",
+            'body:{asset_id:asset.id,start,end,label,aspect}',
             'Vertical 9:16 · Reels / TikTok',
             'Abrir editor avanzado',
+        ):
+            self.assertIn(token,js)
+        self.assertNotIn("startRender({asset_id:asset.id,start,end,aspect:",js)
+
+    def test_quick_render_jobs_are_visible_and_actionable_in_clip_cards(self):
+        js=(ROOT/'web/clipper-modes.js').read_text(encoding='utf-8')
+        for token in (
+            'quickRenderJob',
+            'quickRenderStatus',
+            'quick-render-state',
+            "ACTIVE_RENDERS.has(job.status)",
+            'cancelRender(job.id)',
+            "href=`/api/renders/${job.id}/file`",
+            "link.download=job.output_name",
+            'Exportar de nuevo',
+            'quickBaseRenderRenders',
         ):
             self.assertIn(token,js)
 
