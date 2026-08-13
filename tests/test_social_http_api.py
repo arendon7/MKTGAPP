@@ -41,13 +41,23 @@ class SocialHttpApiTests(unittest.TestCase):
         self.runtime.proxies.shutdown(); self.runtime.transcriptions.shutdown(); self.runtime.renders.shutdown()
         self.tmp.cleanup()
 
-    def test_meta_status_never_returns_token_and_scheduler_is_explicit(self):
+    def test_meta_status_exposes_requirement_not_secret_and_scheduler_is_explicit(self):
         status, payload = request_json(f"{self.base}/api/meta/status")
         self.assertEqual(status, 200)
         self.assertIn("configured", payload)
         self.assertIn("scheduler", payload)
-        self.assertNotIn("access_token", json.dumps(payload).lower())
-        self.assertNotIn("meta_access_token", json.dumps(payload).lower())
+        self.assertNotIn("token", payload)
+        self.assertNotIn("access_token", payload)
+        self.assertNotIn("authorization", payload)
+        if not payload["configured"]:
+            self.assertIn("META_ACCESS_TOKEN", payload["missing"])
+
+    def test_social_browser_bundle_is_really_served(self):
+        with urlopen(f"{self.base}/social.js", timeout=5) as response:
+            body = response.read().decode("utf-8")
+            self.assertEqual(response.status, 200)
+            self.assertIn("Meta, publicaciones y pauta", body)
+            self.assertIn("createMetaCampaign", body)
 
     def test_project_publication_create_queue_list_and_cancel(self):
         status, row = request_json(
