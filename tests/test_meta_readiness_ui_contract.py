@@ -21,13 +21,17 @@ class MetaReadinessUiContractTests(unittest.TestCase):
             'instagram_content_publish',
             'pages_show_list',
             'ads_management',
+            'page_access_token_unavailable',
             'LISTO',
             'PENDIENTE',
         ):
             self.assertIn(token, js)
         self.assertNotIn('localStorage', js)
         self.assertNotIn('sessionStorage', js)
-        self.assertNotIn('access_token', js)
+        self.assertNotIn('META_ACCESS_TOKEN', js)
+        self.assertNotIn('Authorization:', js)
+        self.assertNotIn('Bearer ', js)
+        self.assertNotIn('meta-token-input', js)
 
     def test_service_composes_existing_social_bundle_with_readiness_module(self):
         service = (ROOT / 'src' / 'binario_marketing' / 'service.py').read_text(encoding='utf-8')
@@ -47,7 +51,8 @@ class MetaReadinessUiContractTests(unittest.TestCase):
                 base = f"http://127.0.0.1:{server.server_address[1]}"
                 with urlopen(f'{base}/social.js', timeout=5) as response:
                     body = response.read().decode('utf-8')
-                self.assertEqual(response.status, 200)
+                    status = response.status
+                self.assertEqual(status, 200)
                 self.assertIn('Meta, publicaciones y pauta', body)
                 self.assertIn('meta-readiness-panel', body)
                 self.assertIn('/api/meta/readiness', body)
