@@ -19,8 +19,17 @@ REQUIRED = {
     "src/binario_marketing/video/render.py",
     "src/binario_marketing/editor_store.py",
     "src/binario_marketing/service.py",
+    "src/binario_marketing/service_core.py",
+    "src/binario_marketing/social_store.py",
+    "src/binario_marketing/social_service.py",
+    "src/binario_marketing/meta_graph.py",
+    "src/binario_marketing/meta_credentials.py",
+    "src/binario_marketing/meta_ads.py",
+    "src/binario_marketing/paid_media_store.py",
+    "native/meta_keychain_helper.swift",
     "web/index.html",
     "web/app.js",
+    "web/social.js",
     "web/styles.css",
     "scripts/version_info.py",
     "scripts/verify_release_tag.py",
@@ -56,7 +65,7 @@ def main() -> int:
         if missing: print("missing required source:", *missing, sep="\n- ")
         if forbidden: print("generated artifacts must not be canonical source:", *forbidden, sep="\n- ")
         return 1
-    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, version contract + Python/FFmpeg FULL MAC builders present)")
+    print(f"PASS: canonical source tree ({len(tracked)} tracked files, 12/12 apps, FULL MAC + Wave 23 Meta contracts present)")
     return 0
 
 
