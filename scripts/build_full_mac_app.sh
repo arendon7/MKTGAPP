@@ -18,9 +18,7 @@ done
 [[ -n "$ARCH" ]] || ARCH="$(uname -m)"
 case "$ARCH" in arm64|aarch64) ARCH="arm64" ;; x86_64|amd64) ARCH="x86_64" ;; *) fail "unsupported architecture: $ARCH" ;; esac
 
-# shellcheck disable=SC1091
 source "$ROOT/scripts/full_mac_media_runtime.env"
-# shellcheck disable=SC1091
 source "$ROOT/scripts/full_mac_transcription_runtime.env"
 APP="$OUT/$APP_NAME"
 CONTENTS="$APP/Contents"
@@ -56,8 +54,7 @@ IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "
 /bin/cp "$ROOT/pyproject.toml" "$SOURCE/pyproject.toml"
 
 [[ -f "$ROOT/native/meta_keychain_helper.swift" ]] || fail "Meta Keychain helper source missing"
-/usr/bin/xcrun --sdk macosx swiftc -O -target "$ARCH-apple-macos12.0" \
-  "$ROOT/native/meta_keychain_helper.swift" -framework Foundation -framework Security -o "$KEYCHAIN_HELPER"
+/usr/bin/xcrun --sdk macosx swiftc -O -target "$ARCH-apple-macos12.0" "$ROOT/native/meta_keychain_helper.swift" -framework Foundation -framework Security -o "$KEYCHAIN_HELPER"
 [[ -x "$KEYCHAIN_HELPER" ]] || fail "Meta Keychain helper build failed"
 HELPER_ARCHS="$(/usr/bin/lipo -archs "$KEYCHAIN_HELPER")"
 [[ " $HELPER_ARCHS " == *" $ARCH "* ]] || fail "Meta Keychain helper architecture mismatch: $HELPER_ARCHS"
@@ -143,7 +140,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-"$ROOT/scripts/build_native_main_launcher.sh" "$APP" "$ARCH" "$ROOT"
+/bin/bash "$ROOT/scripts/build_native_main_launcher.sh" "$APP" "$ARCH" "$ROOT"
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
 /usr/bin/codesign --force --deep --sign - "$APP"
 printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
