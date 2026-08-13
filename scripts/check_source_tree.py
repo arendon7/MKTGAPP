@@ -19,6 +19,7 @@ REQUIRED = {
     "src/binario_marketing/video/render.py",
     "src/binario_marketing/editor_store.py",
     "src/binario_marketing/service.py",
+    "src/binario_marketing/service_core.py",
     "src/binario_marketing/social_store.py",
     "src/binario_marketing/social_service.py",
     "src/binario_marketing/meta_graph.py",
