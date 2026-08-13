@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 from .meta_graph import MetaGraphClient, MetaGraphError
@@ -196,10 +195,10 @@ class MetaObservability:
             return payload
 
         fields = {
-            "campaign": "id,name,objective,configured_status,effective_status,status,created_time,updated_time",
-            "adset": "id,name,campaign_id,configured_status,effective_status,status,daily_budget,created_time,updated_time",
+            "campaign": "id,name,objective,configured_status,effective_status,created_time,updated_time",
+            "adset": "id,name,campaign_id,effective_status,status,daily_budget,created_time,updated_time",
             "creative": "id,name",
-            "ad": "id,name,campaign_id,adset_id,configured_status,effective_status,status,created_time,updated_time",
+            "ad": "id,name,campaign_id,adset_id,effective_status,status,created_time,updated_time",
         }
         configured_paused: list[bool] = []
         explicit_active = False
