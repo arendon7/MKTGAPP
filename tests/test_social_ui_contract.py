@@ -33,11 +33,12 @@ class SocialUiContractTests(unittest.TestCase):
         ):
             self.assertIn(token, js)
 
-    def test_ui_does_not_offer_paid_activation_or_local_instagram_fake_publish(self):
+    def test_ui_keeps_paid_activation_and_uncertified_instagram_local_publish_blocked(self):
         js = (ROOT / 'web/social.js').read_text(encoding='utf-8')
-        self.assertIn('puente automático desde renders locales', js)
+        self.assertIn('Facebook Reel se sube directamente', js)
+        self.assertIn('Instagram local seguirá bloqueado', js)
         self.assertIn('No activa pauta ni genera gasto', js)
-        self.assertNotIn('status:\'ACTIVE\'', js)
+        self.assertNotIn("status:'ACTIVE'", js)
         self.assertNotIn('Activar campaña', js)
 
 
