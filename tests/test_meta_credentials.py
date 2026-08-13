@@ -59,7 +59,7 @@ class MetaCredentialStoreTests(unittest.TestCase):
 
 
 class NativeKeychainSourceContractTests(unittest.TestCase):
-    def test_swift_helper_uses_secitem_data_protection_and_stdin(self):
+    def test_swift_helper_uses_secitem_dp_first_entitlement_fallback_and_stdin(self):
         source = (ROOT / 'native' / 'meta_keychain_helper.swift').read_text(encoding='utf-8')
         for token in (
             'SecItemCopyMatching',
@@ -67,17 +67,22 @@ class NativeKeychainSourceContractTests(unittest.TestCase):
             'SecItemAdd',
             'SecItemDelete',
             'kSecUseDataProtectionKeychain',
+            'errSecMissingEntitlement',
+            'case dataProtection',
+            'case legacy',
             'FileHandle.standardInput.readDataToEndOfFile()',
         ):
             self.assertIn(token, source)
+        self.assertLess(source.index('try writeSecret(clean, backend: .dataProtection)'), source.index('try writeSecret(clean, backend: .legacy)'))
         self.assertNotIn('CommandLine.arguments[2]', source)
+        self.assertNotIn('write(toFile:', source)
 
-    def test_full_mac_builder_and_audit_require_native_helper(self):
+    def test_full_mac_builder_and_audit_require_native_helper_and_provenance(self):
         builder = (ROOT / 'scripts' / 'build_full_mac_app.sh').read_text(encoding='utf-8')
         audit = (ROOT / 'scripts' / 'audit_full_mac_app.sh').read_text(encoding='utf-8')
-        for token in ('meta_keychain_helper.swift', 'swiftc', 'BINARIO_META_KEYCHAIN_HELPER', 'binario-meta-keychain'):
+        for token in ('meta_keychain_helper.swift', 'swiftc', 'BINARIO_META_KEYCHAIN_HELPER', 'binario-meta-keychain', 'SecItem/data-protection-first'):
             self.assertIn(token, builder)
-        for token in ('BINARIO_META_KEYCHAIN_HELPER', 'binario-meta-keychain', 'MetaCredentialStore().status()'):
+        for token in ('BINARIO_META_KEYCHAIN_HELPER', 'binario-meta-keychain', 'MetaCredentialStore().status()', 'SecItem/data-protection-first'):
             self.assertIn(token, audit)
 
 
