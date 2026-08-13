@@ -20,9 +20,28 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -f "$RES/source/apps/editor-video/manifest.json" ]] || { echo "missing app manifests" >&2; exit 3; }
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$APP"
+
+LAUNCHER_KIND="$(/usr/bin/file "$LAUNCHER")"
+/usr/bin/grep -q 'Mach-O' <<<"$LAUNCHER_KIND" || { echo "main CFBundleExecutable is not Mach-O: $LAUNCHER_KIND" >&2; exit 3; }
+HOST_ARCH="$(uname -m)"
+LAUNCHER_ARCHS="$(/usr/bin/lipo -archs "$LAUNCHER")"
+[[ " $LAUNCHER_ARCHS " == *" $HOST_ARCH "* ]] || { echo "main launcher architecture mismatch: host=$HOST_ARCH launcher=$LAUNCHER_ARCHS" >&2; exit 3; }
 if /usr/bin/grep -Eq '(^|[;&|[:space:]])python3([[:space:]]|$)' "$LAUNCHER"; then echo "launcher contains host python invocation" >&2; exit 3; fi
 /usr/bin/grep -q 'runtime/media/bin' "$LAUNCHER" || { echo "launcher does not prioritize embedded media runtime" >&2; exit 3; }
 /usr/bin/grep -q 'BINARIO_META_KEYCHAIN_HELPER' "$LAUNCHER" || { echo "launcher does not expose bundled Meta Keychain helper" >&2; exit 3; }
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+LS_PROBE="$TMP/launchservices-probe.txt"
+/usr/bin/open -n "$APP" --args --launchservices-probe "$LS_PROBE"
+LS_READY=0
+for _ in $(seq 1 40); do
+  if [[ -f "$LS_PROBE" ]]; then LS_READY=1; break; fi
+  sleep 0.25
+done
+[[ "$LS_READY" == "1" ]] || { echo "LaunchServices did not execute CFBundleExecutable" >&2; exit 3; }
+/usr/bin/grep -q '^ok$' "$LS_PROBE" || { echo "LaunchServices probe result invalid" >&2; exit 3; }
+echo "LAUNCHSERVICES APP BOOT PASS"
 
 KEYCHAIN_STATUS="$(cd "$MACOS" && ./binario-meta-keychain status)" || { echo "native Meta Keychain helper cannot access Keychain" >&2; exit 3; }
 [[ "$KEYCHAIN_STATUS" == "missing" || "$KEYCHAIN_STATUS" == "configured" ]] || { echo "unexpected Keychain helper status: $KEYCHAIN_STATUS" >&2; exit 3; }
@@ -36,8 +55,6 @@ for binary in "$FFMPEG" "$FFPROBE"; do
     exit 3
   fi
 done
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
 ENCODERS_FILE="$TMP/encoders.txt"
 "$FFMPEG" -hide_banner -encoders >"$ENCODERS_FILE" 2>&1
 /usr/bin/grep -q 'h264_videotoolbox' "$ENCODERS_FILE" || { echo "h264_videotoolbox unavailable" >&2; exit 3; }
