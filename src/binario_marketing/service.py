@@ -11,6 +11,7 @@ from .service_core import *  # re-export the certified Wave 22/23 HTTP/runtime s
 from .meta_ads import LinkCreativeSpec, MetaAdsBuilder, PausedAdSetSpec, PausedAdSpec
 from .meta_credentials import MetaCredentialError, MetaCredentialStore
 from .meta_graph import MetaGraphClient, MetaGraphError
+from .meta_readiness import MetaReadinessService
 from .paid_media_store import PaidMediaStore
 
 
@@ -30,7 +31,7 @@ from .paid_media_store import PaidMediaStore
 
 
 class AppRuntime(core.AppRuntime):
-    """Thin Wave 23 extension over the certified service core."""
+    """Thin Wave 23/24 extension over the certified service core."""
 
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
@@ -42,6 +43,20 @@ class AppRuntime(core.AppRuntime):
         payload = super().project_detail(project_id)
         payload["paid_media"] = [asdict(item) for item in self.paid_media.list(project_id)]
         return payload
+
+    def meta_readiness(self) -> dict:
+        status = self.meta_status()
+        if not status.get("configured"):
+            return {
+                "configured": False,
+                "facebook": {"ready": False, "reasons": ["meta_not_connected"], "pages": []},
+                "instagram": {"ready": False, "reasons": ["meta_not_connected"], "accounts": [], "missing_permissions": []},
+                "ads": {"ready": False, "reasons": ["meta_not_connected"], "accounts": [], "missing_permissions": []},
+                "permissions": [],
+            }
+        result = MetaReadinessService(MetaGraphClient.from_env()).diagnose()
+        result["configured"] = True
+        return result
 
     def connect_meta(self, payload: dict) -> dict:
         if os.environ.get("META_ACCESS_TOKEN", "").strip():
@@ -193,7 +208,7 @@ MarketingHTTPServer = core.MarketingHTTPServer
 
 
 class MarketingHandler(core.MarketingHandler):
-    """Intercept only Wave 23 extension routes; delegate every legacy route unchanged."""
+    """Intercept only Wave 23/24 extension routes; delegate every legacy route unchanged."""
 
     def _extension_error(self, exc: Exception) -> None:
         if isinstance(exc, KeyError):
@@ -209,6 +224,12 @@ class MarketingHandler(core.MarketingHandler):
 
     def do_GET(self) -> None:
         parts = self._segments()
+        if parts == ["api", "meta", "readiness"]:
+            try:
+                self._json(self.server.runtime.meta_readiness())
+            except Exception as exc:
+                self._extension_error(exc)
+            return
         if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "paid-media":
             try:
                 self.server.runtime._ensure_project(parts[2])
