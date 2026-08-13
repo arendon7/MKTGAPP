@@ -26,10 +26,34 @@
     </aside>
 
     <section class="workspace">
-      <div id="empty-state" class="panel empty-state">
-        <p class="eyebrow">BINARIO MARKETING</p>
-        <h2>Selecciona o crea un proyecto</h2>
-        <p>El proyecto conserva assets, timeline, renders, decisiones y handoffs en el Workspace unificado.</p>
+      <div id="empty-state" class="panel empty-state start-home">
+        <div class="start-home-hero">
+          <div>
+            <p class="eyebrow">EDITOR DE VIDEO · INICIO</p>
+            <h2>¿Qué quieres hacer?</h2>
+            <p>Empieza un video nuevo o continúa exactamente donde dejaste un proyecto. El flujo rápido te guía por carga, transcripción, selección y exportación.</p>
+          </div>
+          <span class="start-local-badge">Whisper + FFmpeg · local</span>
+        </div>
+        <div class="start-home-actions">
+          <form id="start-video-project" class="start-action-card primary-card">
+            <div><span class="start-action-number">01</span><strong>Nuevo proyecto de video</strong><p>Crea el proyecto y abre inmediatamente el selector de video.</p></div>
+            <label>Nombre del proyecto<input id="start-project-name" required placeholder="Ej. Reels lanzamiento agosto"></label>
+            <button type="submit" class="primary">Crear y cargar video</button>
+          </form>
+          <div class="start-action-card">
+            <div><span class="start-action-number">02</span><strong>Continuar proyecto reciente</strong><p>Retoma clips, timeline, renders y selecciones guardadas.</p></div>
+            <button id="continue-recent-project" type="button" disabled>Continuar el más reciente</button>
+            <div id="start-recent-projects" class="start-recent-projects"><p class="muted">Aún no hay proyectos.</p></div>
+          </div>
+        </div>
+        <div class="start-flow-explainer">
+          <div><span>1</span><strong>Carga</strong><p>Video original gestionado y verificado.</p></div>
+          <div><span>2</span><strong>Transcribe</strong><p>Whisper local, sin subir el audio.</p></div>
+          <div><span>3</span><strong>Selecciona</strong><p>Natural o duración objetivo.</p></div>
+          <div><span>4</span><strong>Exporta</strong><p>9:16, 16:9, 1:1 o 4:5.</p></div>
+        </div>
+        <p class="start-home-footnote">El Workspace avanzado y las otras 11 apps siguen disponibles en la barra lateral.</p>
       </div>
 
       <div id="project-view" class="hidden stack-lg">
