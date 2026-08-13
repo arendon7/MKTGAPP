@@ -29,9 +29,12 @@ class TranscriptionRuntimeContractTests(unittest.TestCase):
 
     def test_native_gate_audits_and_executes_offline_transcription(self):
         workflow=(ROOT/'.github/workflows/full-mac-app.yml').read_text(encoding='utf-8')
+        invocation='bash scripts/smoke_full_mac_transcription.sh "$BASE" "$PY" "$MEDIA" "$RUNNER_TEMP"'
         self.assertIn('audit_embedded_whisper.sh',workflow)
-        self.assertIn('smoke_full_mac_transcription.sh',workflow)
         self.assertIn('full-mac-whisper',workflow)
+        self.assertIn(invocation,workflow)
+        self.assertEqual(workflow.count(invocation),1)
+        self.assertLess(workflow.index(invocation),workflow.index('- name: Package and hash'))
         smoke=(ROOT/'scripts/smoke_full_mac_transcription.sh').read_text(encoding='utf-8')
         self.assertIn('/usr/bin/say',smoke)
         self.assertIn('/transcription/segments',smoke)
