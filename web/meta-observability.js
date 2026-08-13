@@ -1,4 +1,4 @@
-const metaObsState={publications:new Map(),paid:new Map(),busy:new Set(),projectId:null};
+const metaObsState={publications:new Map(),paid:new Map(),busy:new Set(),projectId:null,timer:null};
 
 function metaObsProjectId(){return state.current?.project?.id||null}
 function metaObsPublished(){return (state.current?.publications||[]).filter(row=>row.status==='PUBLISHED'&&row.remote_id)}
@@ -101,6 +101,10 @@ async function verifyRecentMetaObservability(){
   for(const [kind,id] of tasks){if(kind==='publication')await verifyMetaPublication(id);else await verifyMetaPaid(id)}
 }
 
-function metaObsWatch(){const title=$('#active-project-name');if(title)new MutationObserver(()=>setTimeout(renderMetaObservability,0)).observe(title,{childList:true,characterData:true,subtree:true});setInterval(()=>{if(metaObsProjectId())renderMetaObservability()},3000);setTimeout(renderMetaObservability,0)}
+function metaObsWatch(){
+  const title=$('#active-project-name');if(title)new MutationObserver(()=>setTimeout(renderMetaObservability,0)).observe(title,{childList:true,characterData:true,subtree:true});
+  clearInterval(metaObsState.timer);metaObsState.timer=setInterval(()=>{if(metaObsProjectId())renderMetaObservability()},3000);setTimeout(renderMetaObservability,0);
+}
+window.addEventListener('beforeunload',()=>clearInterval(metaObsState.timer));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',metaObsWatch,{once:true});else metaObsWatch();
 globalThis.renderMetaObservability=renderMetaObservability;
