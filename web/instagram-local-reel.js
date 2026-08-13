@@ -76,3 +76,7 @@ function instagramLocalWatch(){
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',instagramLocalWatch,{once:true});else instagramLocalWatch();
 globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
+
+(function loadOperationalReadinessExtension(){
+  if(!document.querySelector('script[data-operational-readiness]')){const script=document.createElement('script');script.src='/operational-readiness.js';script.defer=true;script.dataset.operationalReadiness='1';document.head.append(script)}
+})();
