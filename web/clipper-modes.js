@@ -14,7 +14,7 @@ function decorateNarrativeClipResults(){
   rows.forEach(node=>{if(node.querySelector('.narrative-meta'))return;const strong=node.querySelector('strong');if(!strong)return;const match=strong.textContent.match(/score\s+([\d.]+)/i);if(!match)return})
 }
 
-state.quickFlow=state.quickFlow||{projectId:null,assetId:null,clips:[],busy:false,bulkMode:null,bulkStop:false,bulkStatus:''};
+state.quickFlow=state.quickFlow||{projectId:null,assetId:null,clips:[],busy:false,bulkMode:null,bulkStop:false,bulkStatus:'',selectionConfig:null};
 
 function quickVideos(){return (state.current?.assets||[]).filter(asset=>asset.kind==='video')}
 function quickAsset(){return quickVideos().find(asset=>asset.id===state.quickFlow.assetId)||null}
@@ -28,6 +28,25 @@ function quickStage(row=quickTranscriptionRow()){
   if(!row||row.status!=='PASS')return 2;
   if(!state.quickFlow.clips.length)return 3;
   return 4;
+}
+function quickSelectionUrl(){return state.current?`/api/projects/${encodeURIComponent(state.current.project.id)}/quick-clips`:null}
+function quickApplySavedSelection(saved){
+  if(!saved||!Array.isArray(saved.clips)||!saved.clips.length)return;
+  state.quickFlow.clips=saved.clips.map(row=>({...row}));
+  state.quickFlow.selectionConfig={mode:saved.mode,target_count:Number(saved.target_count),min_duration:Number(saved.min_duration),max_duration:Number(saved.max_duration),target_duration:saved.target_duration===null||saved.target_duration===undefined?null:Number(saved.target_duration)};
+  const mode=$('#quick-clip-mode'),aspect=$('#quick-aspect'),count=$('#quick-clip-count'),target=$('#quick-target-duration');
+  if(mode)mode.value=saved.mode||'natural';if(aspect)aspect.value=saved.aspect||'9:16';if(count)count.value=String(saved.target_count||saved.clips.length||3);
+  if(target){target.disabled=(saved.mode||'natural')!=='objective';if(saved.target_duration!==null&&saved.target_duration!==undefined)target.value=String(Math.round(Number(saved.target_duration)))}
+  state.quickFlow.bulkStatus=`Selección recuperada · ${saved.clips.length} clip${saved.clips.length===1?'':'s'} · ${saved.aspect||'9:16'}`;
+}
+async function quickPersistSelection({quiet=true}={}){
+  const url=quickSelectionUrl(),asset=quickAsset(),config=state.quickFlow.selectionConfig;if(!url||!asset||!config||!state.quickFlow.clips.length)return null;
+  try{const saved=await api(url,{method:'POST',body:{asset_id:asset.id,mode:config.mode,target_count:config.target_count,min_duration:config.min_duration,max_duration:config.max_duration,target_duration:config.target_duration,aspect:$('#quick-aspect')?.value||'9:16',clips:state.quickFlow.clips}});state.current.quick_clips=saved;return saved}catch(err){if(!quiet)toast(`Clips listos, pero no pude guardar la selección: ${err.message}`);return null}
+}
+async function quickClearPersistedSelection({quiet=true,reason='change'}={}){
+  const url=quickSelectionUrl();if(!url)return false;let deleted=false;
+  try{const row=await api(url,{method:'DELETE'});deleted=Boolean(row.deleted)}catch(err){if(!quiet)toast(`No pude limpiar la selección anterior: ${err.message}`)}
+  if(state.current)state.current.quick_clips=null;state.quickFlow.clips=[];state.quickFlow.selectionConfig=null;state.quickFlow.bulkStatus=reason==='transcription'?'Selección anterior retirada antes de transcribir.':'';return deleted
 }
 function ensureQuickEditorPanel(){
   let panel=$('#quick-editor');if(panel)return panel;
@@ -77,12 +96,15 @@ function deemphasizeManualClipper(){
 }
 function syncQuickAssetOptions(){
   const select=$('#quick-asset-select');if(!select||!state.current)return;
-  const projectId=state.current.project.id;if(state.quickFlow.projectId!==projectId){state.quickFlow.projectId=projectId;state.quickFlow.assetId=null;state.quickFlow.clips=[];state.quickFlow.bulkMode=null;state.quickFlow.bulkStop=false;state.quickFlow.bulkStatus=''}
-  const videos=quickVideos();const preview=videos.find(asset=>asset.id===state.previewAssetId);
+  const projectId=state.current.project.id,projectChanged=state.quickFlow.projectId!==projectId,saved=projectChanged?state.current.quick_clips:null;
+  if(projectChanged){state.quickFlow.projectId=projectId;state.quickFlow.assetId=null;state.quickFlow.clips=[];state.quickFlow.bulkMode=null;state.quickFlow.bulkStop=false;state.quickFlow.bulkStatus='';state.quickFlow.selectionConfig=null}
+  const videos=quickVideos();const preview=videos.find(asset=>asset.id===state.previewAssetId);const savedAsset=saved&&videos.find(asset=>asset.id===saved.asset_id);
+  if(savedAsset)state.quickFlow.assetId=savedAsset.id;
   if(!videos.some(asset=>asset.id===state.quickFlow.assetId))state.quickFlow.assetId=preview?.id||videos[0]?.id||null;
   const chosen=state.quickFlow.assetId;select.replaceChildren();
   if(!videos.length){const option=el('option','','Carga un video para comenzar');option.value='';select.append(option);select.disabled=true;return}
   select.disabled=false;for(const asset of videos){const option=el('option','',asset.name);option.value=asset.id;select.append(option)}select.value=chosen||videos[0].id;
+  if(savedAsset)quickApplySavedSelection(saved)
 }
 function quickStatusText(row){
   if(!row)return 'Listo para transcribir.';
@@ -135,27 +157,28 @@ function renderQuickResults(){
   })
 }
 function renderQuickEditor(){
-  const panel=ensureQuickEditorPanel();if(!panel||!state.current)return;syncQuickAssetOptions();const asset=quickAsset(),row=quickTranscriptionRow(),stage=quickStage(row),active=row&&TRANSCRIPTION_ACTIVE.has(row.status),hasClips=state.quickFlow.clips.length>0;
+  const panel=ensureQuickEditorPanel();if(!panel||!state.current)return;syncQuickAssetOptions();const asset=quickAsset(),row=quickTranscriptionRow(),stage=quickStage(row),active=row&&TRANSCRIPTION_ACTIVE.has(row.status),hasClips=state.quickFlow.clips.length>0,bulkLocked=Boolean(state.quickFlow.bulkMode);
   $('#quick-flow-state').textContent=active?'2 · Transcribiendo…':stage===1?'1 · Carga un video':stage===2?'2 · Transcribe':stage===3?'3 · Genera clips':'4 · Revisa y exporta';
   document.querySelectorAll('#quick-editor .quick-step').forEach(node=>{const value=Number(node.dataset.quickStep);node.classList.toggle('active',value===stage);node.classList.toggle('done',value<stage)});
   $('#quick-asset-status').textContent=asset?`${asset.name}${asset.bytes?` · ${fmtBytes(asset.bytes)}`:''}`:'Sin video seleccionado.';
-  $('#quick-preview-video').disabled=!asset;$('#quick-transcribe').disabled=!asset||Boolean(active)||state.quickFlow.busy||Boolean(state.quickFlow.bulkMode);
+  $('#quick-preview-video').disabled=!asset;$('#quick-transcribe').disabled=!asset||Boolean(active)||state.quickFlow.busy||bulkLocked;
   $('#quick-transcription-status').textContent=!asset?'Primero selecciona un video.':row?`${quickStatusText(row)}${row.language?` · ${row.language}`:''}${row.segments_count?` · ${row.segments_count} segmentos`:''}${row.duration?` · ${Number(row.duration).toFixed(1)}s`:''}${row.error?` · ${String(row.error).slice(-140)}`:''}`:'Listo para transcribir.';
-  $('#quick-generate-clips').disabled=!asset||row?.status!=='PASS'||state.quickFlow.busy||Boolean(state.quickFlow.bulkMode);
-  $('#quick-selection-status').textContent=row?.status==='PASS'?(hasClips?`${state.quickFlow.clips.length} clip${state.quickFlow.clips.length===1?'':'s'} listo${state.quickFlow.clips.length===1?'':'s'}.`:'Transcript listo. Elige modo y genera los cortes.'):'Transcribe el video para continuar.';
-  $('#quick-add-all-timeline').disabled=!hasClips||Boolean(state.quickFlow.bulkMode);
+  $('#quick-generate-clips').disabled=!asset||row?.status!=='PASS'||state.quickFlow.busy||bulkLocked;
+  $('#quick-clip-mode').disabled=bulkLocked;$('#quick-clip-count').disabled=bulkLocked;$('#quick-aspect').disabled=bulkLocked;$('#quick-target-duration').disabled=bulkLocked||$('#quick-clip-mode').value!=='objective';
+  $('#quick-selection-status').textContent=row?.status==='PASS'?(hasClips?`${state.quickFlow.clips.length} clip${state.quickFlow.clips.length===1?'':'s'} listo${state.quickFlow.clips.length===1?'':'s'}${state.current.quick_clips?' · guardado':''}.`:'Transcript listo. Elige modo y genera los cortes.'):'Transcribe el video para continuar.';
+  $('#quick-add-all-timeline').disabled=!hasClips||bulkLocked;
   const exportAll=$('#quick-export-all');exportAll.disabled=!hasClips||Boolean(state.quickFlow.bulkMode&&state.quickFlow.bulkMode!=='export');exportAll.textContent=state.quickFlow.bulkMode==='export'?'Detener después del actual':'Exportar todos';
   $('#quick-bulk-status').textContent=state.quickFlow.bulkStatus||(hasClips?'Las acciones masivas omiten duplicados y exportan un clip a la vez.':'Genera clips para habilitar acciones masivas.');
-  $('#quick-flow-hint').textContent=stage===1?'Carga tu video y el proyecto conservará el original con SHA-256.':stage===2?(active?'Whisper está procesando localmente; puedes seguir en esta pantalla.':'La transcripción queda guardada dentro del proyecto.'):stage===3?'Natural prioriza ideas completas; Objetivo intenta acercarse a una duración concreta.':'Previsualiza cada corte, llévalo al timeline o expórtalo directamente.';
+  $('#quick-flow-hint').textContent=stage===1?'Carga tu video y el proyecto conservará el original con SHA-256.':stage===2?(active?'Whisper está procesando localmente; puedes seguir en esta pantalla.':'La transcripción queda guardada dentro del proyecto.'):stage===3?'Natural prioriza ideas completas; Objetivo intenta acercarse a una duración concreta.':'La selección queda guardada en el proyecto; puedes cerrar y continuar después.';
   if(row&&TRANSCRIPTION_ACTIVE.has(row.status)&&state.transcription.assetId!==asset?.id)setTimeout(()=>setTranscriptionAsset(asset.id),0);
   renderQuickResults()
 }
 async function quickUploadVideo(){
   if(!state.current||state.quickFlow.busy||state.quickFlow.bulkMode)return;const input=document.createElement('input');input.type='file';input.accept='video/*';input.multiple=false;
-  input.addEventListener('change',async()=>{const file=input.files?.[0];if(!file)return;state.quickFlow.busy=true;renderQuickEditor();try{const projectId=state.current.project.id;const response=await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets/upload?filename=${encodeURIComponent(file.name)}&kind=video`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||`HTTP ${response.status}`);state.quickFlow.assetId=payload.id;state.quickFlow.clips=[];state.quickFlow.bulkStatus='';await selectProject(projectId);state.quickFlow.assetId=payload.id;await previewAsset(payload.id);toast('Video cargado. Siguiente paso: transcribir.') }catch(err){toast(err.message)}finally{state.quickFlow.busy=false;renderQuickEditor()}});input.click()
+  input.addEventListener('change',async()=>{const file=input.files?.[0];if(!file)return;state.quickFlow.busy=true;renderQuickEditor();try{const projectId=state.current.project.id;const response=await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets/upload?filename=${encodeURIComponent(file.name)}&kind=video`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||`HTTP ${response.status}`);await quickClearPersistedSelection({reason:'asset'});state.quickFlow.assetId=payload.id;await selectProject(projectId);state.quickFlow.assetId=payload.id;await previewAsset(payload.id);toast('Video cargado. Siguiente paso: transcribir.') }catch(err){toast(err.message)}finally{state.quickFlow.busy=false;renderQuickEditor()}});input.click()
 }
 async function quickStartTranscription(){
-  const asset=quickAsset();if(!asset||state.quickFlow.busy||state.quickFlow.bulkMode)return;state.quickFlow.busy=true;state.quickFlow.clips=[];state.quickFlow.bulkStatus='';renderQuickEditor();
+  const asset=quickAsset();if(!asset||state.quickFlow.busy||state.quickFlow.bulkMode)return;state.quickFlow.busy=true;await quickClearPersistedSelection({reason:'transcription'});renderQuickEditor();
   try{await setTranscriptionAsset(asset.id,false);const language=$('#quick-language').value;const advanced=$('#transcription-language');if(advanced)advanced.value=language;const row=await api(transcriptionUrl(asset.id),{method:'POST',body:{language}});state.transcription.assetId=asset.id;state.transcription.record=row;state.transcription.segments=[];renderTranscriptionPanel();scheduleTranscriptionPoll();toast(row.status==='FAIL'?`Transcripción bloqueada: ${row.error}`:'Transcripción local iniciada') }catch(err){toast(err.message)}finally{state.quickFlow.busy=false;renderQuickEditor()}
 }
 function quickClipBounds(row,mode){
@@ -164,13 +187,13 @@ function quickClipBounds(row,mode){
 }
 async function quickGenerateClips(){
   const asset=quickAsset(),row=quickTranscriptionRow();if(!asset||row?.status!=='PASS'||state.quickFlow.busy||state.quickFlow.bulkMode){toast('Primero completa la transcripción');return}state.quickFlow.busy=true;state.quickFlow.bulkStatus='';renderQuickEditor();
-  try{const mode=$('#quick-clip-mode').value,bounds=quickClipBounds(row,mode),payload={target_count:Number($('#quick-clip-count').value||3),min_duration:bounds.minimum,max_duration:bounds.maximum,mode};if(bounds.target!==null)payload.target_duration=bounds.target;const clips=await api(transcriptionUrl(asset.id,'/clips'),{method:'POST',body:payload});state.quickFlow.clips=clips;const advancedMode=$('#clipper-mode');if(advancedMode)advancedMode.value=mode;const advancedTarget=$('#clipper-target-duration');if(advancedTarget){advancedTarget.disabled=mode!=='objective';if(bounds.target!==null)advancedTarget.value=String(Math.round(bounds.target))}const advancedCount=$('#clipper-count');if(advancedCount)advancedCount.value=String(payload.target_count);toast(`${clips.length} clip${clips.length===1?'':'s'} seleccionado${clips.length===1?'':'s'}`)}catch(err){toast(err.message)}finally{state.quickFlow.busy=false;renderQuickEditor()}
+  try{const mode=$('#quick-clip-mode').value,bounds=quickClipBounds(row,mode),payload={target_count:Number($('#quick-clip-count').value||3),min_duration:bounds.minimum,max_duration:bounds.maximum,mode};if(bounds.target!==null)payload.target_duration=bounds.target;const clips=await api(transcriptionUrl(asset.id,'/clips'),{method:'POST',body:payload});state.quickFlow.clips=clips;state.quickFlow.selectionConfig={mode,target_count:payload.target_count,min_duration:payload.min_duration,max_duration:payload.max_duration,target_duration:bounds.target};const advancedMode=$('#clipper-mode');if(advancedMode)advancedMode.value=mode;const advancedTarget=$('#clipper-target-duration');if(advancedTarget){advancedTarget.disabled=mode!=='objective';if(bounds.target!==null)advancedTarget.value=String(Math.round(bounds.target))}const advancedCount=$('#clipper-count');if(advancedCount)advancedCount.value=String(payload.target_count);const saved=await quickPersistSelection({quiet:false});toast(`${clips.length} clip${clips.length===1?'':'s'} seleccionado${clips.length===1?'':'s'}${saved?' y guardado':''}`)}catch(err){toast(err.message)}finally{state.quickFlow.busy=false;renderQuickEditor()}
 }
 function bindQuickEditor(){
   const panel=$('#quick-editor');if(!panel||panel.dataset.bound==='1')return;panel.dataset.bound='1';
   $('#quick-upload-video').addEventListener('click',quickUploadVideo);$('#quick-preview-video').addEventListener('click',()=>{const asset=quickAsset();if(asset)previewAsset(asset.id)});$('#quick-transcribe').addEventListener('click',quickStartTranscription);$('#quick-generate-clips').addEventListener('click',quickGenerateClips);$('#quick-add-all-timeline').addEventListener('click',quickAddAllTimeline);$('#quick-export-all').addEventListener('click',quickExportAll);
-  $('#quick-asset-select').addEventListener('change',async event=>{if(state.quickFlow.bulkMode)return;state.quickFlow.assetId=event.target.value||null;state.quickFlow.clips=[];state.quickFlow.bulkStatus='';if(state.quickFlow.assetId)await setTranscriptionAsset(state.quickFlow.assetId);renderQuickEditor()});
-  $('#quick-clip-mode').addEventListener('change',event=>{$('#quick-target-duration').disabled=event.target.value!=='objective';renderQuickEditor()});$('#quick-target-duration').addEventListener('change',renderQuickEditor);$('#quick-clip-count').addEventListener('change',renderQuickEditor);$('#quick-aspect').addEventListener('change',renderQuickEditor);
+  $('#quick-asset-select').addEventListener('change',async event=>{if(state.quickFlow.bulkMode)return;await quickClearPersistedSelection({reason:'asset'});state.quickFlow.assetId=event.target.value||null;if(state.quickFlow.assetId)await setTranscriptionAsset(state.quickFlow.assetId);renderQuickEditor()});
+  $('#quick-clip-mode').addEventListener('change',event=>{$('#quick-target-duration').disabled=event.target.value!=='objective';renderQuickEditor()});$('#quick-target-duration').addEventListener('change',renderQuickEditor);$('#quick-clip-count').addEventListener('change',renderQuickEditor);$('#quick-aspect').addEventListener('change',async()=>{if(state.quickFlow.clips.length)await quickPersistSelection({quiet:false});renderQuickEditor()});
   $('#quick-open-advanced').addEventListener('click',()=>document.querySelector('.editor-preview-panel')?.scrollIntoView({behavior:'smooth',block:'start'}))
 }
 
