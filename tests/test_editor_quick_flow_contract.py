@@ -76,8 +76,9 @@ class EditorQuickFlowContractTests(unittest.TestCase):
 
     def test_quick_flow_bundle_is_part_of_native_full_mac_smoke(self):
         service=(ROOT/'src/binario_marketing/service.py').read_text(encoding='utf-8')
+        service_core=(ROOT/'src/binario_marketing/service_core.py').read_text(encoding='utf-8')
         workflow=(ROOT/'.github/workflows/full-mac-app.yml').read_text(encoding='utf-8')
-        self.assertIn('"/clipper-modes.js"',service)
+        self.assertIn('"/clipper-modes.js"',service+service_core)
         self.assertIn('"$BASE/clipper-modes.js"',workflow)
         self.assertIn("grep -q 'clipperModePayload'",workflow)
 
