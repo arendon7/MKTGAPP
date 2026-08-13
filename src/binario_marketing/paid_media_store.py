@@ -15,6 +15,7 @@ from .meta_ads import LinkCreativeSpec, PausedAdSetSpec
 
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 STATUSES = {"DRAFT", "REMOTE_PAUSED", "CANCELLED"}
+_REMOTE_FIELDS = ("campaign_id", "adset_id", "creative_id", "ad_id")
 _SECRET_KEYS = {"access_token", "token", "client_secret", "app_secret", "password", "authorization"}
 
 
@@ -168,23 +169,37 @@ class PaidMediaStore:
             write_json_atomic(self._path(row.id), asdict(row))
         return row
 
-    def mark_remote_paused(self, draft_id: str, *, campaign_id: str, adset_id: str, creative_id: str, ad_id: str) -> PaidMediaDraft:
+    def checkpoint_remote(self, draft_id: str, field: str, remote_id: str) -> PaidMediaDraft:
+        if field not in _REMOTE_FIELDS:
+            raise ValueError("unsupported remote checkpoint field")
+        value = str(remote_id or "").strip()
+        if not value or len(value) > 128:
+            raise ValueError("remote Meta object id is required")
+        with self._lock:
+            row = self.get(draft_id)
+            if row.status != "DRAFT":
+                raise ValueError("only DRAFT paid media plans can receive remote checkpoints")
+            position = _REMOTE_FIELDS.index(field)
+            for previous in _REMOTE_FIELDS[:position]:
+                if not getattr(row, previous):
+                    raise ValueError(f"remote checkpoint order requires {previous} first")
+            existing = getattr(row, field)
+            if existing:
+                if existing != value:
+                    raise ValueError(f"remote checkpoint {field} is immutable once recorded")
+                return row
+            updated = replace(row, **{field: value, "updated_at": _now()})
+            write_json_atomic(self._path(updated.id), asdict(updated))
+            return updated
+
+    def mark_remote_paused(self, draft_id: str) -> PaidMediaDraft:
         with self._lock:
             row = self.get(draft_id)
             if row.status != "DRAFT":
                 raise ValueError("only DRAFT paid media plans can be marked remote")
-            ids = [str(value or "").strip() for value in (campaign_id, adset_id, creative_id, ad_id)]
-            if any(not value for value in ids):
-                raise ValueError("all remote Meta object ids are required")
-            updated = replace(
-                row,
-                status="REMOTE_PAUSED",
-                campaign_id=ids[0],
-                adset_id=ids[1],
-                creative_id=ids[2],
-                ad_id=ids[3],
-                updated_at=_now(),
-            )
+            if any(not getattr(row, field) for field in _REMOTE_FIELDS):
+                raise ValueError("all remote Meta object ids must be checkpointed first")
+            updated = replace(row, status="REMOTE_PAUSED", updated_at=_now())
             write_json_atomic(self._path(updated.id), asdict(updated))
             return updated
 
@@ -193,6 +208,8 @@ class PaidMediaStore:
             row = self.get(draft_id)
             if row.status != "DRAFT":
                 raise ValueError("only local DRAFT plans can be cancelled")
+            if any(getattr(row, field) for field in _REMOTE_FIELDS):
+                raise ValueError("draft has remote Meta objects; review them before cancelling locally")
             updated = replace(row, status="CANCELLED", updated_at=_now())
             write_json_atomic(self._path(updated.id), asdict(updated))
             return updated
