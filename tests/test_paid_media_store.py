@@ -47,20 +47,28 @@ class PaidMediaStoreTests(unittest.TestCase):
             self.store.create('project-1', payload)
         self.assertEqual(list(Path(self.tmp.name).glob('*.json')), [])
 
-    def test_remote_hierarchy_can_only_be_marked_complete_when_all_ids_exist(self):
+    def test_remote_hierarchy_is_checkpointed_in_order_and_resumable(self):
         row = self.store.create('project-1', self.payload)
+        with self.assertRaisesRegex(ValueError, 'campaign_id first'):
+            self.store.checkpoint_remote(row.id, 'adset_id', 'adset-1')
+        row = self.store.checkpoint_remote(row.id, 'campaign_id', 'campaign-1')
+        self.assertEqual(row.campaign_id, 'campaign-1')
+        self.assertIsNone(row.adset_id)
+        restarted = PaidMediaStore(Path(self.tmp.name))
+        row = restarted.checkpoint_remote(row.id, 'campaign_id', 'campaign-1')
+        self.assertEqual(row.campaign_id, 'campaign-1')
+        with self.assertRaisesRegex(ValueError, 'immutable'):
+            restarted.checkpoint_remote(row.id, 'campaign_id', 'different-campaign')
+        row = restarted.checkpoint_remote(row.id, 'adset_id', 'adset-1')
+        row = restarted.checkpoint_remote(row.id, 'creative_id', 'creative-1')
+        with self.assertRaisesRegex(ValueError, 'remote Meta objects'):
+            restarted.cancel(row.id)
         with self.assertRaisesRegex(ValueError, 'all remote Meta object ids'):
-            self.store.mark_remote_paused(row.id, campaign_id='campaign-1', adset_id='', creative_id='creative-1', ad_id='ad-1')
-        updated = self.store.mark_remote_paused(
-            row.id,
-            campaign_id='campaign-1',
-            adset_id='adset-1',
-            creative_id='creative-1',
-            ad_id='ad-1',
-        )
-        self.assertEqual(updated.status, 'REMOTE_PAUSED')
-        with self.assertRaises(ValueError):
-            self.store.cancel(updated.id)
+            restarted.mark_remote_paused(row.id)
+        row = restarted.checkpoint_remote(row.id, 'ad_id', 'ad-1')
+        row = restarted.mark_remote_paused(row.id)
+        self.assertEqual(row.status, 'REMOTE_PAUSED')
+        self.assertEqual((row.campaign_id, row.adset_id, row.creative_id, row.ad_id), ('campaign-1', 'adset-1', 'creative-1', 'ad-1'))
 
     def test_persisted_draft_has_no_activation_state_or_secret(self):
         row = self.store.create('project-1', self.payload)
