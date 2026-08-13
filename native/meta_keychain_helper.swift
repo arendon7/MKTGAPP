@@ -4,23 +4,31 @@ import Security
 private let service = "com.sistemabinario.marketing.meta"
 private let account = "user-access-token"
 
+private enum Backend {
+    case dataProtection
+    case legacy
+}
+
 private enum KeychainFailure: Error {
     case status(OSStatus)
     case invalidUTF8
     case emptySecret
 }
 
-private func baseQuery() -> [String: Any] {
-    [
+private func baseQuery(_ backend: Backend) -> [String: Any] {
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
-        kSecUseDataProtectionKeychain as String: true,
     ]
+    if case .dataProtection = backend {
+        query[kSecUseDataProtectionKeychain as String] = true
+    }
+    return query
 }
 
-private func readSecret() throws -> String? {
-    var query = baseQuery()
+private func readSecret(_ backend: Backend) throws -> String? {
+    var query = baseQuery(backend)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
@@ -33,11 +41,18 @@ private func readSecret() throws -> String? {
     return value
 }
 
-private func writeSecret(_ value: String) throws {
-    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty else { throw KeychainFailure.emptySecret }
-    guard let data = clean.data(using: .utf8) else { throw KeychainFailure.invalidUTF8 }
-    let query = baseQuery()
+private func readSecret() throws -> String? {
+    do {
+        if let value = try readSecret(.dataProtection) { return value }
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        return try readSecret(.legacy)
+    }
+    return try readSecret(.legacy)
+}
+
+private func writeSecret(_ value: String, backend: Backend) throws {
+    guard let data = value.data(using: .utf8) else { throw KeychainFailure.invalidUTF8 }
+    let query = baseQuery(backend)
     let update: [String: Any] = [kSecValueData as String: data]
     let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
     if updateStatus == errSecSuccess { return }
@@ -49,11 +64,31 @@ private func writeSecret(_ value: String) throws {
     guard addStatus == errSecSuccess else { throw KeychainFailure.status(addStatus) }
 }
 
-private func deleteSecret() throws {
-    let status = SecItemDelete(baseQuery() as CFDictionary)
+private func deleteSecret(_ backend: Backend) throws {
+    let status = SecItemDelete(baseQuery(backend) as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {
         throw KeychainFailure.status(status)
     }
+}
+
+private func writeSecret(_ value: String) throws {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { throw KeychainFailure.emptySecret }
+    do {
+        try writeSecret(clean, backend: .dataProtection)
+        try? deleteSecret(.legacy)
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        try writeSecret(clean, backend: .legacy)
+    }
+}
+
+private func deleteSecret() throws {
+    do {
+        try deleteSecret(.dataProtection)
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        // Ad-hoc standalone helpers may not have a data-protection access group.
+    }
+    try deleteSecret(.legacy)
 }
 
 private func stdinText() -> String {
