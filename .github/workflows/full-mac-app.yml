@@ -133,6 +133,8 @@ jobs:
           /usr/bin/grep -q 'startTranscription' "$RUNNER_TEMP/transcription.js"
           /usr/bin/curl --fail --silent "$BASE/clipper-modes.js" > "$RUNNER_TEMP/clipper-modes.js"
           /usr/bin/grep -q 'clipperModePayload' "$RUNNER_TEMP/clipper-modes.js"
+          /usr/bin/curl --fail --silent "$BASE/social-uat.js" > "$RUNNER_TEMP/social-uat.js"
+          /usr/bin/grep -q 'metaUatReport' "$RUNNER_TEMP/social-uat.js"
           "$PY" -I -B - "$RUNNER_TEMP/apps.json" "$RUNNER_TEMP/runtime.json" <<'PY'
           import json, sys
           apps=json.load(open(sys.argv[1], encoding='utf-8'))
