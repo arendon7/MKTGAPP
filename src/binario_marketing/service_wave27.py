@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlparse
 
 from . import service as base
-from .wave27_instagram_local import install_wave27_social
+from .wave27_instagram_local import Wave27MetaSocialPublisher, install_wave27_social
 
 
 class AppRuntime(base.AppRuntime):
@@ -15,6 +16,20 @@ class AppRuntime(base.AppRuntime):
         runtime = super().create(repo_root, data_root)
         install_wave27_social(runtime)
         return runtime
+
+    def publish_publication_now(self, project_id: str, publication_id: str) -> dict:
+        row = self._publication_for_project(project_id, publication_id)
+        if row.status in {"DRAFT", "FAILED"}:
+            row = self.social.queue(publication_id)
+        if row.status != "QUEUED":
+            raise ValueError("publication cannot be published from its current state")
+        scheduler = self.social_scheduler
+        if scheduler is None:
+            raise RuntimeError("Wave 27 social scheduler is unavailable")
+        client = scheduler.client_factory()
+        result = asdict(Wave27MetaSocialPublisher(self.social, client).publish(publication_id))
+        self._record_social_results([result])
+        return result
 
 
 MarketingHTTPServer = base.MarketingHTTPServer
