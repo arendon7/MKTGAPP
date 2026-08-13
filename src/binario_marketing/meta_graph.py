@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -18,6 +20,7 @@ class MetaGraphError(RuntimeError):
 
 
 Transport = Callable[[str, str, dict[str, str]], dict]
+BinaryTransport = Callable[[str, Path, str], dict]
 
 
 def _default_transport(method: str, url: str, params: dict[str, str]) -> dict:
@@ -58,6 +61,49 @@ def _default_transport(method: str, url: str, params: dict[str, str]) -> dict:
     return payload
 
 
+def _default_binary_transport(upload_url: str, file_path: Path, access_token: str) -> dict:
+    parsed = urlparse(upload_url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise MetaGraphError("Meta returned an invalid Reel upload URL")
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    size = path.stat().st_size
+    if size <= 0:
+        raise ValueError("Facebook Reel file is empty")
+    target = parsed.path or "/"
+    if parsed.query:
+        target += f"?{parsed.query}"
+    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=120)
+    try:
+        connection.putrequest("POST", target)
+        connection.putheader("Authorization", f"OAuth {access_token}")
+        connection.putheader("offset", "0")
+        connection.putheader("file_size", str(size))
+        connection.putheader("Content-Type", "application/octet-stream")
+        connection.putheader("Content-Length", str(size))
+        connection.putheader("User-Agent", "BinarioMarketing/1.0")
+        connection.endheaders()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                connection.send(chunk)
+        response = connection.getresponse()
+        body = response.read()
+        if response.status < 200 or response.status >= 300:
+            raise MetaGraphError(f"Meta Reel upload HTTP {response.status}")
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise MetaGraphError("Meta Reel upload returned invalid JSON") from exc
+    except OSError as exc:
+        raise MetaGraphError(f"Meta Reel upload unavailable: {exc}") from None
+    finally:
+        connection.close()
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise MetaGraphError("Meta did not confirm the Reel binary upload")
+    return payload
+
+
 @dataclass(frozen=True)
 class MetaConnection:
     configured: bool
@@ -68,13 +114,15 @@ class MetaConnection:
 
 
 class MetaGraphClient:
-    """Minimal Meta Graph/Marketing API client.
+    """Minimal Meta Graph/Marketing API client with streamed local Facebook Reel upload."""
 
-    Tokens live in process environment only. Returned connection/page payloads are sanitized so
-    credentials cannot accidentally flow into project state or browser JSON.
-    """
-
-    def __init__(self, access_token: str, graph_version: str = "v25.0", transport: Transport | None = None):
+    def __init__(
+        self,
+        access_token: str,
+        graph_version: str = "v25.0",
+        transport: Transport | None = None,
+        binary_transport: BinaryTransport | None = None,
+    ):
         token = str(access_token or "").strip()
         if not token:
             raise ValueError("Meta access token is required")
@@ -84,14 +132,16 @@ class MetaGraphClient:
         self._access_token = token
         self.graph_version = version
         self._transport = transport or _default_transport
+        self._binary_transport = binary_transport or _default_binary_transport
         self.base_url = f"https://graph.facebook.com/{version}"
 
     @classmethod
-    def from_env(cls, transport: Transport | None = None) -> "MetaGraphClient":
+    def from_env(cls, transport: Transport | None = None, binary_transport: BinaryTransport | None = None) -> "MetaGraphClient":
         return cls(
             os.environ.get("META_ACCESS_TOKEN", ""),
             os.environ.get("META_GRAPH_API_VERSION", "v25.0"),
             transport=transport,
+            binary_transport=binary_transport,
         )
 
     @staticmethod
@@ -215,6 +265,30 @@ class MetaGraphClient:
         if not remote_id:
             raise MetaGraphError("Meta did not return a Facebook photo id")
         return remote_id
+
+    def publish_page_reel_local(self, page_id: str, file_path: Path, description: str = "", title: str = "") -> str:
+        token = self._page_token(page_id)
+        started = self._request("POST", "me/video_reels", {"upload_phase": "start"}, token=token)
+        video_id = str(started.get("video_id") or "").strip()
+        upload_url = str(started.get("upload_url") or "").strip()
+        if not video_id or not upload_url:
+            raise MetaGraphError("Meta did not initialize the Facebook Reel upload session")
+        self._binary_transport(upload_url, Path(file_path), token)
+        finished = self._request(
+            "POST",
+            "me/video_reels",
+            {
+                "video_id": video_id,
+                "upload_phase": "finish",
+                "video_state": "PUBLISHED",
+                "description": str(description or ""),
+                "title": str(title or ""),
+            },
+            token=token,
+        )
+        if finished.get("success") is not True:
+            raise MetaGraphError(f"Meta did not confirm Facebook Reel publication for video {video_id}")
+        return video_id
 
     def create_instagram_container(self, instagram_id: str, media_url: str, caption: str, kind: str) -> str:
         kind = str(kind).strip().lower()
