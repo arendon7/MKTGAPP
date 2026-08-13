@@ -11,6 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from .meta_credentials import MetaCredentialStore
+
 
 _GRAPH_VERSION_RE = re.compile(r"^v\d+\.\d+$")
 
@@ -111,10 +113,12 @@ class MetaConnection:
     missing: tuple[str, ...]
     publishing_ready: bool
     ads_ready: bool
+    credential_source: str = "none"
+    credential_writable: bool = False
 
 
 class MetaGraphClient:
-    """Minimal Meta Graph/Marketing API client with streamed local Facebook Reel upload."""
+    """Minimal Meta Graph/Marketing API client with Keychain-backed runtime credentials."""
 
     def __init__(
         self,
@@ -137,8 +141,9 @@ class MetaGraphClient:
 
     @classmethod
     def from_env(cls, transport: Transport | None = None, binary_transport: BinaryTransport | None = None) -> "MetaGraphClient":
+        token = MetaCredentialStore().read() or ""
         return cls(
-            os.environ.get("META_ACCESS_TOKEN", ""),
+            token,
             os.environ.get("META_GRAPH_API_VERSION", "v25.0"),
             transport=transport,
             binary_transport=binary_transport,
@@ -147,13 +152,16 @@ class MetaGraphClient:
     @staticmethod
     def diagnose_env() -> MetaConnection:
         version = os.environ.get("META_GRAPH_API_VERSION", "v25.0").strip() or "v25.0"
-        missing = tuple(name for name in ("META_ACCESS_TOKEN",) if not os.environ.get(name, "").strip())
+        status = MetaCredentialStore().status()
+        missing = () if status.configured else (("META_CONNECTION",) if status.writable else ("META_ACCESS_TOKEN",))
         return MetaConnection(
-            configured=not missing,
+            configured=status.configured,
             graph_version=version,
             missing=missing,
-            publishing_ready=not missing,
-            ads_ready=not missing,
+            publishing_ready=status.configured,
+            ads_ready=status.configured,
+            credential_source=status.source,
+            credential_writable=status.writable,
         )
 
     def _request(self, method: str, path: str, params: dict | None = None, *, token: str | None = None) -> dict:
@@ -169,6 +177,13 @@ class MetaGraphClient:
                 clean[str(key)] = str(value)
         clean["access_token"] = token or self._access_token
         return self._transport(method.upper(), f"{self.base_url}/{path.lstrip('/')}", clean)
+
+    def identity(self) -> dict:
+        payload = self._request("GET", "me", {"fields": "id,name"})
+        account_id = str(payload.get("id") or "").strip()
+        if not account_id:
+            raise MetaGraphError("Meta token validation did not return an account id")
+        return {"id": account_id, "name": str(payload.get("name") or "")}
 
     def _pages_with_tokens(self) -> list[dict]:
         payload = self._request(
