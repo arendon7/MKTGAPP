@@ -19,6 +19,9 @@ class EditorQuickFlowContractTests(unittest.TestCase):
             'startRender',
             'Natural · idea completa',
             'Duración objetivo',
+            'quick-aspect',
+            "aspect:$('#quick-aspect').value",
+            'Vertical 9:16 · Reels / TikTok',
             'Abrir editor avanzado',
         ):
             self.assertIn(token,js)
