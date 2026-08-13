@@ -241,6 +241,7 @@ jobs:
           /usr/bin/grep -q '^audio$' "$RUNNER_TEMP/rendered-audio.txt"
           echo "SMOKE PASS: managed pro-media render + audio + SRT + SHA256 ($FILE_SHA)"
 
+          bash scripts/smoke_full_mac_transcription.sh "$BASE" "$PY" "$MEDIA" "$RUNNER_TEMP"
           bash scripts/smoke_full_mac_sequence.sh "$BASE" "$PY" "$MEDIA" "$RUNNER_TEMP"
       - name: Package and hash
         shell: bash
