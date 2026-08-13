@@ -44,6 +44,18 @@ class MetaUatContractTests(unittest.TestCase):
         self.assertIn("$('#social-scheduled-for').value=local", js)
         self.assertIn('Guardar / programar', js)
 
+    def test_uat_static_route_is_owned_by_wave23_extension(self):
+        extension = (ROOT / 'src' / 'binario_marketing' / 'service.py').read_text(encoding='utf-8')
+        core = (ROOT / 'src' / 'binario_marketing' / 'service_core.py').read_text(encoding='utf-8')
+        self.assertIn('if path == "/social-uat.js":', extension)
+        self.assertIn('self._static(path)', extension)
+        self.assertNotIn('"/social-uat.js"', core)
+
+    def test_full_mac_smoke_fetches_guided_uat_from_bundled_server(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'full-mac-app.yml').read_text(encoding='utf-8')
+        self.assertIn('"$BASE/social-uat.js"', workflow)
+        self.assertIn("grep -q 'metaUatReport'", workflow)
+
     def test_bundle_is_served_by_local_http_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = AppRuntime.create(ROOT, Path(tmp) / 'data')
