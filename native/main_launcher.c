@@ -15,9 +15,7 @@ static volatile sig_atomic_t child_pid = -1;
 
 static void forward_signal(int signo) {
     pid_t pid = (pid_t)child_pid;
-    if (pid > 0) {
-        kill(pid, signo);
-    }
+    if (pid > 0) kill(pid, signo);
 }
 
 static int path_join(char *out, size_t out_size, const char *base, const char *suffix) {
@@ -30,6 +28,11 @@ static int parent_dir(char *path) {
     if (!slash || slash == path) return -1;
     *slash = '\0';
     return 0;
+}
+
+static int copy_path(char *out, size_t out_size, const char *value) {
+    int n = snprintf(out, out_size, "%s", value);
+    return n >= 0 && (size_t)n < out_size ? 0 : -1;
 }
 
 static int fail(const char *message) {
@@ -47,14 +50,17 @@ int main(void) {
     if (parent_dir(macos_dir) != 0) return fail("cannot resolve Contents/MacOS");
 
     char contents_dir[PATH_MAX];
-    if (snprintf(contents_dir, sizeof(contents_dir), "%s", macos_dir) < 0) return fail("path error");
+    if (copy_path(contents_dir, sizeof(contents_dir), macos_dir) != 0) return fail("bundle path is too long");
     if (parent_dir(contents_dir) != 0) return fail("cannot resolve Contents");
 
-    char resources[PATH_MAX], python[PATH_MAX], media_bin[PATH_MAX], transcription_bin[PATH_MAX];
-    char whisper_cli[PATH_MAX], whisper_model[PATH_MAX], ffmpeg[PATH_MAX], ffprobe[PATH_MAX];
+    char resources[PATH_MAX], python_bin[PATH_MAX], python_dir[PATH_MAX];
+    char media_bin[PATH_MAX], transcription_bin[PATH_MAX], whisper_cli[PATH_MAX];
+    char whisper_model[PATH_MAX], ffmpeg[PATH_MAX], ffprobe[PATH_MAX];
     char keychain_helper[PATH_MAX], launch_py[PATH_MAX], path_env[PATH_MAX * 3];
+
     if (path_join(resources, sizeof(resources), contents_dir, "Resources") ||
-        path_join(python, sizeof(python), resources, "runtime/python/bin/python3") ||
+        path_join(python_bin, sizeof(python_bin), resources, "runtime/python/bin/python3") ||
+        path_join(python_dir, sizeof(python_dir), resources, "runtime/python/bin") ||
         path_join(media_bin, sizeof(media_bin), resources, "runtime/media/bin") ||
         path_join(transcription_bin, sizeof(transcription_bin), resources, "runtime/transcription/bin") ||
         path_join(whisper_cli, sizeof(whisper_cli), transcription_bin, "whisper-cli") ||
@@ -66,15 +72,14 @@ int main(void) {
         return fail("bundle path is too long");
     }
 
-    if (access(python, X_OK) != 0) return fail("embedded Python runtime missing");
+    if (access(python_bin, X_OK) != 0) return fail("embedded Python runtime missing");
     if (access(ffmpeg, X_OK) != 0 || access(ffprobe, X_OK) != 0) return fail("embedded media runtime missing");
     if (access(whisper_cli, X_OK) != 0 || access(whisper_model, R_OK) != 0) return fail("embedded transcription runtime missing");
     if (access(keychain_helper, X_OK) != 0) return fail("Meta Keychain helper missing");
     if (access(launch_py, R_OK) != 0) return fail("launch bootstrap missing");
 
-    if (snprintf(path_env, sizeof(path_env), "%s:%s:%s:/usr/bin:/bin", media_bin, transcription_bin, dirname(strdup(python))) < 0) {
-        return fail("cannot build PATH");
-    }
+    int path_len = snprintf(path_env, sizeof(path_env), "%s:%s:%s:/usr/bin:/bin", media_bin, transcription_bin, python_dir);
+    if (path_len < 0 || (size_t)path_len >= sizeof(path_env)) return fail("cannot build PATH");
 
     setenv("PATH", path_env, 1);
     setenv("BINARIO_FFMPEG", ffmpeg, 1);
@@ -91,9 +96,9 @@ int main(void) {
     signal(SIGTERM, forward_signal);
     signal(SIGHUP, forward_signal);
 
-    char *argv[] = {python, "-I", "-B", launch_py, NULL};
+    char *argv[] = {python_bin, "-I", "-B", launch_py, NULL};
     pid_t pid = 0;
-    int rc = posix_spawn(&pid, python, NULL, NULL, argv, environ);
+    int rc = posix_spawn(&pid, python_bin, NULL, NULL, argv, environ);
     if (rc != 0) {
         fprintf(stderr, "BINARIO Marketing launch failed: posix_spawn: %s\n", strerror(rc));
         return 5;
@@ -106,6 +111,7 @@ int main(void) {
         return fail("cannot wait for embedded runtime");
     }
     child_pid = -1;
+
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return 5;
