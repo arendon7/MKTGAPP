@@ -43,6 +43,27 @@ class EditorQuickFlowContractTests(unittest.TestCase):
         ):
             self.assertIn(token,js)
 
+    def test_bulk_actions_are_duplicate_safe_and_serial(self):
+        js=(ROOT/'web/clipper-modes.js').read_text(encoding='utf-8')
+        for token in (
+            'quick-add-all-timeline',
+            'quick-export-all',
+            'quickClipOnTimeline',
+            'quickAddAllTimeline',
+            'quickExportAll',
+            'quickWaitRender',
+            "state.quickFlow.bulkMode='timeline'",
+            "state.quickFlow.bulkMode='export'",
+            'un render a la vez',
+            'Detener después del actual',
+            'Todos los clips ya estaban en Track 0.',
+        ):
+            self.assertIn(token,js)
+        export_body=js[js.index('async function quickExportAll'):js.index('function renderQuickResults')]
+        self.assertIn('for(let index=0;index<clips.length;index++)',export_body)
+        self.assertIn('await quickWaitRender(job.id,projectId)',export_body)
+        self.assertNotIn('Promise.all',export_body)
+
     def test_quick_flow_is_loaded_after_transcription_and_keeps_manual_mode(self):
         html=(ROOT/'web/index.html').read_text(encoding='utf-8')
         self.assertIn('/transcription.js',html)
