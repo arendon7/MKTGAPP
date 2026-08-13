@@ -71,7 +71,7 @@ provenance = json.loads(provenance_path.read_text(encoding='utf-8'))
 assert provenance['product_version'] == __version__, provenance
 assert provenance['macos_short_version'] == MACOS_SHORT_VERSION, provenance
 assert provenance['macos_bundle_version'] == MACOS_BUNDLE_VERSION, provenance
-assert provenance['meta_keychain_helper'] == 'SecItem/data-protection', provenance
+assert provenance['meta_keychain_helper'] == 'SecItem/data-protection-first', provenance
 assert plist_short == MACOS_SHORT_VERSION, (plist_short, MACOS_SHORT_VERSION)
 assert plist_build == MACOS_BUNDLE_VERSION, (plist_build, MACOS_BUNDLE_VERSION)
 print(json.dumps({'apps': len(apps), 'media': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
