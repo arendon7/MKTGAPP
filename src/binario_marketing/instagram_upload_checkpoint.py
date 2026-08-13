@@ -58,13 +58,16 @@ class InstagramUploadCheckpointStore:
         return project, target, container
 
     def get(self, publication_id: str) -> InstagramUploadCheckpoint | None:
-        path = self._path(publication_id)
+        requested = str(publication_id or "").strip()
+        path = self._path(requested)
         if not path.is_file():
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("invalid Instagram upload checkpoint")
         row = InstagramUploadCheckpoint(**payload)
+        if row.publication_id != requested:
+            raise ValueError("Instagram upload checkpoint publication id mismatch")
         if row.stage not in _STAGES:
             raise ValueError("invalid Instagram upload checkpoint stage")
         self._validate_identity(row.project_id, row.target_id, row.container_id)
