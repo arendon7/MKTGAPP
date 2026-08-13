@@ -82,6 +82,21 @@ class MetaExtensionApiTests(unittest.TestCase):
         timeline = [entry.__dict__ for entry in self.runtime.workspace.registries.timeline.entries()]
         self.assertFalse(any(token in json.dumps(entry) for entry in timeline))
 
+    def test_meta_disconnect_removes_keychain_connection_without_secret_echo(self):
+        current = SimpleNamespace(configured=True, source='keychain', writable=True)
+        deleted = SimpleNamespace(configured=False, source='none', writable=True)
+        with patch('binario_marketing.service.MetaCredentialStore') as store_cls, \
+             patch.object(self.runtime, 'meta_status', return_value={'configured': False, 'credential_source': 'none', 'scheduler': {'running': False}}):
+            store_cls.return_value.status.return_value = current
+            store_cls.return_value.delete.return_value = deleted
+            status, payload = request_json(f'{self.base}/api/meta/connection', method='DELETE')
+        self.assertEqual(status, 200)
+        store_cls.return_value.delete.assert_called_once_with()
+        self.assertFalse(payload['configured'])
+        self.assertNotIn('token', json.dumps(payload).lower())
+        timeline = [entry.__dict__ for entry in self.runtime.workspace.registries.timeline.entries()]
+        self.assertTrue(any(entry['kind'] == 'meta.disconnected' for entry in timeline))
+
     def test_paid_media_draft_http_round_trip_and_project_detail(self):
         status, row = request_json(
             f'{self.base}/api/projects/{self.project_id}/paid-media',
@@ -103,6 +118,24 @@ class MetaExtensionApiTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(cancelled['status'], 'CANCELLED')
+
+    def test_paid_media_draft_cannot_be_mutated_through_another_project(self):
+        _, row = request_json(
+            f'{self.base}/api/projects/{self.project_id}/paid-media',
+            method='POST',
+            payload=self.paid_payload,
+        )
+        other_id = self.runtime.create_project('Other paid-media project')['id']
+        request = Request(
+            f'{self.base}/api/projects/{other_id}/paid-media/{row["id"]}',
+            method='DELETE',
+        )
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(request, timeout=5)
+        self.assertEqual(raised.exception.code, 404)
+        persisted = self.runtime.paid_media.get(row['id'])
+        self.assertEqual(persisted.status, 'DRAFT')
+        self.assertEqual(persisted.project_id, self.project_id)
 
     def test_remote_paused_creation_resumes_after_confirmed_campaign_checkpoint(self):
         _, draft = request_json(
