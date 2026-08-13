@@ -24,6 +24,7 @@ REQUIRED = {
     "src/binario_marketing/meta_graph.py",
     "src/binario_marketing/meta_credentials.py",
     "src/binario_marketing/meta_ads.py",
+    "src/binario_marketing/paid_media_store.py",
     "native/meta_keychain_helper.swift",
     "web/index.html",
     "web/app.js",
