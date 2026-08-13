@@ -11,6 +11,7 @@ from . import service_core as core
 from .service_core import *  # re-export the certified Wave 22/23 HTTP/runtime surface
 from .meta_ads import LinkCreativeSpec, MetaAdsBuilder, PausedAdSetSpec, PausedAdSpec
 from .meta_credentials import MetaCredentialError, MetaCredentialStore
+from .meta_diagnostics import MetaDiagnostics
 from .meta_graph import MetaGraphClient, MetaGraphError
 from .meta_observability import MetaObservability
 from .paid_media_store import PaidMediaStore
@@ -32,7 +33,7 @@ from .paid_media_store import PaidMediaStore
 
 
 class AppRuntime(core.AppRuntime):
-    """Thin Wave 23/24 extension over the certified service core."""
+    """Thin Wave 23/24/25 extension over the certified service core."""
 
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
@@ -74,6 +75,9 @@ class AppRuntime(core.AppRuntime):
             self.social_scheduler.shutdown()
         self.workspace.registries.timeline.append("meta.disconnected", {"credential_source": current.source})
         return self.meta_status()
+
+    def meta_diagnostics(self) -> dict:
+        return MetaDiagnostics.from_env().report()
 
     def _publication_for_project(self, project_id: str, publication_id: str):
         self._ensure_project(project_id)
@@ -210,7 +214,7 @@ MarketingHTTPServer = core.MarketingHTTPServer
 
 
 class MarketingHandler(core.MarketingHandler):
-    """Intercept only Wave 23/24 extension routes; delegate every legacy route unchanged."""
+    """Intercept only Wave 23/24/25 extension routes; delegate every legacy route unchanged."""
 
     def _extension_error(self, exc: Exception) -> None:
         if isinstance(exc, KeyError):
@@ -232,7 +236,16 @@ class MarketingHandler(core.MarketingHandler):
         if path in {"/meta-observability.js", "/meta-observability.css"}:
             self._static(path)
             return
+        if path in {"/meta-diagnostics.js", "/meta-diagnostics.css"}:
+            self._static(path)
+            return
         parts = self._segments()
+        if parts == ["api", "meta", "diagnostics"]:
+            try:
+                self._json(self.server.runtime.meta_diagnostics())
+            except Exception as exc:
+                self._extension_error(exc)
+            return
         if len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "publications" and parts[5] == "observability":
             try:
                 self._json(self.server.runtime.publication_observability(parts[2], parts[4]))
