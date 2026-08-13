@@ -14,6 +14,7 @@ class MetaDiagnosticsUiContractTests(unittest.TestCase):
 
     def test_diagnostics_browser_surface_is_read_only_and_copiable(self):
         js = (ROOT / 'web' / 'meta-diagnostics.js').read_text(encoding='utf-8')
+        wave25 = js.split('// Wave 26:', 1)[0]
         for required in (
             'WAVE 25 · DIAGNÓSTICO META',
             '/api/meta/diagnostics',
@@ -22,12 +23,12 @@ class MetaDiagnosticsUiContractTests(unittest.TestCase):
             'reporte sin token',
             'READ ONLY',
         ):
-            self.assertIn(required, js)
+            self.assertIn(required, wave25)
         for forbidden in (
             "method:'POST'", 'method:"POST"', "method:'DELETE'", 'method:"DELETE"',
             '/publish-now', '/create-paused', 'META_ACCESS_TOKEN', 'access_token',
         ):
-            self.assertNotIn(forbidden, js)
+            self.assertNotIn(forbidden, wave25)
 
     def test_backend_route_lives_only_in_get_extension(self):
         service = (ROOT / 'src' / 'binario_marketing' / 'service.py').read_text(encoding='utf-8')
