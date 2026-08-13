@@ -20,6 +20,7 @@ from .hub import discover_apps
 from .projects import ProjectStore
 from .providers import PROVIDERS, diagnose_provider
 from .proxy_manager import ProxyManager
+from .quick_clip_service import clear_selection, clear_selection_for_asset, save_selection, selection_for_project
 from .render_queue import ACTIVE, RenderQueue
 from .runtime_center import diagnose
 from .sequence_service import start_sequence_render
@@ -123,6 +124,7 @@ class AppRuntime:
             "assets": [asdict(item) for item in assets],
             "proxies": proxies,
             "transcriptions": transcriptions,
+            "quick_clips": selection_for_project(self, project_id),
             "editor": self.editors.state(project_id),
             "renders": [asdict(item) for item in self.renders.list(project_id)],
             "handoffs": [asdict(item) for item in self.workspace.handoffs() if item.project_id == project_id],
@@ -183,6 +185,7 @@ class AppRuntime:
                 raise ValueError("asset is referenced by an active render job")
         self.proxies.invalidate(project_id, asset_id)
         self.transcriptions.invalidate(project_id, asset_id)
+        clear_selection_for_asset(self, project_id, asset_id)
         if not self.projects.remove_asset(project_id, asset_id):
             raise KeyError(asset_id)
         self.workspace.registries.timeline.append("asset.deleted", {"project_id": project_id, "asset_id": asset_id})
@@ -466,11 +469,14 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "proxy":
                     self._json(self.server.runtime.ensure_proxy(parts[2], parts[4]), HTTPStatus.ACCEPTED)
                 elif len(parts) == 6 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5] == "transcription":
+                    clear_selection(self.server.runtime, parts[2], reason="transcription_started")
                     self._json(asdict(self.server.runtime.transcriptions.ensure(parts[2], parts[4], str(payload.get("language", "auto")), bool(payload.get("force", False)))), HTTPStatus.ACCEPTED)
                 elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "cancel"]:
                     self._json(asdict(self.server.runtime.transcriptions.cancel(parts[2], parts[4])))
                 elif len(parts) == 7 and parts[:2] == ["api", "projects"] and parts[3] == "assets" and parts[5:] == ["transcription", "clips"]:
                     self._json(select_transcript_clips(self.server.runtime, parts[2], parts[4], payload))
+                elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "quick-clips":
+                    self._json(save_selection(self.server.runtime, parts[2], payload), HTTPStatus.CREATED)
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["editor", "actions"]:
                     self._json(self.server.runtime.editor_action(parts[2], payload))
                 elif len(parts) == 5 and parts[:2] == ["api", "projects"] and parts[3:] == ["renders", "sequence"]:
@@ -506,6 +512,10 @@ class MarketingHandler(BaseHTTPRequestHandler):
                 with self.server.mutation_lock:
                     self.server.runtime.remove_asset(parts[2], parts[4])
                 self._json({"deleted": True, "asset_id": parts[4]})
+            elif len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "quick-clips":
+                with self.server.mutation_lock:
+                    deleted = clear_selection(self.server.runtime, parts[2], reason="user")
+                self._json({"deleted": deleted})
             else:
                 self._error(HTTPStatus.NOT_FOUND, "not found")
         except KeyError as exc:
