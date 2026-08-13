@@ -226,7 +226,10 @@ class MarketingHandler(core.MarketingHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in {"/social-uat.js", "/meta-observability.js", "/meta-observability.css"}:
+        if path == "/social-uat.js":
+            self._static(path)
+            return
+        if path in {"/meta-observability.js", "/meta-observability.css"}:
             self._static(path)
             return
         parts = self._segments()
