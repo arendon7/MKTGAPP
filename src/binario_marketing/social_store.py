@@ -81,10 +81,11 @@ class Publication:
     attempts: int
     created_at: str
     updated_at: str
+    render_id: str | None = None
 
 
 class SocialStore:
-    """Durable publication queue. It intentionally never persists provider credentials."""
+    """Durable publication queue. Provider credentials are never persisted."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -101,6 +102,7 @@ class SocialStore:
         if not isinstance(payload, dict):
             raise ValueError("invalid publication payload")
         _assert_secret_free(payload)
+        payload.setdefault("render_id", None)
         return Publication(**payload)
 
     def get(self, publication_id: str) -> Publication:
@@ -133,6 +135,7 @@ class SocialStore:
         link_url = str(payload.get("link_url") or "").strip() or None
         media_url = str(payload.get("media_url") or "").strip() or None
         asset_id = str(payload.get("asset_id") or "").strip() or None
+        render_id = str(payload.get("render_id") or "").strip() or None
         if channel not in CHANNELS:
             raise ValueError("unsupported social channel")
         if not target_id or len(target_id) > 128:
@@ -145,6 +148,8 @@ class SocialStore:
             raise ValueError("link publications require link_url")
         if channel == "instagram" and kind in {"image", "reel", "video"} and not media_url:
             raise ValueError("Instagram media requires a public media_url reachable by Meta")
+        if channel == "facebook_page" and kind == "reel" and not render_id:
+            raise ValueError("Facebook Reel publication requires a completed local render_id")
         if len(message) > 20000:
             raise ValueError("publication message is too long")
         scheduled = _parse_when(payload.get("scheduled_for"))
@@ -168,6 +173,7 @@ class SocialStore:
             attempts=0,
             created_at=now,
             updated_at=now,
+            render_id=render_id,
         )
         with self._lock:
             write_json_atomic(self._path(row.id), asdict(row))
