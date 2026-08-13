@@ -40,7 +40,21 @@ static int fail(const char *message) {
     return 5;
 }
 
-int main(void) {
+static const char *launchservices_probe_path(int argc, char **argv) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (strcmp(argv[i], "--launchservices-probe") == 0) return argv[i + 1];
+    }
+    return NULL;
+}
+
+static int write_probe(const char *path) {
+    FILE *handle = fopen(path, "w");
+    if (!handle) return fail("cannot write LaunchServices probe");
+    if (fputs("ok\n", handle) == EOF || fclose(handle) != 0) return fail("cannot persist LaunchServices probe");
+    return 0;
+}
+
+int main(int argc, char **argv) {
     char executable[PATH_MAX];
     uint32_t size = (uint32_t)sizeof(executable);
     if (_NSGetExecutablePath(executable, &size) != 0) return fail("cannot resolve executable path");
@@ -78,6 +92,9 @@ int main(void) {
     if (access(keychain_helper, X_OK) != 0) return fail("Meta Keychain helper missing");
     if (access(launch_py, R_OK) != 0) return fail("launch bootstrap missing");
 
+    const char *probe = launchservices_probe_path(argc, argv);
+    if (probe) return write_probe(probe);
+
     int path_len = snprintf(path_env, sizeof(path_env), "%s:%s:%s:/usr/bin:/bin", media_bin, transcription_bin, python_dir);
     if (path_len < 0 || (size_t)path_len >= sizeof(path_env)) return fail("cannot build PATH");
 
@@ -96,9 +113,9 @@ int main(void) {
     signal(SIGTERM, forward_signal);
     signal(SIGHUP, forward_signal);
 
-    char *argv[] = {python_bin, "-I", "-B", launch_py, NULL};
+    char *python_argv[] = {python_bin, "-I", "-B", launch_py, NULL};
     pid_t pid = 0;
-    int rc = posix_spawn(&pid, python_bin, NULL, NULL, argv, environ);
+    int rc = posix_spawn(&pid, python_bin, NULL, NULL, python_argv, environ);
     if (rc != 0) {
         fprintf(stderr, "BINARIO Marketing launch failed: posix_spawn: %s\n", strerror(rc));
         return 5;
