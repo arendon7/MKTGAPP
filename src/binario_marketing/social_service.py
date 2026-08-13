@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import asdict
@@ -16,6 +17,83 @@ class SocialPublishError(RuntimeError):
 
 
 LocalMediaResolver = Callable[[Publication], Path]
+
+
+def _managed_render_path(store: SocialStore, row: Publication) -> Path:
+    if not row.render_id:
+        raise SocialPublishError("Facebook Reel requires a completed local render")
+    state_root = store.root.parent.resolve()
+    data_root = state_root.parent.resolve()
+    registry = state_root / "renders" / "jobs.json"
+    if not registry.is_file():
+        raise SocialPublishError("render registry is unavailable")
+    try:
+        jobs = json.loads(registry.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise SocialPublishError("render registry is unreadable") from exc
+    if not isinstance(jobs, list):
+        raise SocialPublishError("render registry is invalid")
+    render = next(
+        (
+            item for item in jobs
+            if isinstance(item, dict)
+            and str(item.get("id")) == row.render_id
+            and str(item.get("project_id")) == row.project_id
+        ),
+        None,
+    )
+    if render is None:
+        raise SocialPublishError("selected render does not belong to this project")
+    if str(render.get("status")) != "PASS":
+        raise SocialPublishError("Facebook Reel requires a completed PASS render")
+    try:
+        width = int(render.get("width"))
+        height = int(render.get("height"))
+        duration = float(render.get("end")) - float(render.get("start"))
+    except (TypeError, ValueError) as exc:
+        raise SocialPublishError("selected render has invalid media metadata") from exc
+    if width * 16 != height * 9:
+        raise SocialPublishError("Facebook Reel render must be 9:16")
+    if width < 540 or height < 960:
+        raise SocialPublishError("Facebook Reel render must be at least 540x960")
+    if duration < 4 or duration > 60:
+        raise SocialPublishError("Facebook Reel render duration must be between 4 and 60 seconds")
+    output_name = str(render.get("output_name") or "").strip()
+    if not output_name or Path(output_name).name != output_name:
+        raise SocialPublishError("selected render output name is invalid")
+
+    projects_root = (data_root / "Projects").resolve()
+    project_registry = projects_root / "projects.json"
+    if not project_registry.is_file():
+        raise SocialPublishError("project registry is unavailable")
+    try:
+        projects = json.loads(project_registry.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise SocialPublishError("project registry is unreadable") from exc
+    project = next(
+        (
+            item for item in projects
+            if isinstance(item, dict) and str(item.get("id")) == row.project_id
+        ),
+        None,
+    )
+    if project is None:
+        raise SocialPublishError("publication project is unavailable")
+    directory = str(project.get("directory") or "").strip()
+    if not directory or Path(directory).name != directory:
+        raise SocialPublishError("project directory is invalid")
+    exports_root = (projects_root / directory / "exports").resolve()
+    if projects_root not in exports_root.parents:
+        raise SocialPublishError("project exports path escaped managed root")
+    candidate = (exports_root / output_name).resolve()
+    if exports_root not in candidate.parents:
+        raise SocialPublishError("render output escaped managed exports root")
+    if not candidate.is_file():
+        raise SocialPublishError("completed render file is missing")
+    expected_size = render.get("bytes")
+    if expected_size is not None and candidate.stat().st_size != int(expected_size):
+        raise SocialPublishError("completed render size no longer matches its certified record")
+    return candidate
 
 
 class MetaSocialPublisher:
@@ -37,7 +115,7 @@ class MetaSocialPublisher:
             raise ValueError("reel_poll_attempts must be between 1 and 300")
         self.store = store
         self.client = client
-        self.local_media_resolver = local_media_resolver
+        self.local_media_resolver = local_media_resolver or (lambda row: _managed_render_path(store, row))
         self.sleep = sleep
         self.reel_poll_interval = reel_poll_interval
         self.reel_poll_attempts = reel_poll_attempts
@@ -70,10 +148,6 @@ class MetaSocialPublisher:
                 raise SocialPublishError("Facebook image automation currently requires a public media URL")
             return self.client.publish_page_photo(row.target_id, row.media_url, row.message)
         if row.kind == "reel":
-            if not row.render_id:
-                raise SocialPublishError("Facebook Reel requires a completed local render")
-            if self.local_media_resolver is None:
-                raise SocialPublishError("local render resolver is unavailable")
             path = self.local_media_resolver(row)
             return self.client.publish_page_reel_local(row.target_id, path, row.message)
         raise SocialPublishError("Facebook automation currently supports text, link, image and local Reel publications")
