@@ -55,6 +55,24 @@ assert isinstance(row.get('requires_approval'), bool), row
 print('BACKGROUND HELPER STATUS PASS:', row.get('status'))
 PY
 
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+BG_HOME="$TMP/background-home"
+mkdir -p "$BG_HOME"
+BINARIO_IA_HOME="$BG_HOME" "$BACKGROUND_AGENT" > "$TMP/background-agent.json"
+[[ -f "$BG_HOME/State/background_social/status.json" ]] || { echo "background one-shot status was not persisted" >&2; exit 3; }
+"$PY" -I -B - "$TMP/background-agent.json" "$BG_HOME/State/background_social/status.json" <<'PY'
+import json, sys
+stdout=json.load(open(sys.argv[1], encoding='utf-8'))
+stored=json.load(open(sys.argv[2], encoding='utf-8'))
+assert stdout['schema'] == 'binario.marketing.background-social.v1', stdout
+assert stored['schema'] == stdout['schema'], stored
+assert stdout['processed'] == 0, stdout
+assert stdout['last_error'] is None, stdout
+assert stdout['data_root'] == stored['data_root'], (stdout, stored)
+print('BACKGROUND AGENT ONE-SHOT PASS')
+PY
+
 for binary in "$FFMPEG" "$FFPROBE"; do
   OTOOL_OUTPUT="$(/usr/bin/otool -L "$binary")"
   LINKED_DEPS="${OTOOL_OUTPUT#*$'\n'}"
@@ -64,8 +82,6 @@ for binary in "$FFMPEG" "$FFPROBE"; do
     exit 3
   fi
 done
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
 ENCODERS_FILE="$TMP/encoders.txt"
 "$FFMPEG" -hide_banner -encoders >"$ENCODERS_FILE" 2>&1
 /usr/bin/grep -q 'h264_videotoolbox' "$ENCODERS_FILE" || { echo "h264_videotoolbox unavailable" >&2; exit 3; }
