@@ -156,6 +156,17 @@ class MetaGraphClient:
                 return token
         raise MetaGraphError("selected Facebook Page is not available to this Meta connection")
 
+    def _instagram_token(self, instagram_id: str) -> str:
+        wanted = str(instagram_id).strip()
+        for row in self._pages_with_tokens():
+            instagram = row.get("instagram_business_account")
+            if isinstance(instagram, dict) and str(instagram.get("id")) == wanted:
+                token = str(row.get("access_token") or "").strip()
+                if not token:
+                    raise MetaGraphError("Meta did not return the linked Page access token for this Instagram account")
+                return token
+        raise MetaGraphError("selected Instagram professional account is not linked to an available Facebook Page")
+
     def ad_accounts(self) -> list[dict]:
         payload = self._request(
             "GET",
@@ -218,18 +229,23 @@ class MetaGraphClient:
         else:
             params["media_type"] = "REELS"
             params["video_url"] = url
-        payload = self._request("POST", f"{instagram_id}/media", params)
+        payload = self._request("POST", f"{instagram_id}/media", params, token=self._instagram_token(instagram_id))
         container_id = str(payload.get("id") or "").strip()
         if not container_id:
             raise MetaGraphError("Meta did not return an Instagram container id")
         return container_id
 
-    def instagram_container_status(self, container_id: str) -> str:
-        payload = self._request("GET", str(container_id), {"fields": "status_code,status"})
+    def instagram_container_status(self, container_id: str, instagram_id: str) -> str:
+        payload = self._request("GET", str(container_id), {"fields": "status_code,status"}, token=self._instagram_token(instagram_id))
         return str(payload.get("status_code") or payload.get("status") or "").strip().upper()
 
     def publish_instagram_container(self, instagram_id: str, container_id: str) -> str:
-        payload = self._request("POST", f"{instagram_id}/media_publish", {"creation_id": container_id})
+        payload = self._request(
+            "POST",
+            f"{instagram_id}/media_publish",
+            {"creation_id": container_id},
+            token=self._instagram_token(instagram_id),
+        )
         remote_id = str(payload.get("id") or "").strip()
         if not remote_id:
             raise MetaGraphError("Meta did not return an Instagram media id")
