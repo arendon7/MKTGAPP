@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -17,6 +18,14 @@ class SocialPublishError(RuntimeError):
 
 
 LocalMediaResolver = Callable[[Publication], Path]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _managed_render_path(store: SocialStore, row: Publication) -> Path:
@@ -93,6 +102,9 @@ def _managed_render_path(store: SocialStore, row: Publication) -> Path:
     expected_size = render.get("bytes")
     if expected_size is not None and candidate.stat().st_size != int(expected_size):
         raise SocialPublishError("completed render size no longer matches its certified record")
+    expected_sha = str(render.get("sha256") or "").strip().lower()
+    if expected_sha and _sha256_file(candidate).lower() != expected_sha:
+        raise SocialPublishError("completed render SHA-256 no longer matches its certified record")
     return candidate
 
 
