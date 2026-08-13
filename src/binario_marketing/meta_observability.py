@@ -200,7 +200,7 @@ class MetaObservability:
             "creative": "id,name",
             "ad": "id,name,campaign_id,adset_id,effective_status,status,created_time,updated_time",
         }
-        configured_paused: list[bool] = []
+        configured_states: dict[str, bool | None] = {}
         explicit_active = False
         for kind, remote_id in remote_ids.items():
             if not remote_id:
@@ -211,9 +211,7 @@ class MetaObservability:
             if kind in {"campaign", "adset", "ad"}:
                 active = _is_explicitly_active(remote)
                 explicit_active = explicit_active or active
-                paused = _is_configured_paused(remote)
-                if paused is not None:
-                    configured_paused.append(paused)
+                configured_states[kind] = _is_configured_paused(remote)
 
         if row.ad_id:
             insights_payload = self.client._request(
@@ -226,11 +224,16 @@ class MetaObservability:
                 raise MetaGraphError("Meta returned invalid paid-media insights data")
             payload["insights"] = rows[0] if rows and isinstance(rows[0], dict) else {}
 
+        required_status_objects = ("campaign", "adset", "ad")
+        complete_paused_evidence = all(
+            remote_ids.get(kind) and configured_states.get(kind) is True
+            for kind in required_status_objects
+        )
         payload["available"] = True
         payload["safety"] = {
             "activation_endpoint_present": False,
             "explicit_active_detected": explicit_active,
-            "configured_paused": (all(configured_paused) if configured_paused else None),
+            "configured_paused": complete_paused_evidence,
         }
         payload["local"] = {
             "id": row.id,
