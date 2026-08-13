@@ -55,6 +55,7 @@ function ensureQuickEditorPanel(){
       <article class="quick-step" data-quick-step="3">
         <div class="quick-step-head"><span class="quick-step-number">3</span><div><strong>Selección IA</strong><small>Encuentra los mejores cortes</small></div></div>
         <label>Modo<select id="quick-clip-mode"><option value="natural">Natural · idea completa</option><option value="objective">Duración objetivo</option></select></label>
+        <label>Formato<select id="quick-aspect"><option value="9:16">Vertical 9:16 · Reels / TikTok</option><option value="16:9">Horizontal 16:9</option><option value="1:1">Cuadrado 1:1</option><option value="4:5">Feed 4:5</option></select></label>
         <div class="quick-mini-grid"><label>Cantidad<input id="quick-clip-count" type="number" min="1" max="20" value="3"></label><label>Objetivo s<input id="quick-target-duration" type="number" min="3" max="180" step="1" value="30" disabled></label></div>
         <button id="quick-generate-clips" class="primary quick-wide" type="button">Generar mejores clips</button>
         <p id="quick-selection-status" class="quick-step-status">Transcribe el video para continuar.</p>
@@ -95,7 +96,7 @@ function renderQuickResults(){
     if(clip.tone||clip.reasons?.length)card.append(el('span','quick-clip-meta',[clip.tone,...(clip.reasons||[])].filter(Boolean).join(' · ')));
     const actions=el('div','quick-clip-actions');const preview=el('button','','▶ Preview');preview.type='button';preview.addEventListener('click',()=>previewAsset(asset.id,start));
     const timeline=el('button','','+ Timeline');timeline.type='button';timeline.addEventListener('click',async()=>{await editorAction({action:'add_clip',asset_id:asset.id,start,end,track:0});toast(`Clip ${index+1} añadido al timeline`)});
-    const exportBtn=el('button','primary','Exportar');exportBtn.type='button';exportBtn.addEventListener('click',()=>startRender({asset_id:asset.id,start,end,label:`quick-clip-${index+1}`}));actions.append(preview,timeline,exportBtn);card.append(actions);root.append(card)
+    const exportBtn=el('button','primary','Exportar');exportBtn.type='button';exportBtn.addEventListener('click',()=>startRender({asset_id:asset.id,start,end,aspect:$('#quick-aspect').value,label:`quick-clip-${index+1}`}));actions.append(preview,timeline,exportBtn);card.append(actions);root.append(card)
   })
 }
 function renderQuickEditor(){
@@ -131,7 +132,7 @@ function bindQuickEditor(){
   const panel=$('#quick-editor');if(!panel||panel.dataset.bound==='1')return;panel.dataset.bound='1';
   $('#quick-upload-video').addEventListener('click',quickUploadVideo);$('#quick-preview-video').addEventListener('click',()=>{const asset=quickAsset();if(asset)previewAsset(asset.id)});$('#quick-transcribe').addEventListener('click',quickStartTranscription);$('#quick-generate-clips').addEventListener('click',quickGenerateClips);
   $('#quick-asset-select').addEventListener('change',async event=>{state.quickFlow.assetId=event.target.value||null;state.quickFlow.clips=[];if(state.quickFlow.assetId)await setTranscriptionAsset(state.quickFlow.assetId);renderQuickEditor()});
-  $('#quick-clip-mode').addEventListener('change',event=>{$('#quick-target-duration').disabled=event.target.value!=='objective';renderQuickEditor()});$('#quick-target-duration').addEventListener('change',renderQuickEditor);$('#quick-clip-count').addEventListener('change',renderQuickEditor);
+  $('#quick-clip-mode').addEventListener('change',event=>{$('#quick-target-duration').disabled=event.target.value!=='objective';renderQuickEditor()});$('#quick-target-duration').addEventListener('change',renderQuickEditor);$('#quick-clip-count').addEventListener('change',renderQuickEditor);$('#quick-aspect').addEventListener('change',renderQuickEditor);
   $('#quick-open-advanced').addEventListener('click',()=>document.querySelector('.editor-preview-panel')?.scrollIntoView({behavior:'smooth',block:'start'}))
 }
 
