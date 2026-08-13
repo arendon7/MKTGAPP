@@ -218,3 +218,10 @@ class SocialStore:
             if len(rows) >= limit:
                 break
         return rows
+
+    def recover_interrupted(self) -> list[Publication]:
+        recovered = []
+        for row in self.list():
+            if row.status == "PUBLISHING":
+                recovered.append(self.transition(row.id, "FAILED", error="publication interrupted by app restart; review remote state before retry"))
+        return recovered
