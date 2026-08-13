@@ -26,7 +26,8 @@ class MetaUatContractTests(unittest.TestCase):
             'acciones externas requieren clic explícito',
             'Publicar ahora',
             'Crear campaña pausada completa',
-            'Instagram local no forma parte de este UAT',
+            'Instagram local es una capacidad adicional Wave 27',
+            'este UAT mantiene Facebook Reel como gate de publicación',
         ):
             self.assertIn(token, js)
         for forbidden in (
