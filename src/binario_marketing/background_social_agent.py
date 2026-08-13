@@ -8,31 +8,13 @@ from .atomic import write_json_atomic
 from .config import default_paths
 from .wave27_instagram_local import Wave27SocialStore
 from .wave28_background import Wave28SocialScheduler
-from .workspace import Workspace
-
-
-def _record_results(workspace: Workspace, rows: list[dict]) -> None:
-    for row in rows:
-        status = str(row.get("status") or "").lower()
-        if status not in {"published", "failed"}:
-            continue
-        workspace.registries.timeline.append(f"publication.{status}", {
-            "project_id": row.get("project_id"),
-            "publication_id": row.get("id"),
-            "channel": row.get("channel"),
-            "remote_id": row.get("remote_id"),
-            "attempts": row.get("attempts"),
-            "error": row.get("error"),
-            "executor": "launch_agent",
-        })
 
 
 def run_once(data_root: Path | None = None) -> dict:
     root = (data_root or default_paths().home).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     social = Wave27SocialStore(root / "State" / "social")
-    workspace = Workspace(root / "State" / "workspace")
-    scheduler = Wave28SocialScheduler(social, on_results=lambda rows: _record_results(workspace, rows))
+    scheduler = Wave28SocialScheduler(social)
     rows = scheduler.run_once(limit=20)
     status = scheduler.status()
     payload = {
