@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from .atomic import write_json_atomic
+from .instagram_upload_checkpoint import InstagramUploadCheckpointStore
 from .meta_graph import MetaGraphClient
 from .meta_instagram_local import InstagramLocalReelUploader, _MAX_INSTAGRAM_REEL_BYTES
 from .social_service import MetaSocialPublisher, SocialPublishError, SocialScheduler, _sha256_file
@@ -148,19 +149,18 @@ def instagram_managed_render_path(store: SocialStore, row: Publication) -> Path:
 
 
 class Wave27MetaSocialPublisher(MetaSocialPublisher):
-    def __init__(self, *args, instagram_media_resolver: InstagramMediaResolver | None = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        instagram_media_resolver: InstagramMediaResolver | None = None,
+        instagram_checkpoint_store: InstagramUploadCheckpointStore | None = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.instagram_media_resolver = instagram_media_resolver or (lambda row: instagram_managed_render_path(self.store, row))
+        self.instagram_checkpoints = instagram_checkpoint_store or InstagramUploadCheckpointStore(self.store.root / "instagram_uploads")
 
-    def _instagram(self, row: Publication) -> str:
-        if row.kind != "reel" or not row.render_id:
-            return super()._instagram(row)
-        if row.media_url:
-            raise SocialPublishError("Instagram local Reel cannot also include a public media URL")
-        path = self.instagram_media_resolver(row)
-        uploader = InstagramLocalReelUploader(self.client)
-        container_id, upload_uri = uploader.create_container(row.target_id, row.message)
-        uploader.upload(upload_uri, path)
+    def _wait_local_instagram_finished(self, row: Publication, uploader: InstagramLocalReelUploader, container_id: str) -> None:
         final = ""
         for attempt in range(self.reel_poll_attempts):
             status = uploader.status(container_id)
@@ -169,10 +169,53 @@ class Wave27MetaSocialPublisher(MetaSocialPublisher):
                 raise SocialPublishError(f"Instagram local Reel processing failed: {error}")
             final = uploader.status_code(status)
             if final == "FINISHED":
-                return uploader.publish(row.target_id, container_id)
+                self.instagram_checkpoints.finished(row.id)
+                return
             if attempt + 1 < self.reel_poll_attempts:
                 self.sleep(self.reel_poll_interval)
         raise SocialPublishError(f"Instagram local Reel processing timed out with status {final or 'UNKNOWN'}")
+
+    def _instagram(self, row: Publication) -> str:
+        if row.kind != "reel" or not row.render_id:
+            return super()._instagram(row)
+        if row.media_url:
+            raise SocialPublishError("Instagram local Reel cannot also include a public media URL")
+
+        uploader = InstagramLocalReelUploader(self.client)
+        checkpoint = self.instagram_checkpoints.get(row.id)
+        if checkpoint is not None:
+            if checkpoint.project_id != row.project_id or checkpoint.target_id != row.target_id:
+                raise SocialPublishError("Instagram upload checkpoint does not match this publication")
+            if checkpoint.stage == "PUBLISHED":
+                if not checkpoint.remote_id:
+                    raise SocialPublishError("Instagram published checkpoint is missing its remote id")
+                return checkpoint.remote_id
+            if checkpoint.stage == "PUBLISHING":
+                raise SocialPublishError("Instagram publish result is uncertain after interruption; verify remote state before retry")
+            container_id = checkpoint.container_id
+            if checkpoint.stage == "UPLOADED":
+                self._wait_local_instagram_finished(row, uploader, container_id)
+            elif checkpoint.stage == "FINISHED":
+                status = uploader.status(container_id)
+                error = uploader.status_error(status)
+                if error:
+                    raise SocialPublishError(f"Instagram local Reel processing failed: {error}")
+                if uploader.status_code(status) != "FINISHED":
+                    raise SocialPublishError("Instagram container is no longer confirmed FINISHED; review before retry")
+        else:
+            path = self.instagram_media_resolver(row)
+            container_id, upload_uri = uploader.create_container(row.target_id, row.message)
+            uploader.upload(upload_uri, path)
+            self.instagram_checkpoints.uploaded(row.id, row.project_id, row.target_id, container_id)
+            self._wait_local_instagram_finished(row, uploader, container_id)
+
+        checkpoint = self.instagram_checkpoints.get(row.id)
+        if checkpoint is None or checkpoint.stage != "FINISHED":
+            raise SocialPublishError("Instagram local Reel checkpoint is not ready to publish")
+        self.instagram_checkpoints.publishing(row.id)
+        remote_id = uploader.publish(row.target_id, checkpoint.container_id)
+        self.instagram_checkpoints.published(row.id, remote_id)
+        return remote_id
 
 
 class Wave27SocialScheduler(SocialScheduler):

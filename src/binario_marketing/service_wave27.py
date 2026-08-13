@@ -19,6 +19,7 @@ class AppRuntime(base.AppRuntime):
 
     def publish_publication_now(self, project_id: str, publication_id: str) -> dict:
         row = self._publication_for_project(project_id, publication_id)
+        local_instagram_reel = row.channel == "instagram" and row.kind == "reel" and bool(row.render_id)
         if row.status in {"DRAFT", "FAILED"}:
             row = self.social.queue(publication_id)
         if row.status != "QUEUED":
@@ -29,6 +30,8 @@ class AppRuntime(base.AppRuntime):
         client = scheduler.client_factory()
         result = asdict(Wave27MetaSocialPublisher(self.social, client).publish(publication_id))
         self._record_social_results([result])
+        if local_instagram_reel and result.get("status") != "PUBLISHED":
+            raise ValueError(str(result.get("error") or "Instagram local Reel publication failed"))
         return result
 
 
