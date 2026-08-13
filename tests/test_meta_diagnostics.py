@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from binario_marketing.meta_graph import MetaGraphClient, MetaGraphError
-from binario_marketing.meta_diagnostics import MetaDiagnostics
+from binario_marketing.meta_diagnostics import MetaDiagnostics, _page_capabilities
 
 
 class FakeTransport:
@@ -49,6 +49,10 @@ def client(transport):
 
 
 class MetaDiagnosticsTests(unittest.TestCase):
+    def test_page_full_control_inherits_all_uat_capabilities(self):
+        capabilities = _page_capabilities(['PROFILE_PLUS_FULL_CONTROL'])
+        self.assertEqual(capabilities, {'create_content': True, 'analyze': True, 'advertise': True})
+
     @patch('binario_marketing.meta_diagnostics.MetaCredentialStore.status')
     def test_full_capability_report_is_read_only_and_secret_free(self, status):
         status.return_value = type('S', (), {'source': 'keychain'})()
