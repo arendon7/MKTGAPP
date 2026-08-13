@@ -86,7 +86,7 @@ function renderMetaUat(){
   });
   const next=steps.find(step=>!step.done),button=$('#meta-uat-next');
   button.disabled=!next;button.textContent=next?`Preparar: ${next.title}`:'UAT completo';
-  $('#meta-uat-summary').textContent=done===steps.length?'Wave 23 UAT completo para este proyecto: publicación real, programación y pauta remota PAUSED verificadas.':`Faltan ${steps.length-done} gate(s). Instagram local no forma parte de este UAT hasta certificar su ingest binario.`;
+  $('#meta-uat-summary').textContent=done===steps.length?'UAT Meta completo para este proyecto: publicación real, programación y pauta remota PAUSED verificadas.':`Faltan ${steps.length-done} gate(s). Instagram local es una capacidad adicional Wave 27; este UAT mantiene Facebook Reel como gate de publicación.`;
 }
 
 function metaUatScroll(selector){const target=$(selector);if(!target)return false;target.scrollIntoView({behavior:'smooth',block:'center'});return true}
@@ -124,7 +124,7 @@ function prepareNextMetaUatStep(){
 
 function metaUatReport(){
   const steps=metaUatSteps(),project=state.current?.project||{};return [
-    'BINARIO Marketing · Wave 23 Meta UAT',
+    'BINARIO Marketing · Meta UAT',
     `Proyecto: ${project.name||project.id||'—'} (${project.id||'—'})`,
     `Fecha: ${new Date().toISOString()}`,
     `Resultado: ${steps.every(step=>step.done)?'PASS':'INCOMPLETE'}`,
@@ -152,4 +152,8 @@ globalThis.renderMetaUat=renderMetaUat;
 (function loadMetaDiagnosticsExtension(){
   if(!document.querySelector('link[data-meta-diagnostics]')){const link=document.createElement('link');link.rel='stylesheet';link.href='/meta-diagnostics.css';link.dataset.metaDiagnostics='1';document.head.append(link)}
   if(!document.querySelector('script[data-meta-diagnostics]')){const script=document.createElement('script');script.src='/meta-diagnostics.js';script.defer=true;script.dataset.metaDiagnostics='1';document.head.append(script)}
+})();
+
+(function loadInstagramLocalReelExtension(){
+  if(!document.querySelector('script[data-instagram-local-reel]')){const script=document.createElement('script');script.src='/instagram-local-reel.js';script.defer=true;script.dataset.instagramLocalReel='1';document.head.append(script)}
 })();
