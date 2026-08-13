@@ -143,6 +143,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+"$ROOT/scripts/build_native_main_launcher.sh" "$APP" "$ARCH" "$ROOT"
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
 /usr/bin/codesign --force --deep --sign - "$APP"
 printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
