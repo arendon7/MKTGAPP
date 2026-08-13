@@ -6,14 +6,15 @@ Extend BINARIO Marketing from content creation into controlled distribution with
 
 ## Non-negotiable contracts
 
-1. Provider credentials never enter project JSON, artifact metadata, logs, browser state, or timeline payloads.
+1. Provider credentials never enter project JSON, artifact metadata, logs, browser storage, or timeline payloads.
 2. Social publication is durable and auditable: `DRAFT -> QUEUED -> PUBLISHING -> PUBLISHED|FAILED`.
 3. Scheduled work persists across app restarts. While the desktop service is alive, due jobs execute automatically; overdue jobs remain durable and process after the next launch.
 4. A local file is never represented as publishable Instagram media unless the selected Meta flow can actually ingest it.
-5. Paid media creation defaults to `PAUSED`; activation/spend is a separate explicit gate.
+5. Paid media creation is fail-closed: Campaign, Ad Set and Ad are created `PAUSED`; activation/spend is a separate explicit gate.
 6. Provider adapters remain isolated from editor/render code.
-7. Every external provider call is testable through an injectable transport.
-8. Managed render publication is fail-closed: project scope, render status, media constraints, byte size and SHA-256 are verified before upload.
+7. Every external provider call is testable through injectable transports.
+8. Managed render publication verifies project scope, render status, media constraints, byte size and SHA-256 before upload.
+9. Confirmed remote paid-media IDs are checkpointed in order so retries resume instead of duplicating confirmed objects.
 
 ## 23A — Distribution core
 
@@ -28,7 +29,6 @@ Status: implemented.
 - Facebook text/link/image publishing primitives
 - Instagram image/Reel URL container + processing + publish primitives
 - Meta ad account discovery
-- campaign creation forced to `PAUSED`
 - deterministic scheduler dispatcher
 - provider transport contract tests
 
@@ -42,14 +42,13 @@ Status: implemented.
 - `/api/meta/ad-accounts`
 - project publication create/list/queue/publish-now/cancel endpoints
 - safe internal periodic scheduler while desktop service is alive
-- manual run-due endpoint for controlled execution
-- Unified Timeline events for publication lifecycle
-- project detail includes publications
-- Meta campaign endpoint forced to `PAUSED`
+- Unified Timeline publication events
+- project detail includes publications and paid-media drafts
+- certified legacy HTTP server preserved as `service_core.py`; Wave 23 extension routes live in the thin `service.py` layer
 
 ## 23C — Distribution UX
 
-Status: implemented.
+Status: implemented in source; current head remains subject to CI/FULL MAC gates.
 
 - first-class `Distribución` workspace isolated from editor code
 - Meta connection/readiness card
@@ -57,29 +56,29 @@ Status: implemented.
 - copy/caption editor
 - now / schedule controls with UTC persistence
 - publication queue with state, attempts, remote ID, errors and retry/cancel actions
-- ad-account selector
-- campaign objective and special-category controls
-- explicit `PAUSED` campaign behavior
+- local Facebook Reel selector
+- Meta connection/disconnection controls
+- full paid-media draft form and resumable `PAUSED` creation controls
 
 ## 23D — Local Facebook Reel publishing
 
-Status: implemented in source and under CI certification.
+Status: implemented.
 
-A completed managed project render can be selected directly in Distribution and streamed to Meta without a CDN or a duplicate upload file.
+A completed managed project render can be selected directly in Distribution and streamed to Meta without a CDN or duplicate upload file.
 
 Contracts:
 
 - Facebook Page only
 - publication stores `render_id`, never an absolute filesystem path
-- render must belong to the same project
-- render status must be `PASS`
+- render belongs to the same project
+- render status is `PASS`
 - exact 9:16
 - minimum 540x960
 - duration 4–60 seconds
-- output must remain inside the managed project `exports` directory
-- recorded byte size must still match
-- recorded SHA-256 must still match
-- binary upload streams from disk in chunks rather than reading the whole video into memory
+- output remains inside managed project `exports`
+- recorded byte size still matches
+- recorded SHA-256 still matches
+- upload streams from disk in chunks
 - Page access token remains in process memory only
 - flow: initialize Reel upload -> binary upload -> finish as `PUBLISHED`
 
@@ -87,12 +86,12 @@ Contracts:
 
 Next.
 
-The currently certified Instagram path remains URL-based. Local Instagram media is explicitly blocked rather than pretending it can publish.
+The currently implemented Instagram path remains URL-based. Local Instagram media is explicitly blocked rather than pretending it can publish.
 
-Options to certify before enabling:
+Candidate gates:
 
-- Meta-supported resumable binary upload if its production contract is validated end-to-end for our account flow, or
-- `MediaBridge.publish(local_path) -> reachable URL + expiry + sha256`
+- certify Meta-supported resumable binary upload end-to-end for our account flow, or
+- build `MediaBridge.publish(local_path) -> reachable URL + expiry + sha256`
 
 Requirements:
 
@@ -102,34 +101,62 @@ Requirements:
 - deterministic cleanup
 - one-click path from project render to Instagram publication
 
-## 23F — Meta connection hardening
+## 23F — Meta connection and native secret storage
 
-Next.
+Status: source implementation complete; FULL MAC native certification pending on the current head.
 
-- user-facing Meta OAuth flow
-- secure native credential persistence through macOS Keychain abstraction
+Implemented:
+
+- `MetaCredentialStore`: development fallback from `META_ACCESS_TOKEN`, native Keychain otherwise
+- Swift helper using Security.framework `SecItem*`
+- data-protection Keychain query
+- helper receives secrets through stdin, never process argv
+- helper bundled per native architecture by FULL MAC builder
+- FULL MAC auditor requires and exercises helper status
+- token validation through Meta `/me` before persistence
+- CLI: `meta-status`, `meta-connect`, `meta-disconnect`
+- browser POST/DELETE `/api/meta/connection`
+- UI password field clears immediately after the connection attempt
+- status exposes source/readiness only, never token value
+- environment-controlled connections cannot be overwritten or deleted by the UI
+
+Still next:
+
+- user-facing Meta OAuth rather than manual access-token paste
 - token expiry/refresh diagnostics
-- permission/readiness diagnostics per Page, Instagram account and ad account
-- disconnect/reconnect without project mutation
-
-The current provider foundation accepts `META_ACCESS_TOKEN` from process environment so publishing logic can be certified without storing credentials in project data.
+- granular permission/readiness diagnostics per Page, Instagram account and ad account
 
 ## 23G — Paid Media
 
-Current status: Campaign creation only, always `PAUSED`.
+Status: Campaign + Ad Set + Creative + Ad source/API/UI implemented; current head remains subject to CI/FULL MAC gates.
 
-Next:
+Implemented:
 
-- ad-account readiness and permission diagnostics
-- campaign draft model
-- objectives use current `OUTCOME_*` naming
+- durable project-scoped paid-media draft store
+- credentials rejected from draft state
+- campaign objectives use `OUTCOME_*`
 - special-ad-category declaration
-- Ad Set targeting/budget validation
-- creative from project publication/render
-- create Campaign/AdSet/Creative/Ad in `PAUSED`
-- preview budget/spend settings before activation
-- activation is separate, explicit and auditable
+- Ad Set budget, age and geo validation
+- HTTPS validation for link/picture creative assets
+- CTA allowlist
+- Campaign creation forced `PAUSED`
+- Ad Set creation forced `PAUSED`
+- Ad Creative creation without activation state
+- Ad creation forced `PAUSED`
+- ordered remote checkpoints: Campaign -> Ad Set -> Creative -> Ad
+- retries resume after the last confirmed remote object
+- local draft cancellation is blocked once a remote Meta object exists, requiring explicit review
+- Distribution UI supports save-draft, create-complete-paused and resume-paused actions
+- no activation endpoint or activation button
+
+Next after real Meta UAT:
+
+- permissions/readiness diagnostics
+- budget/currency interpretation guidance from the selected ad account
+- additional creative types based on project renders
+- preview and validation of placements
 - insights ingestion after launch
+- activation remains a separate explicit, auditable future gate
 
 ## 23H — Always-on scheduling
 
@@ -163,17 +190,20 @@ Once the publication domain is stable, adapters can reuse the same queue model:
 
 ### Gate B — Meta sandbox/test assets
 
+- validate/store connection through native Keychain
 - discover authorized Page
 - publish test Facebook Page post
-- publish a certified local Facebook Reel
+- publish certified local Facebook Reel
 - discover linked professional Instagram account
 - publish Instagram test media through a certified ingest path
-- create test campaign and assert `PAUSED`
+- create Campaign + Ad Set + Creative + Ad and assert all activatable levels are `PAUSED`
+- interrupt after one confirmed remote object and verify retry resumes without duplicate creation
 
 ### Gate C — FULL MAC regression
 
 - arm64 bundle build/audit/smoke PASS
 - Intel bundle build/audit/smoke PASS
+- native Keychain helper compiles/runs for both architectures
 - Whisper/FFmpeg/editor guarantees unchanged
 
 ### Gate D — Real UAT
@@ -183,4 +213,4 @@ Once the publication domain is stable, adapters can reuse the same queue model:
 - schedule a publication
 - restart app before due time and confirm durable recovery
 - failure is retryable and never silently duplicates a confirmed remote post
-- paid campaign remains paused until explicit activation
+- paid-media hierarchy remains paused until an explicitly separate activation gate
