@@ -22,9 +22,10 @@ _EXPECTED_PERMISSIONS = {
     "ads_create": ("ads_management",),
 }
 
-_CREATE_TASKS = {"PROFILE_PLUS_CREATE_CONTENT", "CREATE_CONTENT", "MANAGE"}
-_ANALYZE_TASKS = {"PROFILE_PLUS_ANALYZE", "ANALYZE", "MANAGE"}
-_ADVERTISE_TASKS = {"PROFILE_PLUS_ADVERTISE", "ADVERTISE", "MANAGE"}
+_PAGE_SUPER_TASKS = {"PROFILE_PLUS_FULL_CONTROL", "PROFILE_PLUS_MANAGE", "MANAGE"}
+_CREATE_TASKS = {"PROFILE_PLUS_CREATE_CONTENT", "CREATE_CONTENT"} | _PAGE_SUPER_TASKS
+_ANALYZE_TASKS = {"PROFILE_PLUS_ANALYZE", "ANALYZE"} | _PAGE_SUPER_TASKS
+_ADVERTISE_TASKS = {"PROFILE_PLUS_ADVERTISE", "ADVERTISE"} | _PAGE_SUPER_TASKS
 
 
 def _permission_inventory(client: MetaGraphClient) -> dict[str, Any]:
@@ -181,7 +182,7 @@ class MetaDiagnostics:
         elif ad_accounts:
             checks.append(_check("ads", "PASS", "Cuentas Ads detectadas", f"{len(ad_accounts)} cuenta(s) publicitaria(s) disponibles."))
         else:
-            checks.append(_check("ads", "WARN", "Sin cuentas Ads", "Meta respondió sin cuentas publicitarias disponibles para esta credencial.", "Asigna acceso a una cuenta publicitaria si vas a crear pauta."))
+            checks.append(_check("ads", "WARN", "Sin cuentas Ads", "Meta respondió sin cuentas publicitarias disponibles para esta credencial.", "Asigna acceso a una cuenta publicitaria si vas a completar el UAT de pauta."))
 
         if permissions["available"]:
             missing_any = sorted({name for values in missing.values() for name in values})
@@ -205,8 +206,13 @@ class MetaDiagnostics:
             "ads_read": bool(ad_accounts and permission_ok("ads_read")),
             "ads_create": bool(ad_accounts and advertise_pages and permission_ok("ads_create")),
         }
-        blocking = [row for row in checks if row["state"] == "FAIL"]
-        status = "PASS" if not blocking else "ACTION_REQUIRED"
+        core_ready = ready["facebook_publish"] and ready["ads_read"] and ready["ads_create"]
+        if core_ready:
+            checks.append(_check("uat_core", "PASS", "UAT central listo", "Facebook publishing y la estructura Ads PAUSED tienen capacidades funcionales disponibles."))
+        else:
+            blocked = [key for key in ("facebook_publish", "ads_read", "ads_create") if not ready[key]]
+            checks.append(_check("uat_core", "FAIL", "UAT central bloqueado", ", ".join(blocked), "Corrige los checks anteriores antes de intentar publicación real o crear la jerarquía de pauta."))
+        status = "PASS" if core_ready and not any(row["state"] == "FAIL" for row in checks[:-1]) else "ACTION_REQUIRED"
         return {
             "status": status,
             "graph_version": self.client.graph_version,
