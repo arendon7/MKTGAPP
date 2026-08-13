@@ -16,7 +16,7 @@ from .paid_media_store import PaidMediaStore
 
 # Contract-surface markers retained for source-level regression tests. The implementation
 # remains byte-for-byte in service_core.py and is inherited below.
-# "/transcription.js" "/pro-media.js" "/visual-timeline.js" "/social.js"
+# "/transcription.js" "/pro-media.js" "/visual-timeline.js" "/social.js" "/social-uat.js"
 # TranscriptionManager transcriptions
 # ["transcription", "segments"] ["transcription", "file"] ["transcription", "clips"]
 # parts[5] == "proxy"; parts[3] == "subtitles"
@@ -208,6 +208,10 @@ class MarketingHandler(core.MarketingHandler):
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
     def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/social-uat.js":
+            self._static(path)
+            return
         parts = self._segments()
         if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "paid-media":
             try:
