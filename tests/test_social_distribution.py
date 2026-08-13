@@ -1,10 +1,12 @@
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from binario_marketing.meta_graph import MetaGraphClient
-from binario_marketing.social_service import MetaSocialPublisher
+from binario_marketing.social_service import MetaSocialPublisher, SocialScheduler
 from binario_marketing.social_store import SocialStore
 
 
@@ -99,6 +101,22 @@ class SocialStoreTests(unittest.TestCase):
                 'asset_id': 'local-render-id',
             })
 
+    def test_interrupted_publish_is_recovered_as_failed_for_manual_remote_review(self):
+        row = self.store.create('project-1', {
+            'channel': 'facebook_page',
+            'target_id': 'page-1',
+            'kind': 'text',
+            'message': 'Reinicio seguro',
+        })
+        row = self.store.queue(row.id)
+        row = self.store.transition(row.id, 'PUBLISHING')
+        self.assertEqual(row.status, 'PUBLISHING')
+        recovered = self.store.recover_interrupted()
+        self.assertEqual([item.id for item in recovered], [row.id])
+        latest = self.store.get(row.id)
+        self.assertEqual(latest.status, 'FAILED')
+        self.assertIn('review remote state before retry', latest.error)
+
 
 class MetaGraphContractTests(unittest.TestCase):
     def setUp(self):
@@ -171,6 +189,15 @@ class SocialPublisherTests(unittest.TestCase):
         self.assertEqual(result[0]['status'], 'PUBLISHED')
         self.assertEqual(result[0]['remote_id'], 'ig-media-1')
         self.assertEqual(self.store.get(row.id).status, 'PUBLISHED')
+
+
+class SocialSchedulerTests(unittest.TestCase):
+    def test_scheduler_does_not_spawn_idle_thread_without_meta_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+            scheduler = SocialScheduler(SocialStore(Path(tmp)), interval_seconds=1)
+            scheduler.start()
+            self.assertFalse(scheduler.status()['running'])
+            scheduler.shutdown()
 
 
 if __name__ == '__main__':
