@@ -359,11 +359,14 @@ class AppRuntime:
         return rows
 
     def create_meta_campaign(self, payload: dict) -> dict:
+        categories = payload.get("special_ad_categories") or []
+        if not isinstance(categories, list) or any(not isinstance(item, str) for item in categories):
+            raise ValueError("special_ad_categories must be a list of strings")
         remote_id = MetaGraphClient.from_env().create_paused_campaign(
             str(payload.get("ad_account_id") or ""),
             name=str(payload.get("name") or ""),
             objective=str(payload.get("objective") or ""),
-            special_ad_categories=list(payload.get("special_ad_categories") or []),
+            special_ad_categories=[item.strip().upper() for item in categories if item.strip()],
         )
         result = {
             "id": remote_id,
@@ -519,7 +522,7 @@ class MarketingHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             path = urlparse(self.path).path
-            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/transcription.js", "/clipper-modes.js", "/styles.css"}:
+            if path in {"/", "/index.html", "/app.js", "/pro-media.js", "/visual-timeline.js", "/transcription.js", "/clipper-modes.js", "/social.js", "/styles.css"}:
                 self._static(path)
                 return
             parts = self._segments()
