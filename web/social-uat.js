@@ -148,3 +148,8 @@ globalThis.renderMetaUat=renderMetaUat;
   if(!document.querySelector('link[data-meta-observability]')){const link=document.createElement('link');link.rel='stylesheet';link.href='/meta-observability.css';link.dataset.metaObservability='1';document.head.append(link)}
   if(!document.querySelector('script[data-meta-observability]')){const script=document.createElement('script');script.src='/meta-observability.js';script.defer=true;script.dataset.metaObservability='1';document.head.append(script)}
 })();
+
+(function loadMetaDiagnosticsExtension(){
+  if(!document.querySelector('link[data-meta-diagnostics]')){const link=document.createElement('link');link.rel='stylesheet';link.href='/meta-diagnostics.css';link.dataset.metaDiagnostics='1';document.head.append(link)}
+  if(!document.querySelector('script[data-meta-diagnostics]')){const script=document.createElement('script');script.src='/meta-diagnostics.js';script.defer=true;script.dataset.metaDiagnostics='1';document.head.append(script)}
+})();
