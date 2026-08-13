@@ -39,11 +39,12 @@ MarketingHTTPServer = base.MarketingHTTPServer
 
 
 class MarketingHandler(base.MarketingHandler):
-    """Adds only the Wave 27 static bundle; every API route stays canonical."""
+    """Adds only isolated browser bundles; every API route stays canonical."""
 
     def do_GET(self) -> None:
-        if urlparse(self.path).path == "/instagram-local-reel.js":
-            self._static("/instagram-local-reel.js")
+        path = urlparse(self.path).path
+        if path in {"/instagram-local-reel.js", "/operational-readiness.js"}:
+            self._static(path)
             return
         super().do_GET()
 
