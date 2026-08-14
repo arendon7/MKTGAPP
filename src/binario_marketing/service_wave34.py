@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from .company_media_store import CompanyMediaStore, MAX_COMPANY_MEDIA_BYTES, MEDIA_ID_RE
 from . import service_wave32 as base
 from .video.render import media_duration, probe_media
-from .wave34_company_media import Wave34MetaSocialPublisher, company_reel_path, install_wave34_social
+from .wave34_company_media import Wave34MetaSocialPublisher, company_media_reel_path, install_wave34_social
 
 
 class AppRuntime(base.AppRuntime):
@@ -122,10 +122,12 @@ class AppRuntime(base.AppRuntime):
             raise ValueError("direct local company media publishing currently supports video Reels only")
         if channel not in {"facebook_page", "instagram"}:
             raise ValueError("local company Reel supports Facebook or Instagram")
-        company_reel_path(self.company_media, type("Intent", (), {
-            "asset_id": asset_id,
-            "project_id": company.id,
-        })(), provider="instagram" if channel == "instagram" else "facebook")
+        company_media_reel_path(
+            self.company_media,
+            company.id,
+            asset_id,
+            provider="instagram" if channel == "instagram" else "facebook",
+        )
 
         target_id = str(clean.get("target_id") or "").strip()
         target_name = str(clean.get("target_name") or "").strip()
