@@ -82,12 +82,7 @@ globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
 })();
 
 (function loadMarketingOperationsExtension(){
-  const loadBackground=()=>{if(!document.querySelector('script[data-background-scheduling]')){const bg=document.createElement('script');bg.src='/background-scheduling.js';bg.defer=true;bg.dataset.backgroundScheduling='1';document.head.append(bg)}};
-  const loadCrm=()=>{
-    const existingCrm=document.querySelector('script[data-crm-wave32]');
-    if(existingCrm){if(globalThis.renderOpsCrm)loadBackground();else existingCrm.addEventListener('load',loadBackground,{once:true});return}
-    const crm=document.createElement('script');crm.src='/crm.js';crm.defer=true;crm.dataset.crmWave32='1';crm.addEventListener('load',loadBackground,{once:true});document.head.append(crm)
-  };
+  const loadCrm=()=>{if(!document.querySelector('script[data-crm-wave32]')){const crm=document.createElement('script');crm.src='/crm.js';crm.defer=true;crm.dataset.crmWave32='1';document.head.append(crm)}};
   const existing=document.querySelector('script[data-marketing-ops]');
   if(existing){if(globalThis.refreshMarketingOps)loadCrm();else existing.addEventListener('load',loadCrm,{once:true});return}
   const script=document.createElement('script');script.src='/marketing-ops.js';script.defer=true;script.dataset.marketingOps='1';script.addEventListener('load',loadCrm,{once:true});document.head.append(script);

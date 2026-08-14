@@ -134,19 +134,13 @@ class CRMUiContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, crm)
 
-    def test_full_mac_launch_preserves_crm_runtime_through_extensions(self):
+    def test_full_mac_launches_wave32_runtime(self):
         build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
         audit = (ROOT / "scripts" / "audit_full_mac_app.sh").read_text(encoding="utf-8")
-        self.assertTrue(any(
-            f"from binario_marketing.service_wave{wave} import serve" in build
-            for wave in (32, 33)
-        ))
+        self.assertIn("from binario_marketing.service_wave32 import serve", build)
+        self.assertIn("from binario_marketing.service_wave32 import AppRuntime", audit)
         self.assertIn("crm.js", audit)
         self.assertIn("crm_store.py", audit)
-        self.assertTrue(
-            "from binario_marketing.service_wave32 import AppRuntime" in audit
-            or "from binario_marketing.service_wave33 import AppRuntime" in audit
-        )
 
 
 if __name__ == "__main__":
