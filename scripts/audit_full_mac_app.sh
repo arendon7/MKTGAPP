@@ -18,9 +18,11 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -f "$PROVENANCE" ]] || { echo "missing build provenance" >&2; exit 3; }
 [[ -f "$RES/source/web/index.html" ]] || { echo "missing web UI" >&2; exit 3; }
 [[ -f "$RES/source/web/marketing-ops.js" && -f "$RES/source/web/marketing-ops.css" ]] || { echo "missing Wave 31 marketing operations UI" >&2; exit 3; }
+[[ -f "$RES/source/web/crm.js" ]] || { echo "missing Wave 32 CRM UI" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/company_store.py" && -f "$RES/source/src/binario_marketing/service_wave31.py" ]] || { echo "missing Wave 31 company runtime" >&2; exit 3; }
+[[ -f "$RES/source/src/binario_marketing/crm_store.py" && -f "$RES/source/src/binario_marketing/service_wave32.py" ]] || { echo "missing Wave 32 CRM runtime" >&2; exit 3; }
 [[ -f "$RES/source/apps/editor-video/manifest.json" ]] || { echo "missing app manifests" >&2; exit 3; }
-/usr/bin/grep -q 'from binario_marketing.service_wave31 import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 31 runtime" >&2; exit 3; }
+/usr/bin/grep -q 'from binario_marketing.service_wave32 import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 32 runtime" >&2; exit 3; }
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$APP"
 
@@ -68,22 +70,32 @@ PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream
 PLIST_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 
-BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" <<'PY'
+BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
 import json, sys
 from pathlib import Path
 src, root, provenance_path = map(Path, sys.argv[1:4])
 plist_short, plist_build = sys.argv[4:6]
+tmp = Path(sys.argv[6])
 sys.path.insert(0, str(src))
 from binario_marketing.hub import discover_apps
 from binario_marketing.meta_credentials import MetaCredentialStore
-from binario_marketing.service_wave31 import AppRuntime
+from binario_marketing.service_wave32 import AppRuntime
 from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__
 from binario_marketing.video.render import media_runtime_status
 apps = discover_apps(root)
 assert len(apps) == 12, len(apps)
-runtime = AppRuntime.create(root, Path('/tmp') / 'binario-audit-data-wave31')
+runtime = AppRuntime.create(root, tmp / 'binario-audit-data-wave32')
 assert len(runtime.apps_payload()) == 12
 assert runtime.companies_payload() == [], runtime.companies_payload()
+assert runtime.crm_summary() == {
+    'contacts': 0,
+    'opportunities_open': 0,
+    'opportunities_won': 0,
+    'pending_activities': 0,
+    'overdue_activities': 0,
+    'stage_counts': {'NEW': 0, 'CONTACTED': 0, 'INTERESTED': 0, 'PROPOSAL': 0, 'WON': 0, 'LOST': 0},
+    'next_activities': [],
+}, runtime.crm_summary()
 credential_status = MetaCredentialStore().status()
 assert credential_status.writable is True, credential_status
 status = media_runtime_status()
@@ -98,6 +110,6 @@ assert plist_build == MACOS_BUNDLE_VERSION, (plist_build, MACOS_BUNDLE_VERSION)
 if runtime.social_scheduler is not None:
     runtime.social_scheduler.shutdown()
 runtime.proxies.shutdown(); runtime.transcriptions.shutdown(); runtime.renders.shutdown()
-print(json.dumps({'apps': len(apps), 'companies': 0, 'media': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
+print(json.dumps({'apps': len(apps), 'companies': 0, 'crm_contacts': 0, 'media': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
 PY
 printf 'FULL MAC AUDIT PASS: %s\n' "$APP"
