@@ -18,7 +18,7 @@ class BackgroundServiceError(RuntimeError):
 
 
 class BackgroundServiceManager:
-    """Manage only the bundled, user-scoped SMAppService LaunchAgent."""
+    """Manage the bundled user-scoped SMAppService through the app's main executable."""
 
     def __init__(self, helper: Path | None = None, data_root: Path | None = None):
         configured = os.environ.get("BINARIO_BACKGROUND_SERVICE_HELPER", "").strip()
@@ -43,10 +43,10 @@ class BackgroundServiceManager:
         if not self._supported():
             raise BackgroundServiceError("background scheduling requires macOS 13 or newer")
         if not self._helper_ready():
-            raise BackgroundServiceError("background scheduling helper is unavailable")
+            raise BackgroundServiceError("background scheduling app executable is unavailable")
         try:
             result = subprocess.run(
-                [str(self.helper), command],
+                [str(self.helper), "--background-service", command],
                 text=True,
                 capture_output=True,
                 check=False,
@@ -54,18 +54,18 @@ class BackgroundServiceManager:
                 env={"PATH": "/usr/bin:/bin"},
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise BackgroundServiceError(f"background service helper failed: {type(exc).__name__}") from None
+            raise BackgroundServiceError(f"background service command failed: {type(exc).__name__}") from None
         try:
             payload = json.loads(result.stdout.strip() or "{}")
         except json.JSONDecodeError:
-            raise BackgroundServiceError("background service helper returned invalid JSON") from None
+            raise BackgroundServiceError("background service command returned invalid JSON") from None
         if not isinstance(payload, dict):
-            raise BackgroundServiceError("background service helper returned an invalid payload")
+            raise BackgroundServiceError("background service command returned an invalid payload")
         if result.returncode != 0:
-            raise BackgroundServiceError(str(payload.get("error") or "background service helper failed")[:1000])
+            raise BackgroundServiceError(str(payload.get("error") or "background service command failed")[:1000])
         registration = str(payload.get("status") or "unknown")
         if registration not in _ALLOWED_REGISTRATION:
-            raise BackgroundServiceError("background service helper returned an unknown registration status")
+            raise BackgroundServiceError("background service command returned an unknown registration status")
         return payload
 
     def _latest_agent_status(self) -> dict | None:
