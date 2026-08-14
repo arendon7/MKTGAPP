@@ -175,7 +175,7 @@ class Wave39HttpUiTests(unittest.TestCase):
         self.runtime.proxies.shutdown(); self.runtime.transcriptions.shutdown(); self.runtime.renders.shutdown()
         self.tmp.cleanup()
 
-    def test_inbox_http_and_bundles_are_read_only(self):
+    def test_inbox_http_and_bundles_preserve_provider_read_only_contract(self):
         with urlopen(self.base + f"/api/inbox/meta?company_id={self.company['id']}&limit=10", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
         self.assertFalse(payload["configured"])
@@ -186,18 +186,24 @@ class Wave39HttpUiTests(unittest.TestCase):
         self.assertIn("/audiences-wave38.js", loader)
         self.assertIn("/inbox.js", loader)
         self.assertIn("Actualizar desde Meta", inbox)
-        self.assertIn("Wave 39 es sólo lectura", inbox)
+        self.assertIn("Meta sigue siendo sólo lectura", inbox)
 
-    def test_ui_has_no_auto_refresh_or_meta_mutation(self):
+    def test_ui_has_no_auto_refresh_or_meta_mutation_through_local_crm_extensions(self):
         inbox = (ROOT / "web" / "inbox.js").read_text(encoding="utf-8")
         service = (ROOT / "src" / "binario_marketing" / "service_wave39_app.py").read_text(encoding="utf-8")
         self.assertIn("inboxRefresh", inbox)
         self.assertNotIn("inboxRefresh();", inbox)
         self.assertNotIn("setInterval(", inbox)
         self.assertNotIn("MutationObserver", inbox)
-        self.assertNotIn("method:'POST'", inbox)
-        self.assertNotIn("method:'PATCH'", inbox)
-        self.assertNotIn("method:'DELETE'", inbox)
+        self.assertIn("/contacts`,{method:'POST'", inbox)
+        self.assertIn("/activities`,{method:'POST'", inbox)
+        self.assertNotIn("/api/inbox/meta`,{method:'POST'", inbox)
+        self.assertNotIn("/api/inbox/meta`,{method:'PATCH'", inbox)
+        self.assertNotIn("/api/inbox/meta`,{method:'DELETE'", inbox)
+        self.assertNotIn("publish-now", inbox)
+        self.assertNotIn("sendWhatsApp(", inbox)
+        self.assertNotIn("sendEmail(", inbox)
+        self.assertNotIn("fetch('https://", inbox)
         self.assertNotIn("def do_POST", service)
         self.assertNotIn("def do_PATCH", service)
         self.assertNotIn("def do_DELETE", service)
