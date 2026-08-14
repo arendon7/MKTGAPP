@@ -78,13 +78,13 @@ class Wave34SocialStore(Wave27SocialStore):
         return row
 
 
-def _probe_company_video(media_store: CompanyMediaStore, row: Publication):
-    if not row.asset_id or not MEDIA_ID_RE.fullmatch(row.asset_id):
+def _probe_company_video(media_store: CompanyMediaStore, company_id: str, media_id: str):
+    if not MEDIA_ID_RE.fullmatch(str(media_id or "")):
         raise SocialPublishError("company local Reel requires a managed media asset")
-    media = media_store.get_for_company(row.project_id, row.asset_id)
+    media = media_store.get_for_company(company_id, media_id)
     if media.kind != "video":
         raise SocialPublishError("local Reel requires a video from the company library")
-    path = media_store.verify_file(row.project_id, row.asset_id)
+    path = media_store.verify_file(company_id, media_id)
 
     width, height, duration = media.width, media.height, media.duration
     if width is None or height is None or duration is None:
@@ -100,8 +100,8 @@ def _probe_company_video(media_store: CompanyMediaStore, row: Publication):
             height = int(video_stream.get("height") or 0)
             duration = float(media_duration(payload))
             media = media_store.update_probe(
-                row.project_id,
-                row.asset_id,
+                company_id,
+                media_id,
                 width=width,
                 height=height,
                 duration=duration,
@@ -113,8 +113,8 @@ def _probe_company_video(media_store: CompanyMediaStore, row: Publication):
     return media, path, int(width), int(height), float(duration)
 
 
-def company_reel_path(media_store: CompanyMediaStore, row: Publication, *, provider: str) -> Path:
-    media, path, width, height, duration = _probe_company_video(media_store, row)
+def company_media_reel_path(media_store: CompanyMediaStore, company_id: str, media_id: str, *, provider: str) -> Path:
+    media, path, width, height, duration = _probe_company_video(media_store, company_id, media_id)
     suffix = path.suffix.lower()
     if suffix not in {".mp4", ".mov"}:
         raise SocialPublishError("local Reel must use an MP4 or MOV file")
@@ -138,6 +138,12 @@ def company_reel_path(media_store: CompanyMediaStore, row: Publication, *, provi
         return path
 
     raise SocialPublishError("unsupported local Reel provider")
+
+
+def company_reel_path(media_store: CompanyMediaStore, row: Publication, *, provider: str) -> Path:
+    if not row.asset_id:
+        raise SocialPublishError("company local Reel requires a managed media asset")
+    return company_media_reel_path(media_store, row.project_id, row.asset_id, provider=provider)
 
 
 class Wave34MetaSocialPublisher(Wave27MetaSocialPublisher):
@@ -216,6 +222,7 @@ __all__ = [
     "Wave34MetaSocialPublisher",
     "Wave34SocialScheduler",
     "Wave34SocialStore",
+    "company_media_reel_path",
     "company_reel_path",
     "install_wave34_social",
 ]
