@@ -75,6 +75,21 @@ class AudienceUiContractTests(unittest.TestCase):
         self.assertNotIn("/send", service)
         self.assertNotIn("MetaGraphClient", service)
 
+    def test_full_mac_launches_wave36_and_audits_import_without_side_effects(self):
+        build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts" / "audit_full_mac_app.sh").read_text(encoding="utf-8")
+        self.assertIn("from binario_marketing.service_wave36 import serve", build)
+        self.assertIn("from binario_marketing.service_wave36 import AppRuntime", audit)
+        self.assertIn("audiences.js", audit)
+        self.assertIn("audience_store.py", audit)
+        self.assertIn("crm_import.py", audit)
+        self.assertIn("Wave 36 Imported Audience", audit)
+        self.assertIn("runtime.import_contacts_csv", audit)
+        self.assertIn("runtime.campaigns.list(company['id']) == []", audit)
+        self.assertIn("runtime.social.list(company['id']) == []", audit)
+        self.assertNotIn("service_wave33", build)
+        self.assertNotIn("background-scheduling", audit)
+
 
 if __name__ == "__main__":
     unittest.main()
