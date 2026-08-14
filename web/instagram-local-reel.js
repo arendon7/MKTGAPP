@@ -87,3 +87,9 @@ globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
   if(existing){if(globalThis.refreshMarketingOps)loadCrm();else existing.addEventListener('load',loadCrm,{once:true});return}
   const script=document.createElement('script');script.src='/marketing-ops.js';script.defer=true;script.dataset.marketingOps='1';script.addEventListener('load',loadCrm,{once:true});document.head.append(script);
 })();
+
+(function loadCompanyContentExtension(){
+  const load=()=>{if(document.querySelector('script[data-company-content-wave34]'))return;const script=document.createElement('script');script.src='/company-content.js';script.defer=true;script.dataset.companyContentWave34='1';document.head.append(script)};
+  const waitForCrm=()=>{const crm=document.querySelector('script[data-crm-wave32]');if(globalThis.renderCrm){load();return}if(crm){crm.addEventListener('load',load,{once:true});return}setTimeout(waitForCrm,50)};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',waitForCrm,{once:true});else waitForCrm();
+})();
