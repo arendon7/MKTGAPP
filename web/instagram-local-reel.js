@@ -93,3 +93,9 @@ globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
   const waitForCrm=()=>{const crm=document.querySelector('script[data-crm-wave32]');if(globalThis.renderCrm){load();return}if(crm){crm.addEventListener('load',load,{once:true});return}setTimeout(waitForCrm,50)};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',waitForCrm,{once:true});else waitForCrm();
 })();
+
+(function loadCampaignCenterExtension(){
+  const load=()=>{if(document.querySelector('script[data-campaigns-wave35]'))return;const script=document.createElement('script');script.src='/campaigns.js';script.defer=true;script.dataset.campaignsWave35='1';document.head.append(script)};
+  const waitForContent=()=>{const content=document.querySelector('script[data-company-content-wave34]');if(globalThis.contentRenderCurrent){load();return}if(content){content.addEventListener('load',load,{once:true});return}setTimeout(waitForContent,50)};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',waitForContent,{once:true});else waitForContent();
+})();
