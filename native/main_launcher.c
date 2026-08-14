@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 extern char **environ;
+extern int binario_background_service_command(const char *command);
 
 static volatile sig_atomic_t child_pid = -1;
 
@@ -40,11 +41,20 @@ static int fail(const char *message) {
     return 5;
 }
 
-static const char *launchservices_probe_path(int argc, char **argv) {
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (strcmp(argv[i], "--launchservices-probe") == 0) return argv[i + 1];
+static const char *argument_value(int argc, char **argv, const char *name) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], name) == 0) {
+            return i + 1 < argc ? argv[i + 1] : NULL;
+        }
     }
     return NULL;
+}
+
+static int has_argument(int argc, char **argv, const char *name) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], name) == 0) return 1;
+    }
+    return 0;
 }
 
 static int write_probe(const char *path) {
@@ -59,18 +69,33 @@ int main(int argc, char **argv) {
     uint32_t size = (uint32_t)sizeof(executable);
     if (_NSGetExecutablePath(executable, &size) != 0) return fail("cannot resolve executable path");
 
+    char launcher_path[PATH_MAX];
+    if (!realpath(executable, launcher_path)) return fail("cannot canonicalize executable path");
+
     char macos_dir[PATH_MAX];
-    if (!realpath(executable, macos_dir)) return fail("cannot canonicalize executable path");
+    if (copy_path(macos_dir, sizeof(macos_dir), launcher_path) != 0) return fail("bundle path is too long");
     if (parent_dir(macos_dir) != 0) return fail("cannot resolve Contents/MacOS");
 
     char contents_dir[PATH_MAX];
     if (copy_path(contents_dir, sizeof(contents_dir), macos_dir) != 0) return fail("bundle path is too long");
     if (parent_dir(contents_dir) != 0) return fail("cannot resolve Contents");
 
+    if (has_argument(argc, argv, "--background-service")) {
+        const char *command = argument_value(argc, argv, "--background-service");
+        if (!command) return fail("background service command is missing");
+        return binario_background_service_command(command);
+    }
+
+    const char *probe = argument_value(argc, argv, "--launchservices-probe");
+    if (has_argument(argc, argv, "--launchservices-probe")) {
+        if (!probe) return fail("LaunchServices probe path is missing");
+        return write_probe(probe);
+    }
+
     char resources[PATH_MAX], python_bin[PATH_MAX], python_dir[PATH_MAX];
     char media_bin[PATH_MAX], transcription_bin[PATH_MAX], whisper_cli[PATH_MAX];
     char whisper_model[PATH_MAX], ffmpeg[PATH_MAX], ffprobe[PATH_MAX];
-    char keychain_helper[PATH_MAX], background_helper[PATH_MAX], launch_py[PATH_MAX], path_env[PATH_MAX * 3];
+    char keychain_helper[PATH_MAX], launch_py[PATH_MAX], path_env[PATH_MAX * 3];
 
     if (path_join(resources, sizeof(resources), contents_dir, "Resources") ||
         path_join(python_bin, sizeof(python_bin), resources, "runtime/python/bin/python3") ||
@@ -82,7 +107,6 @@ int main(int argc, char **argv) {
         path_join(ffmpeg, sizeof(ffmpeg), media_bin, "ffmpeg") ||
         path_join(ffprobe, sizeof(ffprobe), media_bin, "ffprobe") ||
         path_join(keychain_helper, sizeof(keychain_helper), macos_dir, "binario-meta-keychain") ||
-        path_join(background_helper, sizeof(background_helper), macos_dir, "binario-background-service") ||
         path_join(launch_py, sizeof(launch_py), resources, "launch.py")) {
         return fail("bundle path is too long");
     }
@@ -91,11 +115,7 @@ int main(int argc, char **argv) {
     if (access(ffmpeg, X_OK) != 0 || access(ffprobe, X_OK) != 0) return fail("embedded media runtime missing");
     if (access(whisper_cli, X_OK) != 0 || access(whisper_model, R_OK) != 0) return fail("embedded transcription runtime missing");
     if (access(keychain_helper, X_OK) != 0) return fail("Meta Keychain helper missing");
-    if (access(background_helper, X_OK) != 0) return fail("background scheduling helper missing");
     if (access(launch_py, R_OK) != 0) return fail("launch bootstrap missing");
-
-    const char *probe = launchservices_probe_path(argc, argv);
-    if (probe) return write_probe(probe);
 
     int path_len = snprintf(path_env, sizeof(path_env), "%s:%s:%s:/usr/bin:/bin", media_bin, transcription_bin, python_dir);
     if (path_len < 0 || (size_t)path_len >= sizeof(path_env)) return fail("cannot build PATH");
@@ -106,7 +126,7 @@ int main(int argc, char **argv) {
     setenv("BINARIO_WHISPER_CLI", whisper_cli, 1);
     setenv("BINARIO_WHISPER_MODEL", whisper_model, 1);
     setenv("BINARIO_META_KEYCHAIN_HELPER", keychain_helper, 1);
-    setenv("BINARIO_BACKGROUND_SERVICE_HELPER", background_helper, 1);
+    setenv("BINARIO_BACKGROUND_SERVICE_HELPER", launcher_path, 1);
     setenv("PYTHONNOUSERSITE", "1", 1);
     setenv("PYTHONDWRITEBYTECODE", "1", 1);
     unsetenv("PYTHONHOME");
