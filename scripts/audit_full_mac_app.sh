@@ -56,7 +56,13 @@ PLIST_RUN_AT_LOAD="$(/usr/libexec/PlistBuddy -c 'Print :RunAtLoad' "$BACKGROUND_
 [[ "$PLIST_RUN_AT_LOAD" == "true" ]] || { echo "LaunchAgent RunAtLoad must be true" >&2; exit 3; }
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
+INSTALLED_APP="/Applications/Binario Marketing IA Wave33 Audit.app"
+cleanup(){
+  rm -rf "$TMP"
+  if [[ -e "$INSTALLED_APP" ]]; then /usr/bin/sudo /bin/rm -rf "$INSTALLED_APP" >/dev/null 2>&1 || true; fi
+}
+trap cleanup EXIT
+
 LS_PROBE="$TMP/launchservices-probe.txt"
 /usr/bin/open -n "$APP" --args --launchservices-probe "$LS_PROBE"
 LS_READY=0
@@ -70,19 +76,37 @@ echo "LAUNCHSERVICES APP BOOT PASS"
 
 KEYCHAIN_STATUS="$(cd "$MACOS" && ./binario-meta-keychain status)" || { echo "native Meta Keychain helper cannot access Keychain" >&2; exit 3; }
 [[ "$KEYCHAIN_STATUS" == "missing" || "$KEYCHAIN_STATUS" == "configured" ]] || { echo "unexpected Keychain helper status: $KEYCHAIN_STATUS" >&2; exit 3; }
-BACKGROUND_STATUS="$("$LAUNCHER" --background-service status)" || { echo "main app executable cannot inspect SMAppService" >&2; exit 3; }
+
+/usr/bin/sudo /bin/rm -rf "$INSTALLED_APP"
+/usr/bin/sudo /usr/bin/ditto "$APP" "$INSTALLED_APP"
+/usr/bin/codesign --verify --deep --strict "$INSTALLED_APP"
+INSTALLED_MACOS="$INSTALLED_APP/Contents/MacOS"
+INSTALLED_LAUNCHER="$INSTALLED_MACOS/Binario Marketing IA"
+INSTALLED_BACKGROUND_AGENT="$INSTALLED_MACOS/binario-background-agent"
+INSTALL_PROBE="$TMP/installed-launchservices-probe.txt"
+/usr/bin/open -n "$INSTALLED_APP" --args --launchservices-probe "$INSTALL_PROBE"
+INSTALL_READY=0
+for _ in $(seq 1 40); do
+  if [[ -f "$INSTALL_PROBE" ]]; then INSTALL_READY=1; break; fi
+  sleep 0.25
+done
+[[ "$INSTALL_READY" == "1" ]] || { echo "installed app did not execute through LaunchServices" >&2; exit 3; }
+/usr/bin/grep -q '^ok$' "$INSTALL_PROBE" || { echo "installed LaunchServices probe result invalid" >&2; exit 3; }
+echo "INSTALLED APP LAUNCHSERVICES PASS"
+
+BACKGROUND_STATUS="$("$INSTALLED_LAUNCHER" --background-service status)" || { echo "installed main app executable cannot inspect SMAppService" >&2; exit 3; }
 BACKGROUND_STATUS_JSON="$BACKGROUND_STATUS" "$PY" -I -B - <<'PY'
 import json, os
 payload = json.loads(os.environ['BACKGROUND_STATUS_JSON'])
 assert payload.get('supported') is True, payload
 assert payload.get('status') in {'not-registered', 'enabled', 'requires-approval'}, payload
 assert payload.get('status') != 'not-found', payload
-print('BACKGROUND SERVICE STATUS PASS:', payload.get('status'))
+print('INSTALLED BACKGROUND SERVICE STATUS PASS:', payload.get('status'))
 PY
 
 BG_HOME="$TMP/background-home"
 mkdir -p "$BG_HOME"
-BINARIO_IA_HOME="$BG_HOME" "$BACKGROUND_AGENT" >"$TMP/background-agent.out"
+BINARIO_IA_HOME="$BG_HOME" "$INSTALLED_BACKGROUND_AGENT" >"$TMP/background-agent.out"
 [[ -f "$BG_HOME/State/background_social/status.json" ]] || { echo "background agent did not write status sidecar" >&2; exit 3; }
 "$PY" -I -B - "$BG_HOME/State/background_social/status.json" <<'PY'
 import json, sys
@@ -114,7 +138,7 @@ PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream
 PLIST_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 
-BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" BINARIO_BACKGROUND_SERVICE_HELPER="$LAUNCHER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
+BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" BINARIO_BACKGROUND_SERVICE_HELPER="$INSTALLED_LAUNCHER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
 import json, sys
 from pathlib import Path
 src, root, provenance_path = map(Path, sys.argv[1:4])
