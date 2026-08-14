@@ -78,6 +78,19 @@ class CampaignUiContractTests(unittest.TestCase):
         self.assertNotIn("publish_company_publication_now(", service)
         self.assertNotIn("MetaGraphClient", service)
 
+    def test_full_mac_launches_wave35_and_audits_campaign_planning(self):
+        build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts" / "audit_full_mac_app.sh").read_text(encoding="utf-8")
+        self.assertIn("from binario_marketing.service_wave35 import serve", build)
+        self.assertIn("from binario_marketing.service_wave35 import AppRuntime", audit)
+        self.assertIn("campaigns.js", audit)
+        self.assertIn("campaign_store.py", audit)
+        self.assertIn("Wave 35 Campaign Audit", audit)
+        self.assertIn("provider_configured'] is False", audit)
+        self.assertIn("runtime.social.list(company['id']) == []", audit)
+        self.assertNotIn("service_wave33", build)
+        self.assertNotIn("background-scheduling", audit)
+
 
 if __name__ == "__main__":
     unittest.main()
