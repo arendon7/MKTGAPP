@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     char resources[PATH_MAX], python_bin[PATH_MAX], python_dir[PATH_MAX];
     char media_bin[PATH_MAX], transcription_bin[PATH_MAX], whisper_cli[PATH_MAX];
     char whisper_model[PATH_MAX], ffmpeg[PATH_MAX], ffprobe[PATH_MAX];
-    char keychain_helper[PATH_MAX], launch_py[PATH_MAX], path_env[PATH_MAX * 3];
+    char keychain_helper[PATH_MAX], background_helper[PATH_MAX], launch_py[PATH_MAX], path_env[PATH_MAX * 3];
 
     if (path_join(resources, sizeof(resources), contents_dir, "Resources") ||
         path_join(python_bin, sizeof(python_bin), resources, "runtime/python/bin/python3") ||
@@ -82,6 +82,7 @@ int main(int argc, char **argv) {
         path_join(ffmpeg, sizeof(ffmpeg), media_bin, "ffmpeg") ||
         path_join(ffprobe, sizeof(ffprobe), media_bin, "ffprobe") ||
         path_join(keychain_helper, sizeof(keychain_helper), macos_dir, "binario-meta-keychain") ||
+        path_join(background_helper, sizeof(background_helper), macos_dir, "binario-background-service") ||
         path_join(launch_py, sizeof(launch_py), resources, "launch.py")) {
         return fail("bundle path is too long");
     }
@@ -90,6 +91,7 @@ int main(int argc, char **argv) {
     if (access(ffmpeg, X_OK) != 0 || access(ffprobe, X_OK) != 0) return fail("embedded media runtime missing");
     if (access(whisper_cli, X_OK) != 0 || access(whisper_model, R_OK) != 0) return fail("embedded transcription runtime missing");
     if (access(keychain_helper, X_OK) != 0) return fail("Meta Keychain helper missing");
+    if (access(background_helper, X_OK) != 0) return fail("background scheduling helper missing");
     if (access(launch_py, R_OK) != 0) return fail("launch bootstrap missing");
 
     const char *probe = launchservices_probe_path(argc, argv);
@@ -104,8 +106,9 @@ int main(int argc, char **argv) {
     setenv("BINARIO_WHISPER_CLI", whisper_cli, 1);
     setenv("BINARIO_WHISPER_MODEL", whisper_model, 1);
     setenv("BINARIO_META_KEYCHAIN_HELPER", keychain_helper, 1);
+    setenv("BINARIO_BACKGROUND_SERVICE_HELPER", background_helper, 1);
     setenv("PYTHONNOUSERSITE", "1", 1);
-    setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
+    setenv("PYTHONDWRITEBYTECODE", "1", 1);
     unsetenv("PYTHONHOME");
     unsetenv("PYTHONPATH");
 
