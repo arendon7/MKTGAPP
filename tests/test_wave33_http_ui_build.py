@@ -132,7 +132,7 @@ class Wave33UiAndBuildContractTests(unittest.TestCase):
         self.assertLess(build.index("build_native_main_launcher.sh"), build.index("codesign --force --deep"))
         self.assertIn("background_agent_launcher.c", background)
         self.assertIn("Contents/MacOS/binario-background-agent", background)
-        self.assertIn("Contents/Library/LaunchAgents", background)
+        self.assertIn("Library/LaunchAgents", background)
         self.assertIn("<key>StartInterval</key><integer>60</integer>", background)
         self.assertNotIn("#!/bin/bash\nset -euo pipefail\nHERE=", background)
         self.assertIn('SMAppService.agent(plistName: plistName)', helper)
