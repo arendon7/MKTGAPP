@@ -84,14 +84,20 @@ class CampaignUiContractTests(unittest.TestCase):
         self.assertTrue(
             "from binario_marketing.service_wave35 import serve" in build
             or "from binario_marketing.service_wave36 import serve" in build
+            or "from binario_marketing.service_wave37_app import serve" in build
         )
         self.assertTrue(
             "from binario_marketing.service_wave35 import AppRuntime" in audit
             or "from binario_marketing.service_wave36 import AppRuntime" in audit
+            or "from binario_marketing.service_wave37_app import AppRuntime" in audit
         )
         self.assertIn("campaigns.js", audit)
         self.assertIn("campaign_store.py", audit)
-        self.assertTrue("Wave 35 Campaign Audit" in audit or "Wave 36 Campaign Audit" in audit)
+        self.assertTrue(
+            "Wave 35 Campaign Audit" in audit
+            or "Wave 36 Campaign Audit" in audit
+            or "Wave 37 Campaign Audit" in audit
+        )
         self.assertIn("provider_configured'] is False", audit)
         self.assertIn("runtime.social.list(company['id']) == []", audit)
         self.assertNotIn("service_wave33", build)
