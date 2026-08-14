@@ -80,3 +80,7 @@ globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
 (function loadOperationalReadinessExtension(){
   if(!document.querySelector('script[data-operational-readiness]')){const script=document.createElement('script');script.src='/operational-readiness.js';script.defer=true;script.dataset.operationalReadiness='1';document.head.append(script)}
 })();
+
+(function loadMarketingOperationsExtension(){
+  if(!document.querySelector('script[data-marketing-ops]')){const script=document.createElement('script');script.src='/marketing-ops.js';script.defer=true;script.dataset.marketingOps='1';document.head.append(script)}
+})();
