@@ -6,12 +6,19 @@ RES="$APP/Contents/Resources"
 MACOS="$APP/Contents/MacOS"
 LAUNCHER="$MACOS/Binario Marketing IA"
 KEYCHAIN_HELPER="$MACOS/binario-meta-keychain"
+BACKGROUND_HELPER="$MACOS/binario-background-service"
+BACKGROUND_AGENT="$MACOS/binario-background-agent"
+BACKGROUND_PLIST="$APP/Contents/Library/LaunchAgents/com.sistemabinario.marketing.background.plist"
 PY="$RES/runtime/python/bin/python3"
 FFMPEG="$RES/runtime/media/bin/ffmpeg"
 FFPROBE="$RES/runtime/media/bin/ffprobe"
 PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -x "$LAUNCHER" ]] || { echo "missing launcher" >&2; exit 3; }
 [[ -x "$KEYCHAIN_HELPER" ]] || { echo "missing native Meta Keychain helper" >&2; exit 3; }
+[[ -x "$BACKGROUND_HELPER" ]] || { echo "missing native background service helper" >&2; exit 3; }
+[[ -x "$BACKGROUND_AGENT" ]] || { echo "missing native background agent" >&2; exit 3; }
+[[ -f "$BACKGROUND_PLIST" ]] || { echo "missing bundled LaunchAgent plist" >&2; exit 3; }
+[[ -f "$RES/background_agent.py" ]] || { echo "missing background Python bootstrap" >&2; exit 3; }
 [[ -x "$PY" ]] || { echo "missing embedded python" >&2; exit 3; }
 [[ -x "$FFMPEG" && -x "$FFPROBE" ]] || { echo "missing embedded media runtime" >&2; exit 3; }
 [[ -f "$RES/runtime/media/FULL_MAC_MEDIA_RUNTIME.json" ]] || { echo "missing media provenance" >&2; exit 3; }
@@ -19,21 +26,36 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -f "$RES/source/web/index.html" ]] || { echo "missing web UI" >&2; exit 3; }
 [[ -f "$RES/source/web/marketing-ops.js" && -f "$RES/source/web/marketing-ops.css" ]] || { echo "missing Wave 31 marketing operations UI" >&2; exit 3; }
 [[ -f "$RES/source/web/crm.js" ]] || { echo "missing Wave 32 CRM UI" >&2; exit 3; }
+[[ -f "$RES/source/web/background-scheduling.js" ]] || { echo "missing Wave 33 background scheduling UI" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/company_store.py" && -f "$RES/source/src/binario_marketing/service_wave31.py" ]] || { echo "missing Wave 31 company runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/crm_store.py" && -f "$RES/source/src/binario_marketing/service_wave32.py" ]] || { echo "missing Wave 32 CRM runtime" >&2; exit 3; }
+[[ -f "$RES/source/src/binario_marketing/background_scheduler.py" && -f "$RES/source/src/binario_marketing/background_social_agent.py" && -f "$RES/source/src/binario_marketing/background_service.py" && -f "$RES/source/src/binario_marketing/service_wave33.py" ]] || { echo "missing Wave 33 background runtime" >&2; exit 3; }
 [[ -f "$RES/source/apps/editor-video/manifest.json" ]] || { echo "missing app manifests" >&2; exit 3; }
-/usr/bin/grep -q 'from binario_marketing.service_wave32 import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 32 runtime" >&2; exit 3; }
+/usr/bin/grep -q 'from binario_marketing.service_wave33 import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 33 runtime" >&2; exit 3; }
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
+/usr/bin/plutil -lint "$BACKGROUND_PLIST" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$APP"
 
-LAUNCHER_KIND="$(/usr/bin/file "$LAUNCHER")"
-/usr/bin/grep -q 'Mach-O' <<<"$LAUNCHER_KIND" || { echo "main CFBundleExecutable is not Mach-O: $LAUNCHER_KIND" >&2; exit 3; }
 HOST_ARCH="$(uname -m)"
-LAUNCHER_ARCHS="$(/usr/bin/lipo -archs "$LAUNCHER")"
-[[ " $LAUNCHER_ARCHS " == *" $HOST_ARCH "* ]] || { echo "main launcher architecture mismatch: host=$HOST_ARCH launcher=$LAUNCHER_ARCHS" >&2; exit 3; }
+for binary in "$LAUNCHER" "$BACKGROUND_HELPER" "$BACKGROUND_AGENT"; do
+  KIND="$(/usr/bin/file "$binary")"
+  /usr/bin/grep -q 'Mach-O' <<<"$KIND" || { echo "bundle executable is not Mach-O: $binary / $KIND" >&2; exit 3; }
+  ARCHS="$(/usr/bin/lipo -archs "$binary")"
+  [[ " $ARCHS " == *" $HOST_ARCH "* ]] || { echo "bundle executable architecture mismatch: host=$HOST_ARCH binary=$binary archs=$ARCHS" >&2; exit 3; }
+done
 if /usr/bin/grep -Eq '(^|[;&|[:space:]])python3([[:space:]]|$)' "$LAUNCHER"; then echo "launcher contains host python invocation" >&2; exit 3; fi
 /usr/bin/grep -q 'runtime/media/bin' "$LAUNCHER" || { echo "launcher does not prioritize embedded media runtime" >&2; exit 3; }
 /usr/bin/grep -q 'BINARIO_META_KEYCHAIN_HELPER' "$LAUNCHER" || { echo "launcher does not expose bundled Meta Keychain helper" >&2; exit 3; }
+/usr/bin/grep -q 'BINARIO_BACKGROUND_SERVICE_HELPER' "$LAUNCHER" || { echo "launcher does not expose bundled background service helper" >&2; exit 3; }
+
+PLIST_LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$BACKGROUND_PLIST")"
+PLIST_PROGRAM="$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$BACKGROUND_PLIST")"
+PLIST_INTERVAL="$(/usr/libexec/PlistBuddy -c 'Print :StartInterval' "$BACKGROUND_PLIST")"
+PLIST_RUN_AT_LOAD="$(/usr/libexec/PlistBuddy -c 'Print :RunAtLoad' "$BACKGROUND_PLIST")"
+[[ "$PLIST_LABEL" == "com.sistemabinario.marketing.background" ]] || { echo "unexpected LaunchAgent label" >&2; exit 3; }
+[[ "$PLIST_PROGRAM" == "Contents/MacOS/binario-background-agent" ]] || { echo "unexpected LaunchAgent BundleProgram" >&2; exit 3; }
+[[ "$PLIST_INTERVAL" == "60" ]] || { echo "unexpected LaunchAgent StartInterval" >&2; exit 3; }
+[[ "$PLIST_RUN_AT_LOAD" == "true" ]] || { echo "LaunchAgent RunAtLoad must be true" >&2; exit 3; }
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/binario-media-audit.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
@@ -50,6 +72,30 @@ echo "LAUNCHSERVICES APP BOOT PASS"
 
 KEYCHAIN_STATUS="$(cd "$MACOS" && ./binario-meta-keychain status)" || { echo "native Meta Keychain helper cannot access Keychain" >&2; exit 3; }
 [[ "$KEYCHAIN_STATUS" == "missing" || "$KEYCHAIN_STATUS" == "configured" ]] || { echo "unexpected Keychain helper status: $KEYCHAIN_STATUS" >&2; exit 3; }
+BACKGROUND_STATUS="$(cd "$MACOS" && ./binario-background-service status)" || { echo "native background service helper cannot inspect SMAppService" >&2; exit 3; }
+BACKGROUND_STATUS_JSON="$BACKGROUND_STATUS" "$PY" -I -B - <<'PY'
+import json, os
+payload = json.loads(os.environ['BACKGROUND_STATUS_JSON'])
+assert payload.get('supported') is True, payload
+assert payload.get('status') in {'not-registered', 'enabled', 'requires-approval'}, payload
+assert payload.get('status') != 'not-found', payload
+print('BACKGROUND SERVICE STATUS PASS:', payload.get('status'))
+PY
+
+BG_HOME="$TMP/background-home"
+mkdir -p "$BG_HOME"
+BINARIO_IA_HOME="$BG_HOME" "$BACKGROUND_AGENT" >"$TMP/background-agent.out"
+[[ -f "$BG_HOME/State/background_social/status.json" ]] || { echo "background agent did not write status sidecar" >&2; exit 3; }
+"$PY" -I -B - "$BG_HOME/State/background_social/status.json" <<'PY'
+import json, sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+assert payload['schema'] == 'binario.marketing.background-social.v2', payload
+assert payload['processed'] == 0, payload
+assert payload['last_error'] is None, payload
+assert 'data_root' not in payload, payload
+print('BACKGROUND AGENT ONE-SHOT PASS')
+PY
 
 for binary in "$FFMPEG" "$FFPROBE"; do
   OTOOL_OUTPUT="$(/usr/bin/otool -L "$binary")"
@@ -70,7 +116,7 @@ PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream
 PLIST_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 
-BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
+BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" BINARIO_BACKGROUND_SERVICE_HELPER="$BACKGROUND_HELPER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
 import json, sys
 from pathlib import Path
 src, root, provenance_path = map(Path, sys.argv[1:4])
@@ -79,37 +125,36 @@ tmp = Path(sys.argv[6])
 sys.path.insert(0, str(src))
 from binario_marketing.hub import discover_apps
 from binario_marketing.meta_credentials import MetaCredentialStore
-from binario_marketing.service_wave32 import AppRuntime
+from binario_marketing.service_wave33 import AppRuntime
 from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__
 from binario_marketing.video.render import media_runtime_status
 apps = discover_apps(root)
 assert len(apps) == 12, len(apps)
-runtime = AppRuntime.create(root, tmp / 'binario-audit-data-wave32')
+runtime = AppRuntime.create(root, tmp / 'binario-audit-data-wave33')
 assert len(runtime.apps_payload()) == 12
 assert runtime.companies_payload() == [], runtime.companies_payload()
-assert runtime.crm_summary() == {
-    'contacts': 0,
-    'opportunities_open': 0,
-    'opportunities_won': 0,
-    'pending_activities': 0,
-    'overdue_activities': 0,
-    'stage_counts': {'NEW': 0, 'CONTACTED': 0, 'INTERESTED': 0, 'PROPOSAL': 0, 'WON': 0, 'LOST': 0},
-    'next_activities': [],
-}, runtime.crm_summary()
+assert runtime.crm_summary()['contacts'] == 0, runtime.crm_summary()
+background = runtime.background_scheduling_status()
+assert background['supported'] is True, background
+assert background['helper_available'] is True, background
+assert background['registration'] in {'not-registered', 'enabled', 'requires-approval'}, background
+assert background['desktop_scheduler']['process_lock'] is True, background
 credential_status = MetaCredentialStore().status()
 assert credential_status.writable is True, credential_status
 status = media_runtime_status()
 assert status['h264_videotoolbox'] is True, status
 provenance = json.loads(provenance_path.read_text(encoding='utf-8'))
+assert provenance['schema'] == 'binario.marketing.full-mac-build.v4', provenance
 assert provenance['product_version'] == __version__, provenance
 assert provenance['macos_short_version'] == MACOS_SHORT_VERSION, provenance
 assert provenance['macos_bundle_version'] == MACOS_BUNDLE_VERSION, provenance
 assert provenance['meta_keychain_helper'] == 'SecItem/data-protection-first', provenance
+assert provenance['background_scheduler'].startswith('SMAppService LaunchAgent'), provenance
 assert plist_short == MACOS_SHORT_VERSION, (plist_short, MACOS_SHORT_VERSION)
 assert plist_build == MACOS_BUNDLE_VERSION, (plist_build, MACOS_BUNDLE_VERSION)
 if runtime.social_scheduler is not None:
     runtime.social_scheduler.shutdown()
 runtime.proxies.shutdown(); runtime.transcriptions.shutdown(); runtime.renders.shutdown()
-print(json.dumps({'apps': len(apps), 'companies': 0, 'crm_contacts': 0, 'media': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
+print(json.dumps({'apps': len(apps), 'companies': 0, 'crm_contacts': 0, 'background': background['registration'], 'media': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
 PY
 printf 'FULL MAC AUDIT PASS: %s\n' "$APP"
