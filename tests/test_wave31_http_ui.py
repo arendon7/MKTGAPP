@@ -114,10 +114,10 @@ class Wave31UiContractTests(unittest.TestCase):
 
     def test_full_mac_launch_preserves_wave31_or_a_certified_extension(self):
         script = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
-        self.assertTrue(
-            "from binario_marketing.service_wave31 import serve" in script
-            or "from binario_marketing.service_wave32 import serve" in script
-        )
+        self.assertTrue(any(
+            f"from binario_marketing.service_wave{wave} import serve" in script
+            for wave in (31, 32, 33)
+        ))
         self.assertNotIn("from binario_marketing.service_wave27 import serve", script)
 
 
