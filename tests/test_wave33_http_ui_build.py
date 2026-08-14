@@ -102,7 +102,8 @@ class Wave33UiAndBuildContractTests(unittest.TestCase):
     def test_ui_is_explicit_opt_in_and_never_auto_registers(self):
         js = (ROOT / "web" / "background-scheduling.js").read_text(encoding="utf-8")
         loader = (ROOT / "web" / "instagram-local-reel.js").read_text(encoding="utf-8")
-        self.assertIn("/api/background-scheduling/register", js)
+        self.assertIn("opsApi('/api/background-scheduling'", js)
+        self.assertIn("opsApi(`/api/background-scheduling/${action}`", js)
         self.assertIn("method:'DELETE'", js)
         self.assertIn("backgroundMutate('register')", js)
         self.assertIn("backgroundMutate('unregister')", js)
