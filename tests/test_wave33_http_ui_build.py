@@ -1,4 +1,5 @@
 import json
+import platform
 import tempfile
 import threading
 import unittest
@@ -43,7 +44,8 @@ class Wave33HttpTests(unittest.TestCase):
     def test_background_status_is_read_only_and_locked_scheduler_is_active(self):
         status_code, payload = request_json(self.base + "/api/background-scheduling")
         self.assertEqual(status_code, 200)
-        self.assertFalse(payload["supported"])
+        expected_supported = platform.system() == "Darwin" and int((platform.mac_ver()[0] or "0").split(".", 1)[0]) >= 13
+        self.assertEqual(payload["supported"], expected_supported)
         self.assertFalse(payload["helper_available"])
         self.assertTrue(payload["desktop_scheduler"]["process_lock"])
         self.assertEqual(payload["queue"], {"queued": 0, "publishing": 0, "failed": 0})
