@@ -7,12 +7,9 @@ ROOT="${3:-}"
 [[ "$ARCH" == "arm64" || "$ARCH" == "x86_64" ]] || { echo "invalid architecture" >&2; exit 2; }
 [[ -n "$ROOT" && -d "$ROOT" ]] || { echo "missing repository root" >&2; exit 2; }
 SRC="$ROOT/native/main_launcher.c"
-BRIDGE="$ROOT/native/background_service_bridge.m"
 OUT="$APP/Contents/MacOS/Binario Marketing IA"
 [[ -f "$SRC" ]] || { echo "native launcher source missing" >&2; exit 3; }
-[[ -f "$BRIDGE" ]] || { echo "background service bridge source missing" >&2; exit 3; }
-/usr/bin/xcrun --sdk macosx clang -O2 -Wall -Wextra -target "$ARCH-apple-macos12.0" \
-  "$SRC" "$BRIDGE" -framework Foundation -framework ServiceManagement -o "$OUT"
+/usr/bin/xcrun --sdk macosx clang -O2 -Wall -Wextra -target "$ARCH-apple-macos12.0" "$SRC" -o "$OUT"
 chmod 755 "$OUT"
 ARCHS="$(/usr/bin/lipo -archs "$OUT")"
 [[ " $ARCHS " == *" $ARCH "* ]] || { echo "native launcher architecture mismatch: $ARCHS" >&2; exit 3; }
