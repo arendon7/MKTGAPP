@@ -6,7 +6,6 @@ RES="$APP/Contents/Resources"
 MACOS="$APP/Contents/MacOS"
 LAUNCHER="$MACOS/Binario Marketing IA"
 KEYCHAIN_HELPER="$MACOS/binario-meta-keychain"
-BACKGROUND_HELPER="$MACOS/binario-background-service"
 BACKGROUND_AGENT="$MACOS/binario-background-agent"
 BACKGROUND_PLIST="$APP/Contents/Library/LaunchAgents/com.sistemabinario.marketing.background.plist"
 PY="$RES/runtime/python/bin/python3"
@@ -15,7 +14,6 @@ FFPROBE="$RES/runtime/media/bin/ffprobe"
 PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -x "$LAUNCHER" ]] || { echo "missing launcher" >&2; exit 3; }
 [[ -x "$KEYCHAIN_HELPER" ]] || { echo "missing native Meta Keychain helper" >&2; exit 3; }
-[[ -x "$BACKGROUND_HELPER" ]] || { echo "missing native background service helper" >&2; exit 3; }
 [[ -x "$BACKGROUND_AGENT" ]] || { echo "missing native background agent" >&2; exit 3; }
 [[ -f "$BACKGROUND_PLIST" ]] || { echo "missing bundled LaunchAgent plist" >&2; exit 3; }
 [[ -f "$RES/background_agent.py" ]] || { echo "missing background Python bootstrap" >&2; exit 3; }
@@ -37,7 +35,7 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 /usr/bin/codesign --verify --deep --strict "$APP"
 
 HOST_ARCH="$(uname -m)"
-for binary in "$LAUNCHER" "$BACKGROUND_HELPER" "$BACKGROUND_AGENT"; do
+for binary in "$LAUNCHER" "$BACKGROUND_AGENT"; do
   KIND="$(/usr/bin/file "$binary")"
   /usr/bin/grep -q 'Mach-O' <<<"$KIND" || { echo "bundle executable is not Mach-O: $binary / $KIND" >&2; exit 3; }
   ARCHS="$(/usr/bin/lipo -archs "$binary")"
@@ -46,7 +44,7 @@ done
 if /usr/bin/grep -Eq '(^|[;&|[:space:]])python3([[:space:]]|$)' "$LAUNCHER"; then echo "launcher contains host python invocation" >&2; exit 3; fi
 /usr/bin/grep -q 'runtime/media/bin' "$LAUNCHER" || { echo "launcher does not prioritize embedded media runtime" >&2; exit 3; }
 /usr/bin/grep -q 'BINARIO_META_KEYCHAIN_HELPER' "$LAUNCHER" || { echo "launcher does not expose bundled Meta Keychain helper" >&2; exit 3; }
-/usr/bin/grep -q 'BINARIO_BACKGROUND_SERVICE_HELPER' "$LAUNCHER" || { echo "launcher does not expose bundled background service helper" >&2; exit 3; }
+/usr/bin/grep -q 'BINARIO_BACKGROUND_SERVICE_HELPER' "$LAUNCHER" || { echo "launcher does not expose main-executable background bridge" >&2; exit 3; }
 
 PLIST_LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$BACKGROUND_PLIST")"
 PLIST_PROGRAM="$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$BACKGROUND_PLIST")"
@@ -72,7 +70,7 @@ echo "LAUNCHSERVICES APP BOOT PASS"
 
 KEYCHAIN_STATUS="$(cd "$MACOS" && ./binario-meta-keychain status)" || { echo "native Meta Keychain helper cannot access Keychain" >&2; exit 3; }
 [[ "$KEYCHAIN_STATUS" == "missing" || "$KEYCHAIN_STATUS" == "configured" ]] || { echo "unexpected Keychain helper status: $KEYCHAIN_STATUS" >&2; exit 3; }
-BACKGROUND_STATUS="$(cd "$MACOS" && ./binario-background-service status)" || { echo "native background service helper cannot inspect SMAppService" >&2; exit 3; }
+BACKGROUND_STATUS="$("$LAUNCHER" --background-service status)" || { echo "main app executable cannot inspect SMAppService" >&2; exit 3; }
 BACKGROUND_STATUS_JSON="$BACKGROUND_STATUS" "$PY" -I -B - <<'PY'
 import json, os
 payload = json.loads(os.environ['BACKGROUND_STATUS_JSON'])
@@ -116,7 +114,7 @@ PROBE_DIMENSIONS="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream
 PLIST_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 
-BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" BINARIO_BACKGROUND_SERVICE_HELPER="$BACKGROUND_HELPER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
+BINARIO_FFMPEG="$FFMPEG" BINARIO_FFPROBE="$FFPROBE" BINARIO_META_KEYCHAIN_HELPER="$KEYCHAIN_HELPER" BINARIO_BACKGROUND_SERVICE_HELPER="$LAUNCHER" "$PY" -I -B - "$RES/source/src" "$RES/source" "$PROVENANCE" "$PLIST_SHORT" "$PLIST_BUILD" "$TMP" <<'PY'
 import json, sys
 from pathlib import Path
 src, root, provenance_path = map(Path, sys.argv[1:4])
