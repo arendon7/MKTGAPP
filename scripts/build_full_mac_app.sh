@@ -145,4 +145,5 @@ PLIST
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
 /usr/bin/codesign --force --deep --sign - "$APP"
 /bin/bash "$ROOT/scripts/audit_wave39_inbox.sh" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave40_crm_triage.sh" "$APP"
 printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
