@@ -12,25 +12,17 @@ CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RES="$CONTENTS/Resources"
 AGENTS="$CONTENTS/Library/LaunchAgents"
-SERVICE_HELPER="$MACOS/binario-background-service"
 AGENT="$MACOS/binario-background-agent"
 PLIST="$AGENTS/com.sistemabinario.marketing.background.plist"
 mkdir -p "$AGENTS"
 
-[[ -f "$ROOT/native/background_service_helper.swift" ]] || { echo "background service helper source missing" >&2; exit 3; }
 [[ -f "$ROOT/native/background_agent_launcher.c" ]] || { echo "background agent launcher source missing" >&2; exit 3; }
-
-/usr/bin/xcrun --sdk macosx swiftc -O -target "$ARCH-apple-macos13.0" \
-  "$ROOT/native/background_service_helper.swift" -framework Foundation -framework ServiceManagement -o "$SERVICE_HELPER"
 /usr/bin/xcrun --sdk macosx clang -O2 -Wall -Wextra -target "$ARCH-apple-macos13.0" \
   "$ROOT/native/background_agent_launcher.c" -o "$AGENT"
-chmod 755 "$SERVICE_HELPER" "$AGENT"
-
-for binary in "$SERVICE_HELPER" "$AGENT"; do
-  /usr/bin/file "$binary" | /usr/bin/grep -q 'Mach-O' || { echo "background executable is not Mach-O: $binary" >&2; exit 3; }
-  ARCHS="$(/usr/bin/lipo -archs "$binary")"
-  [[ " $ARCHS " == *" $ARCH "* ]] || { echo "background executable architecture mismatch: $ARCHS" >&2; exit 3; }
-done
+chmod 755 "$AGENT"
+/usr/bin/file "$AGENT" | /usr/bin/grep -q 'Mach-O' || { echo "background executable is not Mach-O: $AGENT" >&2; exit 3; }
+ARCHS="$(/usr/bin/lipo -archs "$AGENT")"
+[[ " $ARCHS " == *" $ARCH "* ]] || { echo "background executable architecture mismatch: $ARCHS" >&2; exit 3; }
 
 cat > "$RES/background_agent.py" <<'PY'
 from __future__ import annotations
