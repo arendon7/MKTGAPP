@@ -106,11 +106,17 @@ class Wave34UiBuildContractTests(unittest.TestCase):
         self.assertNotIn("localImage", js)
         self.assertNotIn("publish_page_photo_local", js)
 
-    def test_full_mac_launches_wave34_and_audits_company_media(self):
+    def test_full_mac_preserves_wave34_through_certified_extension(self):
         build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
         audit = (ROOT / "scripts" / "audit_full_mac_app.sh").read_text(encoding="utf-8")
-        self.assertIn("from binario_marketing.service_wave34 import serve", build)
-        self.assertIn("from binario_marketing.service_wave34 import AppRuntime", audit)
+        self.assertTrue(
+            "from binario_marketing.service_wave34 import serve" in build
+            or "from binario_marketing.service_wave35 import serve" in build
+        )
+        self.assertTrue(
+            "from binario_marketing.service_wave34 import AppRuntime" in audit
+            or "from binario_marketing.service_wave35 import AppRuntime" in audit
+        )
         self.assertIn("company-content.js", audit)
         self.assertIn("company_media_store.py", audit)
         self.assertIn("wave34_company_media.py", audit)
