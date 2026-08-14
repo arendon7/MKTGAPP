@@ -81,15 +81,21 @@ class AudienceUiContractTests(unittest.TestCase):
         self.assertTrue(
             "from binario_marketing.service_wave36 import serve" in build
             or "from binario_marketing.service_wave37_app import serve" in build
+            or "from binario_marketing.service_wave38_app import serve" in build
         )
         self.assertTrue(
             "from binario_marketing.service_wave36 import AppRuntime" in audit
             or "from binario_marketing.service_wave37_app import AppRuntime" in audit
+            or "from binario_marketing.service_wave38_app import AppRuntime" in audit
         )
         self.assertIn("audiences.js", audit)
         self.assertIn("audience_store.py", audit)
         self.assertIn("crm_import.py", audit)
-        self.assertTrue("Wave 36 Imported Audience" in audit or "Wave 37 Imported Audience" in audit)
+        self.assertTrue(
+            "Wave 36 Imported Audience" in audit
+            or "Wave 37 Imported Audience" in audit
+            or "Wave 38 Imported Audience" in audit
+        )
         self.assertIn("runtime.import_contacts_csv", audit)
         self.assertIn("runtime.social.list(company['id']) == []", audit)
         self.assertNotIn("service_wave33", build)
