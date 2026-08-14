@@ -121,6 +121,7 @@ class Wave31UiContractTests(unittest.TestCase):
             or "from binario_marketing.service_wave35 import serve" in script
             or "from binario_marketing.service_wave36 import serve" in script
             or "from binario_marketing.service_wave37_app import serve" in script
+            or "from binario_marketing.service_wave38_app import serve" in script
         )
         self.assertNotIn("from binario_marketing.service_wave27 import serve", script)
 

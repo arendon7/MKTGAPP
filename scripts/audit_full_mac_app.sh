@@ -23,14 +23,16 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 [[ -f "$RES/source/web/campaigns.js" ]] || { echo "missing Wave 35 campaign UI" >&2; exit 3; }
 [[ -f "$RES/source/web/audiences.js" ]] || { echo "missing Wave 36 audience UI" >&2; exit 3; }
 [[ -f "$RES/source/web/audiences-wave37-loader.js" && -f "$RES/source/web/contactability.js" ]] || { echo "missing Wave 37 contactability UI" >&2; exit 3; }
+[[ -f "$RES/source/web/audiences-wave38-loader.js" && -f "$RES/source/web/analytics.js" ]] || { echo "missing Wave 38 analytics UI" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/company_store.py" && -f "$RES/source/src/binario_marketing/service_wave31.py" ]] || { echo "missing Wave 31 company runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/crm_store.py" && -f "$RES/source/src/binario_marketing/service_wave32.py" ]] || { echo "missing Wave 32 CRM runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/company_media_store.py" && -f "$RES/source/src/binario_marketing/wave34_company_media.py" && -f "$RES/source/src/binario_marketing/service_wave34.py" ]] || { echo "missing Wave 34 company content runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/campaign_store.py" && -f "$RES/source/src/binario_marketing/service_wave35.py" ]] || { echo "missing Wave 35 campaign runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/audience_store.py" && -f "$RES/source/src/binario_marketing/crm_import.py" && -f "$RES/source/src/binario_marketing/service_wave36.py" ]] || { echo "missing Wave 36 audience/import runtime" >&2; exit 3; }
 [[ -f "$RES/source/src/binario_marketing/contactability_store.py" && -f "$RES/source/src/binario_marketing/service_wave37.py" && -f "$RES/source/src/binario_marketing/service_wave37_app.py" ]] || { echo "missing Wave 37 contactability runtime" >&2; exit 3; }
+[[ -f "$RES/source/src/binario_marketing/service_wave38_app.py" ]] || { echo "missing Wave 38 analytics runtime" >&2; exit 3; }
 [[ -f "$RES/source/apps/editor-video/manifest.json" ]] || { echo "missing app manifests" >&2; exit 3; }
-/usr/bin/grep -q 'from binario_marketing.service_wave37_app import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 37 runtime" >&2; exit 3; }
+/usr/bin/grep -q 'from binario_marketing.service_wave38_app import serve' "$RES/launch.py" || { echo "Mac launch bootstrap is not using Wave 38 runtime" >&2; exit 3; }
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$APP"
 
@@ -87,12 +89,12 @@ tmp = Path(sys.argv[6])
 sys.path.insert(0, str(src))
 from binario_marketing.hub import discover_apps
 from binario_marketing.meta_credentials import MetaCredentialStore
-from binario_marketing.service_wave37_app import AppRuntime
+from binario_marketing.service_wave38_app import AppRuntime
 from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, __version__
 from binario_marketing.video.render import media_runtime_status
 apps = discover_apps(root)
 assert len(apps) == 12, len(apps)
-runtime = AppRuntime.create(root, tmp / 'binario-audit-data-wave37')
+runtime = AppRuntime.create(root, tmp / 'binario-audit-data-wave38')
 assert len(runtime.apps_payload()) == 12
 assert runtime.companies_payload() == [], runtime.companies_payload()
 assert runtime.company_media.list() == [], runtime.company_media.list()
@@ -100,10 +102,17 @@ assert runtime.crm_summary()['contacts'] == 0, runtime.crm_summary()
 assert runtime.campaign_summary()['total'] == 0, runtime.campaign_summary()
 assert runtime.audience_summary()['total'] == 0, runtime.audience_summary()
 assert runtime.contactability_summary()['contacts'] == 0, runtime.contactability_summary()
-company = runtime.create_company({'name': 'Wave 37 Audit'})
+analytics_empty = runtime.social_analytics()
+assert analytics_empty['summary']['total'] == 0, analytics_empty
+assert analytics_empty['by_company'] == [], analytics_empty
+company = runtime.create_company({'name': 'Wave 38 Audit'})
+company_analytics = runtime.social_analytics(company['id'])
+assert company_analytics['company_id'] == company['id'], company_analytics
+assert company_analytics['summary']['total'] == 0, company_analytics
+assert company_analytics['by_company'][0]['company_name'] == 'Wave 38 Audit', company_analytics
 csv_bytes = (
     'nombre,correo,whatsapp,etiquetas\n'
-    'CSV Audit,csv-audit@example.com,+573001112233,importado;wave37\n'
+    'CSV Audit,csv-audit@example.com,+573001112233,importado;wave38\n'
 ).encode('utf-8')
 report = runtime.import_contacts_csv(company['id'], csv_bytes, strategy='skip')
 assert report['created'] == 1, report
@@ -132,17 +141,17 @@ assert summary['channels']['email']['eligible'] == 1, summary
 assert summary['channels']['whatsapp']['opted_out'] == 1, summary
 assert runtime.social.list(company['id']) == [], runtime.social.list(company['id'])
 audience = runtime.create_audience(company['id'], {
-    'name': 'Wave 37 Imported Audience',
+    'name': 'Wave 38 Imported Audience',
     'description': 'Static local list',
     'contact_ids': [contact_id],
 })
 assert audience['member_count'] == 1, audience
 assert audience['contactability']['email']['eligible'] == 1, audience
 assert audience['contactability']['whatsapp']['eligible'] == 0, audience
-body = b'wave37-managed-image'
+body = b'wave38-managed-image'
 media = runtime.upload_company_media(company['id'], 'audit.png', 'image', io.BytesIO(body), len(body))
 campaign = runtime.create_campaign(company['id'], {
-    'name': 'Wave 37 Campaign Audit',
+    'name': 'Wave 38 Campaign Audit',
     'objective': 'LEADS',
     'channels': ['email', 'whatsapp'],
     'audience_contact_ids': [contact_id],
@@ -170,6 +179,6 @@ assert plist_build == MACOS_BUNDLE_VERSION, (plist_build, MACOS_BUNDLE_VERSION)
 if runtime.social_scheduler is not None:
     runtime.social_scheduler.shutdown()
 runtime.proxies.shutdown(); runtime.transcriptions.shutdown(); runtime.renders.shutdown()
-print(json.dumps({'apps': len(apps), 'company_media': 'PASS', 'campaigns': 'PASS', 'audiences': 'PASS', 'csv_import': 'PASS', 'contactability': 'PASS', 'crm_contacts': 1, 'media_runtime': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
+print(json.dumps({'apps': len(apps), 'company_media': 'PASS', 'campaigns': 'PASS', 'audiences': 'PASS', 'csv_import': 'PASS', 'contactability': 'PASS', 'analytics': 'PASS', 'crm_contacts': 1, 'media_runtime': status, 'keychain': credential_status.source, 'version': __version__, 'status': 'PASS'}))
 PY
 printf 'FULL MAC AUDIT PASS: %s\n' "$APP"
