@@ -62,7 +62,7 @@ HELPER_ARCHS="$(/usr/bin/lipo -archs "$KEYCHAIN_HELPER")"
 GIT_SHA="$(/usr/bin/git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')"
 cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
 {
-  "schema": "binario.marketing.full-mac-build.v3",
+  "schema": "binario.marketing.full-mac-build.v4",
   "git_sha": "$GIT_SHA",
   "architecture": "$ARCH",
   "app_name": "$APP_NAME",
@@ -76,7 +76,8 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "whisper_source_commit": "$WHISPER_COMMIT",
   "whisper_model": "$WHISPER_MODEL_NAME",
   "whisper_model_sha256": "$WHISPER_MODEL_SHA256",
-  "meta_keychain_helper": "SecItem/data-protection-first"
+  "meta_keychain_helper": "SecItem/data-protection-first",
+  "background_scheduler": "SMAppService LaunchAgent / opt-in / 60s best-effort"
 }
 JSON
 
@@ -91,7 +92,7 @@ os.environ.setdefault("BINARIO_FFMPEG", str(resources / "runtime" / "media" / "b
 os.environ.setdefault("BINARIO_FFPROBE", str(resources / "runtime" / "media" / "bin" / "ffprobe"))
 os.environ.setdefault("BINARIO_WHISPER_CLI", str(resources / "runtime" / "transcription" / "bin" / "whisper-cli"))
 os.environ.setdefault("BINARIO_WHISPER_MODEL", str(resources / "runtime" / "transcription" / "models" / "ggml-tiny.bin"))
-from binario_marketing.service_wave32 import serve
+from binario_marketing.service_wave33 import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
 serve("127.0.0.1", port, open_browser=open_browser)
@@ -140,6 +141,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+/bin/bash "$ROOT/scripts/build_background_scheduler.sh" "$APP" "$ARCH" "$ROOT"
 /bin/bash "$ROOT/scripts/build_native_main_launcher.sh" "$APP" "$ARCH" "$ROOT"
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
 /usr/bin/codesign --force --deep --sign - "$APP"
