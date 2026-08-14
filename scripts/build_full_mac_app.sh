@@ -92,6 +92,7 @@ os.environ.setdefault("BINARIO_FFPROBE", str(resources / "runtime" / "media" / "
 os.environ.setdefault("BINARIO_WHISPER_CLI", str(resources / "runtime" / "transcription" / "bin" / "whisper-cli"))
 os.environ.setdefault("BINARIO_WHISPER_MODEL", str(resources / "runtime" / "transcription" / "models" / "ggml-tiny.bin"))
 from binario_marketing.service_wave38_app import serve
+from binario_marketing.service_wave39_app import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
 serve("127.0.0.1", port, open_browser=open_browser)
