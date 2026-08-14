@@ -141,11 +141,13 @@ class CRMUiContractTests(unittest.TestCase):
             "from binario_marketing.service_wave32 import serve" in build
             or "from binario_marketing.service_wave34 import serve" in build
             or "from binario_marketing.service_wave35 import serve" in build
+            or "from binario_marketing.service_wave36 import serve" in build
         )
         self.assertTrue(
             "from binario_marketing.service_wave32 import AppRuntime" in audit
             or "from binario_marketing.service_wave34 import AppRuntime" in audit
             or "from binario_marketing.service_wave35 import AppRuntime" in audit
+            or "from binario_marketing.service_wave36 import AppRuntime" in audit
         )
         self.assertIn("crm.js", audit)
         self.assertIn("crm_store.py", audit)
