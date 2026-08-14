@@ -82,5 +82,8 @@ globalThis.renderInstagramLocalVisibility=renderInstagramLocalVisibility;
 })();
 
 (function loadMarketingOperationsExtension(){
-  if(!document.querySelector('script[data-marketing-ops]')){const script=document.createElement('script');script.src='/marketing-ops.js';script.defer=true;script.dataset.marketingOps='1';document.head.append(script)}
+  const loadCrm=()=>{if(!document.querySelector('script[data-crm-wave32]')){const crm=document.createElement('script');crm.src='/crm.js';crm.defer=true;crm.dataset.crmWave32='1';document.head.append(crm)}};
+  const existing=document.querySelector('script[data-marketing-ops]');
+  if(existing){if(globalThis.refreshMarketingOps)loadCrm();else existing.addEventListener('load',loadCrm,{once:true});return}
+  const script=document.createElement('script');script.src='/marketing-ops.js';script.defer=true;script.dataset.marketingOps='1';script.addEventListener('load',loadCrm,{once:true});document.head.append(script);
 })();
