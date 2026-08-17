@@ -1,11 +1,21 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
+  const loadDaily=()=>{
+    if(document.querySelector('script[data-daily-ops-wave43]'))return;
+    const daily=document.createElement('script');
+    daily.src='/daily-ops.js';
+    daily.defer=true;
+    daily.dataset.dailyOpsWave43='1';
+    document.head.append(daily);
+  };
   const loadEditorial=()=>{
-    if(document.querySelector('script[data-editorial-wave42]'))return;
+    const existing=document.querySelector('script[data-editorial-wave42]');
+    if(existing){if(globalThis.editorialState)loadDaily();else existing.addEventListener('load',loadDaily,{once:true});return}
     const editorial=document.createElement('script');
     editorial.src='/editorial-management.js';
     editorial.defer=true;
     editorial.dataset.editorialWave42='1';
+    editorial.addEventListener('load',loadDaily,{once:true});
     document.head.append(editorial);
   };
   const wave38=document.createElement('script');
@@ -16,13 +26,15 @@
     let attempts=0;
     const waitForAnalytics=()=>{
       if(document.querySelector('#analytics-wave38-style')){
-        if(document.querySelector('script[data-inbox-wave39]'))return;
+        const existingInbox=document.querySelector('script[data-inbox-wave39]');
+        if(existingInbox){if(globalThis.inboxRenderCurrent)loadEditorial();else existingInbox.addEventListener('load',loadEditorial,{once:true});return}
         const inbox=document.createElement('script');
         inbox.src='/inbox.js';
         inbox.defer=true;
         inbox.dataset.inboxWave39='1';
         inbox.addEventListener('load',()=>{
-          if(document.querySelector('script[data-inbox-replies-wave41]')){loadEditorial();return}
+          const existingReplies=document.querySelector('script[data-inbox-replies-wave41]');
+          if(existingReplies){if(globalThis.inboxReplyState)loadEditorial();else existingReplies.addEventListener('load',loadEditorial,{once:true});return}
           const replies=document.createElement('script');
           replies.src='/inbox-replies.js';
           replies.defer=true;
