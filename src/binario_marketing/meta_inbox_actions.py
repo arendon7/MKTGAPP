@@ -107,10 +107,16 @@ class MetaInboxWriter:
             payload = self.client._request(
                 "GET",
                 f"{media_id}/comments",
-                {"fields": "id", "limit": 50},
+                {"fields": "id,from", "limit": 50},
                 token=token,
             )
-            if any(str(row.get("id") or "").strip() == comment for row in self._rows(payload)):
+            for row in self._rows(payload):
+                if str(row.get("id") or "").strip() != comment:
+                    continue
+                author = row.get("from")
+                author_id = str(author.get("id") or "").strip() if isinstance(author, dict) else ""
+                if author_id and author_id == account:
+                    raise ValueError("refusing to reply to a comment authored by the company Instagram account")
                 return token
         raise ValueError("selected Instagram comment does not belong to recent company media known by the app")
 
