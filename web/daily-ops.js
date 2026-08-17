@@ -26,7 +26,6 @@ function dailyFocus(root){
   for(const item of items){const row=opsEl('div',`daily-focus-item ${item.priority<=2?'high':''}`);row.append(opsEl('span','daily-type',item.type));const body=opsEl('div','');body.append(opsEl('strong','',item.title),opsEl('p','',item.detail),opsEl('p','',opsDate(item.date)));const button=opsEl('button','','Revisar');button.type='button';button.addEventListener('click',()=>opsShowView(item.view));row.append(body,button);list.append(row)}section.append(list);root.append(section)
 }
 
-const dailyBaseRenderOpsHome=renderOpsHome;
 renderOpsHome=function(root){
   const data=marketingOpsState.dashboard||{summary:{}};const summary=data.summary||{},crm=data.crm||{};
   const grid=opsEl('div','marketing-ops-grid');grid.append(opsMetric('HOY',data.scheduled_today||0,'publicaciones programadas'),opsMetric('SEGUIMIENTOS',crm.pending_activities||0,'pendientes en CRM'),opsMetric('BORRADORES',summary.draft||0,'pendientes de revisar'),opsMetric('REQUIEREN ATENCIÓN',(summary.failed||0)+(data.overdue||0)+(crm.overdue_activities||0),'errores o vencidos'));root.append(grid);
