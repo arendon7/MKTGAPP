@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "binario.marketing.release-uat-evidence.v1"
+
+
+def _load(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        raise SystemExit("invalid release UAT evidence")
+    return data
+
+
+def _recompute(data: dict[str, Any]) -> None:
+    manual = data.get("manual_steps") or []
+    automatic = bool(data.get("automatic_passed"))
+    statuses = [row.get("status") for row in manual if isinstance(row, dict)]
+    if not automatic:
+        data["uat_passed"] = False
+        data["overall"] = "AUTOMATIC_FAIL"
+    elif any(status == "FAIL" for status in statuses):
+        data["uat_passed"] = False
+        data["overall"] = "UAT_FAIL"
+    elif statuses and all(status == "PASS" for status in statuses):
+        data["uat_passed"] = True
+        data["overall"] = "UAT_PASS"
+    else:
+        data["uat_passed"] = False
+        data["overall"] = "AUTOMATIC_PASS_MANUAL_PENDING"
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Record one explicit physical UAT result for an exact release candidate.")
+    ap.add_argument("--evidence", type=Path, required=True)
+    ap.add_argument("--step", required=True)
+    ap.add_argument("--status", choices=("PASS", "FAIL"), required=True)
+    ap.add_argument("--note", required=True, help="Concrete evidence/observation for this manual gate.")
+    args = ap.parse_args()
+
+    path = args.evidence.expanduser().resolve()
+    data = _load(path)
+    if not data.get("git_sha") or not data.get("architecture"):
+        raise SystemExit("UAT evidence is not bound to git_sha/architecture")
+    if not data.get("automatic_passed"):
+        raise SystemExit("automatic checks must pass before recording manual UAT")
+
+    target = None
+    for row in data.get("manual_steps") or []:
+        if isinstance(row, dict) and row.get("id") == args.step:
+            target = row
+            break
+    if target is None:
+        raise SystemExit(f"unknown UAT step: {args.step}")
+
+    target["status"] = args.status
+    target["note"] = args.note.strip()
+    target["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    _recompute(data)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"step": args.step, "status": args.status, "overall": data["overall"], "uat_passed": data["uat_passed"], "git_sha": data["git_sha"], "architecture": data["architecture"]}, ensure_ascii=False, indent=2))
+    return 2 if data["overall"] in {"AUTOMATIC_FAIL", "UAT_FAIL"} else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
