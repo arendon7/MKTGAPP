@@ -13,6 +13,14 @@
         inbox.src='/inbox.js';
         inbox.defer=true;
         inbox.dataset.inboxWave39='1';
+        inbox.addEventListener('load',()=>{
+          if(document.querySelector('script[data-inbox-replies-wave41]'))return;
+          const replies=document.createElement('script');
+          replies.src='/inbox-replies.js';
+          replies.defer=true;
+          replies.dataset.inboxRepliesWave41='1';
+          document.head.append(replies);
+        },{once:true});
         document.head.append(inbox);
         return;
       }
