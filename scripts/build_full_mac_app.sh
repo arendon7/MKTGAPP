@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist"
 ARCH=""
 APP_NAME="Binario Marketing IA.app"
+CODESIGN_IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 
 fail(){ printf 'FULL MAC BUILD BLOCKED: %s\n' "$1" >&2; exit 4; }
 while [[ $# -gt 0 ]]; do
@@ -17,6 +18,15 @@ done
 [[ "$(uname -s)" == "Darwin" ]] || fail "build must run on macOS"
 [[ -n "$ARCH" ]] || ARCH="$(uname -m)"
 case "$ARCH" in arm64|aarch64) ARCH="arm64" ;; x86_64|amd64) ARCH="x86_64" ;; *) fail "unsupported architecture: $ARCH" ;; esac
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+  SIGNING_MODE="ad_hoc"
+elif [[ "$CODESIGN_IDENTITY" == Developer\ ID\ Application:* ]]; then
+  SIGNING_MODE="developer_id"
+else
+  SIGNING_MODE="custom"
+fi
+NOTARIZED="false"
+RELEASE_CHANNEL="development"
 
 source "$ROOT/scripts/full_mac_media_runtime.env"
 source "$ROOT/scripts/full_mac_transcription_runtime.env"
@@ -28,9 +38,10 @@ PY_RUNTIME="$RESOURCES/runtime/python"
 MEDIA_RUNTIME="$RESOURCES/runtime/media"
 TRANSCRIPTION_RUNTIME="$RESOURCES/runtime/transcription"
 SOURCE="$RESOURCES/source"
+RELEASE_TOOLS="$RESOURCES/release-tools"
 KEYCHAIN_HELPER="$MACOS/binario-meta-keychain"
 rm -rf "$APP"
-mkdir -p "$MACOS" "$RESOURCES" "$SOURCE"
+mkdir -p "$MACOS" "$RESOURCES" "$SOURCE" "$RELEASE_TOOLS"
 
 "$ROOT/scripts/bootstrap_full_mac_python.sh" --target "$PY_RUNTIME" --arch "$ARCH"
 VERSION_FIELDS="$("$PY_RUNTIME/bin/python3" -I -B - "$ROOT/src" <<'PY'
@@ -52,6 +63,9 @@ IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "
 /usr/bin/ditto "$ROOT/apps" "$SOURCE/apps"
 /usr/bin/ditto "$ROOT/web" "$SOURCE/web"
 /bin/cp "$ROOT/pyproject.toml" "$SOURCE/pyproject.toml"
+/bin/cp "$ROOT/scripts/release_candidate_gate.py" "$RELEASE_TOOLS/release_candidate_gate.py"
+/bin/cp "$ROOT/scripts/collect_release_uat.py" "$RELEASE_TOOLS/collect_release_uat.py"
+/bin/cp "$ROOT/scripts/record_release_uat.py" "$RELEASE_TOOLS/record_release_uat.py"
 
 [[ -f "$ROOT/native/meta_keychain_helper.swift" ]] || fail "Meta Keychain helper source missing"
 /usr/bin/xcrun --sdk macosx swiftc -O -target "$ARCH-apple-macos12.0" "$ROOT/native/meta_keychain_helper.swift" -framework Foundation -framework Security -o "$KEYCHAIN_HELPER"
@@ -62,13 +76,16 @@ HELPER_ARCHS="$(/usr/bin/lipo -archs "$KEYCHAIN_HELPER")"
 GIT_SHA="$(/usr/bin/git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')"
 cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
 {
-  "schema": "binario.marketing.full-mac-build.v3",
+  "schema": "binario.marketing.full-mac-build.v4",
   "git_sha": "$GIT_SHA",
   "architecture": "$ARCH",
   "app_name": "$APP_NAME",
   "product_version": "$PRODUCT_VERSION",
   "macos_short_version": "$MACOS_SHORT_VERSION",
   "macos_bundle_version": "$MACOS_BUNDLE_VERSION",
+  "release_channel": "$RELEASE_CHANNEL",
+  "signing_mode": "$SIGNING_MODE",
+  "notarized": $NOTARIZED,
   "embedded_python": "3.12.13",
   "embedded_ffmpeg": "$FULL_MAC_FFMPEG_VERSION",
   "ffmpeg_source_commit": "$FULL_MAC_FFMPEG_COMMIT_SHA",
@@ -79,6 +96,19 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "meta_keychain_helper": "SecItem/data-protection-first"
 }
 JSON
+"$PY_RUNTIME/bin/python3" -I -B - "$ROOT/src" "$GIT_SHA" "$ARCH" "$SIGNING_MODE" "$NOTARIZED" > "$RESOURCES/RELEASE_READINESS.json" <<'PY'
+import json,sys
+sys.path.insert(0,sys.argv[1])
+from binario_marketing.release_readiness import evaluate_release_readiness
+report=evaluate_release_readiness(
+    signing_mode=sys.argv[4],
+    notarized=sys.argv[5].lower()=="true",
+    uat_passed=False,
+    git_sha=sys.argv[2],
+    architecture=sys.argv[3],
+)
+print(json.dumps(report,ensure_ascii=False,indent=2,sort_keys=True))
+PY
 
 cat > "$RESOURCES/launch.py" <<'PY'
 from __future__ import annotations
@@ -148,7 +178,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 PLIST
 /bin/bash "$ROOT/scripts/build_native_main_launcher.sh" "$APP" "$ARCH" "$ROOT"
 /usr/bin/plutil -lint "$CONTENTS/Info.plist" >/dev/null
-/usr/bin/codesign --force --deep --sign - "$APP"
+/usr/bin/codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave39_inbox.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave40_crm_triage.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave41_manual_replies.sh" "$APP"
@@ -156,4 +186,5 @@ PLIST
 /bin/bash "$ROOT/scripts/audit_wave43_daily_ops.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave44_daily_actions.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave45_followup_reschedule.sh" "$APP"
-printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
+/bin/bash "$ROOT/scripts/audit_wave46_release_readiness.sh" "$APP"
+printf 'FULL MAC BUILD PASS: %s (%s / %s / signing=%s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH" "$SIGNING_MODE"
