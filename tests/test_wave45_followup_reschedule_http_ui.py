@@ -63,6 +63,13 @@ class Wave45FollowupRescheduleHttpUiTests(unittest.TestCase):
         self.assertIn("actions.addEventListener('load',loadFollowupReschedule", loader)
         self.assertIn("#daily-actions-wave44-style", loader)
 
+    def test_mac_build_launches_and_audits_wave45(self):
+        build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
+        self.assertIn("service_wave44_app import serve", build)
+        self.assertIn("service_wave45_app import serve", build)
+        self.assertLess(build.index("service_wave44_app import serve"), build.index("service_wave45_app import serve"))
+        self.assertIn("audit_wave45_followup_reschedule.sh", build)
+
 
 if __name__ == "__main__":
     unittest.main()
