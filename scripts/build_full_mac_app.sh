@@ -93,6 +93,7 @@ os.environ.setdefault("BINARIO_WHISPER_CLI", str(resources / "runtime" / "transc
 os.environ.setdefault("BINARIO_WHISPER_MODEL", str(resources / "runtime" / "transcription" / "models" / "ggml-tiny.bin"))
 from binario_marketing.service_wave38_app import serve
 from binario_marketing.service_wave39_app import serve
+from binario_marketing.service_wave41_app import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
 serve("127.0.0.1", port, open_browser=open_browser)
@@ -146,4 +147,5 @@ PLIST
 /usr/bin/codesign --force --deep --sign - "$APP"
 /bin/bash "$ROOT/scripts/audit_wave39_inbox.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave40_crm_triage.sh" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave41_manual_replies.sh" "$APP"
 printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
