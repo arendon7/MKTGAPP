@@ -15,7 +15,10 @@ class CRMStoreWave45(CRMStore):
         raw = str(due_at or "").strip()
         if not raw:
             raise ValueError("due_at is required")
-        parsed = _parse_when(raw)
+        try:
+            parsed = _parse_when(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("due_at must be an ISO timestamp with timezone") from exc
         if parsed is None:
             raise ValueError("invalid due_at")
         now_parsed = _parse_when(_now())
