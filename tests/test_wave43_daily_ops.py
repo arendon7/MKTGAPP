@@ -68,9 +68,9 @@ class Wave43DailyOperationsTests(unittest.TestCase):
             self.assertIn(required, ui)
         self.assertIn("priority:0", ui)
         self.assertIn("priority:1", ui)
-        self.assertIn("priority:2", ui)
+        self.assertIn("overdue?2:4", ui)
         self.assertIn("priority:3", ui)
-        self.assertIn("priority:4", ui)
+        self.assertIn("items.sort((a,b)=>a.priority-b.priority", ui)
         for forbidden in (
             "/api/meta/",
             "fetch('https://",
