@@ -6,7 +6,11 @@ RES="$APP/Contents/Resources"
 PY="$RES/runtime/python/bin/python3"
 PROVENANCE="$RES/BUILD_PROVENANCE.json"
 READINESS="$RES/RELEASE_READINESS.json"
+TOOLS="$RES/release-tools"
 [[ -x "$PY" && -f "$PROVENANCE" && -f "$READINESS" ]] || { echo "Wave 46 audit: release evidence missing" >&2; exit 3; }
+for tool in release_candidate_gate.py collect_release_uat.py record_release_uat.py; do
+  [[ -f "$TOOLS/$tool" ]] || { echo "Wave 46 audit: bundled release tool missing: $tool" >&2; exit 3; }
+done
 
 "$PY" -I -B - "$RES/source/src" "$PROVENANCE" "$READINESS" <<'PY'
 import json,sys
@@ -43,5 +47,11 @@ else:
 print('WAVE 46 RELEASE READINESS FAIL-CLOSED PASS')
 print(json.dumps({'git_sha':provenance.get('git_sha'),'architecture':provenance.get('architecture'),'signing_mode':mode,'blockers':sorted(codes)},ensure_ascii=False))
 PY
+
+GATE_JSON="$(mktemp "${TMPDIR:-/tmp}/wave46-gate.XXXXXX.json")"
+trap 'rm -f "$GATE_JSON"' EXIT
+"$PY" -I -B "$TOOLS/release_candidate_gate.py" --repo "$RES/source" --app "$APP" --expect-blocked > "$GATE_JSON"
+/usr/bin/grep -q '"production_ready": false' "$GATE_JSON" || { cat "$GATE_JSON"; echo "Wave 46 audit: gate did not remain fail-closed" >&2; exit 3; }
+/usr/bin/grep -q '"embedded_source_state_matches": true' "$GATE_JSON" || { cat "$GATE_JSON"; echo "Wave 46 audit: embedded candidate state mismatch" >&2; exit 3; }
 
 printf 'WAVE 46 FULL MAC RELEASE READINESS AUDIT PASS\n'
