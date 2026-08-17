@@ -58,7 +58,14 @@ class AppRuntime(base.AppRuntime):
             if row.channel == "instagram" and row.status == "PUBLISHED" and row.remote_id
         }
         for comment in payload.get("comments", []):
-            eligible = bool(company.instagram_id and comment.get("id") and comment.get("media_id") in known_media)
+            author = comment.get("from")
+            author_id = str(author.get("id") or "").strip() if isinstance(author, dict) else ""
+            eligible = bool(
+                company.instagram_id
+                and comment.get("id")
+                and comment.get("media_id") in known_media
+                and author_id != company.instagram_id
+            )
             comment["reply_eligible"] = eligible
             comment["reply_reason"] = None if eligible else "No se pudo verificar el comentario contra contenido Instagram conocido"
             comment["reply_kind"] = "instagram_comment" if eligible else None
@@ -81,6 +88,8 @@ class AppRuntime(base.AppRuntime):
             raise ValueError("unsupported inbox reply kind")
         if not interaction_id:
             raise ValueError("interaction_id is required")
+        if len(interaction_id) > 300 or any(ch in interaction_id for ch in "/?#") or any(ch.isspace() for ch in interaction_id):
+            raise ValueError("invalid interaction_id")
         try:
             credential = MetaCredentialStore().status()
         except MetaCredentialError:
