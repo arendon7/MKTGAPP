@@ -48,15 +48,23 @@ def main() -> int:
     from binario_marketing.release_readiness import evaluate_release_readiness
 
     provenance: dict[str, Any] | None = None
+    embedded: dict[str, Any] | None = None
     signing_mode = notarized = git_sha = architecture = None
+    source_kwargs: dict[str, Any] = {}
     if args.app:
         app = args.app.expanduser().resolve()
         resources = app / "Contents" / "Resources"
         provenance = _load_json(resources / "BUILD_PROVENANCE.json")
+        embedded = _load_json(resources / "RELEASE_READINESS.json")
         signing_mode = provenance.get("signing_mode")
         notarized = provenance.get("notarized")
         git_sha = provenance.get("git_sha")
         architecture = provenance.get("architecture")
+        source_kwargs = {
+            "version": embedded.get("version"),
+            "release_ready": bool(embedded.get("release_ready_flag")),
+            "release_tag": embedded.get("release_tag"),
+        }
 
     uat_passed: bool | None = None
     uat: dict[str, Any] | None = None
@@ -64,15 +72,28 @@ def main() -> int:
         uat_passed, uat = _uat_passed(args.uat_evidence, git_sha=git_sha, architecture=architecture)
 
     report = evaluate_release_readiness(
+        **source_kwargs,
         signing_mode=signing_mode,
         notarized=notarized,
         uat_passed=uat_passed,
         git_sha=git_sha,
         architecture=architecture,
     )
+    if embedded:
+        report["embedded_source_state_matches"] = all(
+            report.get(key) == embedded.get(key)
+            for key in ("version", "release_ready_flag", "release_tag", "git_sha", "architecture", "signing_mode", "notarized")
+        )
+        if not report["embedded_source_state_matches"]:
+            report["production_ready"] = False
+            report["stage"] = "RELEASE_CANDIDATE_BLOCKED"
+            if "embedded_state_mismatch" not in report["blocker_codes"]:
+                report["blocker_codes"].append("embedded_state_mismatch")
+                report["blockers"].append({"code": "embedded_state_mismatch", "scope": "candidate", "message": "El estado embebido del candidato no coincide con la evaluación reproducida."})
     report["app_evaluated"] = str(args.app.expanduser().resolve()) if args.app else None
     report["uat_evidence"] = str(args.uat_evidence.expanduser().resolve()) if args.uat_evidence else None
     report["provenance_schema"] = provenance.get("schema") if provenance else None
+    report["embedded_readiness_schema"] = embedded.get("schema") if embedded else None
     report["uat_schema"] = uat.get("schema") if uat else None
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
 
