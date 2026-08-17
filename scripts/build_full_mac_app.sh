@@ -97,6 +97,7 @@ from binario_marketing.service_wave41_app import serve
 from binario_marketing.service_wave42_app import serve
 from binario_marketing.service_wave43_app import serve
 from binario_marketing.service_wave44_app import serve
+from binario_marketing.service_wave45_app import serve
 port = int(os.environ.get("BINARIO_PORT", "0"))
 open_browser = os.environ.get("BINARIO_NO_BROWSER") != "1"
 serve("127.0.0.1", port, open_browser=open_browser)
@@ -154,4 +155,5 @@ PLIST
 /bin/bash "$ROOT/scripts/audit_wave42_editorial_management.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave43_daily_ops.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave44_daily_actions.sh" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave45_followup_reschedule.sh" "$APP"
 printf 'FULL MAC BUILD PASS: %s (%s / %s)\n' "$APP" "$PRODUCT_VERSION" "$ARCH"
