@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadCrmCsv=()=>{
+    if(document.querySelector('script[data-crm-csv-wave45]'))return;
+    const csv=document.createElement('script');
+    csv.src='/crm-csv.js';
+    csv.defer=true;
+    csv.dataset.crmCsvWave45='1';
+    document.head.append(csv);
+  };
   const loadDailyActions=()=>{
-    if(document.querySelector('script[data-daily-actions-wave44]'))return;
+    const existing=document.querySelector('script[data-daily-actions-wave44]');
+    if(existing){if(ready('#daily-actions-wave44-style'))loadCrmCsv();else existing.addEventListener('load',loadCrmCsv,{once:true});return}
     const actions=document.createElement('script');
     actions.src='/daily-actions.js';
     actions.defer=true;
     actions.dataset.dailyActionsWave44='1';
+    actions.addEventListener('load',loadCrmCsv,{once:true});
     document.head.append(actions);
   };
   const loadDaily=()=>{
@@ -59,7 +69,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 44 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 45 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
