@@ -77,9 +77,9 @@ class Wave42EditorialHttpUiTests(unittest.TestCase):
     def test_loader_and_mac_build_chain_wave42_after_wave41(self):
         loader = (ROOT / "web" / "audiences-wave39-loader.js").read_text(encoding="utf-8")
         build = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
-        self.assertIn("/inbox-replies.js", loader)
-        self.assertIn("/editorial-management.js", loader)
-        self.assertLess(loader.index("/inbox-replies.js"), loader.index("/editorial-management.js"))
+        self.assertIn("replies.src='/inbox-replies.js'", loader)
+        self.assertIn("editorial.src='/editorial-management.js'", loader)
+        self.assertIn("replies.addEventListener('load',loadEditorial", loader)
         self.assertIn("service_wave41_app import serve", build)
         self.assertIn("service_wave42_app import serve", build)
         self.assertLess(build.index("service_wave41_app import serve"), build.index("service_wave42_app import serve"))
