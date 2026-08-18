@@ -38,6 +38,7 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave49_creative_studio.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave50_command_center.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave51_ai_copilot.sh" "$APP"
+# Wave 52 remains an explicit audited prerequisite for every later arm64 iteration.
 /bin/bash "$ROOT/scripts/audit_wave52_learning_loop.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave53_attribution_foundation.sh" "$APP"
 printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 53 · %s\n' "$APP"
