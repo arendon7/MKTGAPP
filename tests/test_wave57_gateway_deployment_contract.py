@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from api.health import health_response
+from gateway.supabase_storage import SupabaseRestStorage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,17 @@ class Wave57GatewayDeploymentContractTests(unittest.TestCase):
         self.assertIn('"select": "tenant_id"', storage_text)
         self.assertNotIn("SUPABASE_SECRET_KEY\"", health_text)
         self.assertNotIn("BINARIO_GATEWAY_MASTER_SECRET\":", health_text)
+
+    def test_modern_supabase_secret_uses_apikey_without_invalid_bearer_and_legacy_jwt_keeps_bearer(self):
+        modern = SupabaseRestStorage("https://example.supabase.co", "sb_secret_wave57_contract_key")
+        modern_headers = modern._headers()
+        self.assertEqual(modern_headers["apikey"], "sb_secret_wave57_contract_key")
+        self.assertNotIn("Authorization", modern_headers)
+
+        legacy = SupabaseRestStorage("https://example.supabase.co", "aaa.bbb.ccc")
+        legacy_headers = legacy._headers()
+        self.assertEqual(legacy_headers["apikey"], "aaa.bbb.ccc")
+        self.assertEqual(legacy_headers["Authorization"], "Bearer aaa.bbb.ccc")
 
     def test_deployment_runbook_requires_dedicated_infrastructure_and_live_evidence(self):
         text = DOC.read_text(encoding="utf-8")
