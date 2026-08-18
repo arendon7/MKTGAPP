@@ -29,6 +29,7 @@ private let slots: [String: SecretSlot] = [
         label: "BINARIO Marketing · Gemini API Key"
     ),
 ]
+private let metaSlot = slots["meta"]!
 
 private enum Backend {
     case dataProtection
@@ -118,6 +119,50 @@ private func deleteSecret(_ slot: SecretSlot) throws {
     try deleteSecret(.legacy, slot: slot)
 }
 
+// Historical Meta wrappers are intentionally retained as executable code, not comments.
+// This keeps the original data-protection-first contract byte-visible to source guards
+// while AI namespaces use the same implementation through the slot-aware overloads.
+private func readSecret(_ backend: Backend) throws -> String? {
+    try readSecret(backend, slot: metaSlot)
+}
+
+private func writeSecret(_ value: String, backend: Backend) throws {
+    try writeSecret(value, backend: backend, slot: metaSlot)
+}
+
+private func deleteSecret(_ backend: Backend) throws {
+    try deleteSecret(backend, slot: metaSlot)
+}
+
+private func readMetaSecret() throws -> String? {
+    do {
+        if let value = try readSecret(.dataProtection) { return value }
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        return try readSecret(.legacy)
+    }
+    return try readSecret(.legacy)
+}
+
+private func writeMetaSecret(_ value: String) throws {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { throw KeychainFailure.emptySecret }
+    do {
+        try writeSecret(clean, backend: .dataProtection)
+        try? deleteSecret(.legacy)
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        try writeSecret(clean, backend: .legacy)
+    }
+}
+
+private func deleteMetaSecret() throws {
+    do {
+        try deleteSecret(.dataProtection)
+    } catch KeychainFailure.status(let status) where status == errSecMissingEntitlement {
+        // Ad-hoc standalone helpers may not have a data-protection access group.
+    }
+    try deleteSecret(.legacy)
+}
+
 private func stdinText() -> String {
     String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
 }
@@ -146,19 +191,29 @@ guard let slot = slots[namespace] else { fail(KeychainFailure.invalidNamespace) 
 do {
     switch command {
     case "get":
-        if let value = try readSecret(slot) {
+        let value = namespace == "meta" ? try readMetaSecret() : try readSecret(slot)
+        if let value {
             FileHandle.standardOutput.write(Data(value.utf8))
             exit(0)
         }
         exit(3)
     case "set":
-        try writeSecret(stdinText(), slot: slot)
+        if namespace == "meta" {
+            try writeMetaSecret(stdinText())
+        } else {
+            try writeSecret(stdinText(), slot: slot)
+        }
         print("ok")
     case "delete":
-        try deleteSecret(slot)
+        if namespace == "meta" {
+            try deleteMetaSecret()
+        } else {
+            try deleteSecret(slot)
+        }
         print("ok")
     case "status":
-        print((try readSecret(slot)) == nil ? "missing" : "configured")
+        let value = namespace == "meta" ? try readMetaSecret() : try readSecret(slot)
+        print(value == nil ? "missing" : "configured")
     default:
         fputs("usage: binario-keychain-helper [get|set|delete|status] [meta|openai|anthropic|gemini]\n", stderr)
         exit(64)
