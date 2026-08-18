@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from api.health import health_response
 from gateway.supabase_storage import SupabaseRestStorage
+from scripts import wave57_gateway_live_smoke as live_smoke
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,7 @@ VERCEL = ROOT / "vercel.json"
 QUEUE_SQL = ROOT / "gateway" / "supabase" / "001_public_intake_queue.sql"
 HEALTH = ROOT / "api" / "health.py"
 STORAGE = ROOT / "gateway" / "supabase_storage.py"
+TENANT = "tenant_" + "a" * 24
 
 
 class _HealthyStorage:
@@ -41,6 +44,24 @@ class Wave57GatewayDeploymentContractTests(unittest.TestCase):
         self.assertIn('"provider_mutations": 0', text)
         self.assertIn('"secrets_returned": False', text)
         self.assertNotIn("service_wave57_app", text)
+
+    def test_live_smoke_ingress_executes_the_canonical_gateway_receipt_contract(self):
+        event_id = "evt_" + "b" * 32
+        receipt = {
+            "schema": "binario.marketing.public-intake-receipt.v1",
+            "event_id": event_id,
+            "accepted": True,
+            "idempotent_reuse": False,
+        }
+        with patch.object(live_smoke.secrets, "token_hex", return_value="b" * 32), patch.object(live_smoke, "_read_json", return_value=receipt):
+            self.assertEqual(live_smoke._ingest("https://gateway.example.com", TENANT, "a" * 64), event_id)
+        reused = dict(receipt, idempotent_reuse=True)
+        with patch.object(live_smoke.secrets, "token_hex", return_value="b" * 32), patch.object(live_smoke, "_read_json", return_value=reused):
+            self.assertEqual(live_smoke._ingest("https://gateway.example.com", TENANT, "a" * 64), event_id)
+        obsolete_shape = {"event_id": event_id, "status": "accepted"}
+        with patch.object(live_smoke.secrets, "token_hex", return_value="b" * 32), patch.object(live_smoke, "_read_json", return_value=obsolete_shape):
+            with self.assertRaisesRegex(RuntimeError, "receipt schema"):
+                live_smoke._ingest("https://gateway.example.com", TENANT, "a" * 64)
 
     def test_smoke_requires_server_side_configuration_and_does_not_embed_secrets(self):
         text = SMOKE.read_text(encoding="utf-8")
