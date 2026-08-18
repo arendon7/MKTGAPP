@@ -37,7 +37,7 @@ class Wave50CommandCenterRuntimeTests(unittest.TestCase):
         contact = self.runtime.create_contact(self.company["id"], {"name": "Cliente Uno"})
         self.runtime.create_activity(self.company["id"], {
             "contact_id": contact["id"],
-            "kind": "FOLLOW_UP",
+            "kind": "CALL",
             "summary": "Llamar cliente",
             "due_at": "2026-01-01T10:00:00-05:00",
         })
@@ -65,7 +65,8 @@ class Wave50CommandCenterRuntimeTests(unittest.TestCase):
         self.assertLess(payload["readiness"]["percent"], 100)
         self.assertEqual(payload["creative"]["total"], 1)
         self.assertEqual(payload["creative"]["counts"]["UNPROFILED"], 1)
-        self.assertEqual(media["id"], payload["legacy_dashboard"]["content"] and media["id"])
+        self.assertEqual(payload["legacy_dashboard"]["content"]["total"], 1)
+        self.assertEqual(media["company_id"], self.company["id"])
 
     def test_ready_creative_and_company_meta_improve_readiness(self):
         self.runtime.companies.update(self.company["id"], {
