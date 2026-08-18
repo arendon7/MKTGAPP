@@ -11,6 +11,7 @@ from .core import Unauthorized
 
 
 TENANT_ID_RE = re.compile(r"^tenant_[0-9a-f]{24}$")
+NONCE_RE = re.compile(r"^[0-9a-f]{32}$")
 ACTIVE = "ACTIVE"
 REVOKED = "REVOKED"
 MAX_VERSION = 2_147_483_647
@@ -20,6 +21,13 @@ def _tenant(value: object) -> str:
     text = str(value or "").strip().lower()
     if not TENANT_ID_RE.fullmatch(text):
         raise ValueError("invalid tenant id")
+    return text
+
+
+def _nonce(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if not NONCE_RE.fullmatch(text):
+        raise ValueError("invalid admin request nonce")
     return text
 
 
@@ -62,7 +70,7 @@ class TenantCredentialRecord:
 class TenantCredentialRegistry(Protocol):
     def get(self, tenant_id: str) -> TenantCredentialRecord | None: ...
     def register(self, tenant_id: str) -> TenantCredentialRecord: ...
-    def rotate(self, tenant_id: str, purpose: str) -> TenantCredentialRecord: ...
+    def rotate(self, tenant_id: str, purpose: str, *, request_nonce: str) -> TenantCredentialRecord: ...
     def revoke(self, tenant_id: str) -> TenantCredentialRecord: ...
     def reactivate(self, tenant_id: str) -> TenantCredentialRecord: ...
 
@@ -73,6 +81,7 @@ class MemoryTenantCredentialRegistry:
     def __init__(self):
         self.rows: dict[str, TenantCredentialRecord] = {}
         self.audit: list[dict] = []
+        self.rotate_nonces: dict[tuple[str, str], TenantCredentialRecord] = {}
 
     def get(self, tenant_id: str) -> TenantCredentialRecord | None:
         return self.rows.get(_tenant(tenant_id))
@@ -85,11 +94,16 @@ class MemoryTenantCredentialRegistry:
         now = _now_iso()
         row = TenantCredentialRecord(tenant, ACTIVE, 1, 1, now, now, None)
         self.rows[tenant] = row
-        self.audit.append({"tenant_id": tenant, "action": "REGISTER", "purpose": None, "from_version": None, "to_version": None})
+        self.audit.append({"tenant_id": tenant, "action": "REGISTER", "purpose": None, "from_version": None, "to_version": None, "request_nonce": None})
         return row
 
-    def rotate(self, tenant_id: str, purpose: str) -> TenantCredentialRecord:
+    def rotate(self, tenant_id: str, purpose: str, *, request_nonce: str) -> TenantCredentialRecord:
         tenant = _tenant(tenant_id)
+        nonce = _nonce(request_nonce)
+        replay_key = (tenant, nonce)
+        replay = self.rotate_nonces.get(replay_key)
+        if replay is not None:
+            return replay
         current = self.rows.get(tenant)
         if not current:
             raise KeyError("tenant is not registered")
@@ -108,12 +122,14 @@ class MemoryTenantCredentialRegistry:
             updated_at=now,
         )
         self.rows[tenant] = row
+        self.rotate_nonces[replay_key] = row
         self.audit.append({
             "tenant_id": tenant,
             "action": "ROTATE_INGRESS" if purpose == "ingress" else "ROTATE_PULL",
             "purpose": purpose,
             "from_version": old_version,
             "to_version": old_version + 1,
+            "request_nonce": nonce,
         })
         return row
 
@@ -127,7 +143,7 @@ class MemoryTenantCredentialRegistry:
         now = _now_iso()
         row = replace(current, status=REVOKED, updated_at=now, revoked_at=now)
         self.rows[tenant] = row
-        self.audit.append({"tenant_id": tenant, "action": "REVOKE", "purpose": None, "from_version": None, "to_version": None})
+        self.audit.append({"tenant_id": tenant, "action": "REVOKE", "purpose": None, "from_version": None, "to_version": None, "request_nonce": None})
         return row
 
     def reactivate(self, tenant_id: str) -> TenantCredentialRecord:
@@ -149,7 +165,7 @@ class MemoryTenantCredentialRegistry:
             revoked_at=None,
         )
         self.rows[tenant] = row
-        self.audit.append({"tenant_id": tenant, "action": "REACTIVATE", "purpose": None, "from_version": None, "to_version": None})
+        self.audit.append({"tenant_id": tenant, "action": "REACTIVATE", "purpose": None, "from_version": None, "to_version": None, "request_nonce": None})
         return row
 
 
@@ -161,6 +177,6 @@ def derive_admin_secret(master_secret: str) -> str:
 
 
 __all__ = [
-    "ACTIVE", "MAX_VERSION", "MemoryTenantCredentialRegistry", "REVOKED", "TenantCredentialRecord",
-    "TenantCredentialRegistry", "derive_admin_secret",
+    "ACTIVE", "MAX_VERSION", "MemoryTenantCredentialRegistry", "NONCE_RE", "REVOKED", "TenantCredentialRecord",
+    "TenantCredentialRegistry", "_nonce", "derive_admin_secret",
 ]
