@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadLearningLoop=()=>{
+    if(document.querySelector('script[data-learning-loop-wave52]'))return;
+    const learning=document.createElement('script');
+    learning.src='/learning-loop.js';
+    learning.defer=true;
+    learning.dataset.learningLoopWave52='1';
+    document.head.append(learning);
+  };
   const loadAICopilot=()=>{
-    if(document.querySelector('script[data-ai-copilot-wave51]'))return;
+    const existing=document.querySelector('script[data-ai-copilot-wave51]');
+    if(existing){if(ready('#wave51-ai-style'))loadLearningLoop();else existing.addEventListener('load',loadLearningLoop,{once:true});return}
     const ai=document.createElement('script');
     ai.src='/ai-copilot.js';
     ai.defer=true;
     ai.dataset.aiCopilotWave51='1';
+    ai.addEventListener('load',loadLearningLoop,{once:true});
     document.head.append(ai);
   };
   const loadCommandCenter=()=>{
@@ -119,7 +129,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 51 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 52 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
