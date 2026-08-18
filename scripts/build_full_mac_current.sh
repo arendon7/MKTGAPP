@@ -28,7 +28,7 @@ for module in ('service_wave47_app','service_wave48_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
-        anchor=line
+    anchor=line
 path.write_text(text, encoding='utf-8')
 PY
 IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
