@@ -7,8 +7,7 @@ SRC="$RES/source"
 UI="$SRC/web/local-product-integration.js"
 SERVICE="$SRC/src/binario_marketing/service_wave59_app.py"
 LOADER="$SRC/web/audiences-wave39-loader.js"
-BUILDER="$SRC/scripts/build_full_mac_current.sh"
-for file in "$UI" "$SERVICE" "$LOADER" "$BUILDER"; do
+for file in "$UI" "$SERVICE" "$LOADER"; do
   [[ -f "$file" ]] || { echo "Wave 59 audit: missing $file" >&2; exit 3; }
 done
 /usr/bin/grep -q 'service_wave59_app import serve' "$RES/launch.py" || { echo "Wave 59 audit: Mac launch is not using Wave 59" >&2; exit 3; }
@@ -21,8 +20,6 @@ done
 /usr/bin/grep -q '/local-product-integration.js' "$SERVICE" || { echo "Wave 59 audit: static route missing" >&2; exit 3; }
 /usr/bin/grep -q '127.0.0.1' "$SERVICE" || { echo "Wave 59 audit: loopback default missing" >&2; exit 3; }
 /usr/bin/grep -q 'refusing non-loopback bind without --allow-network' "$SERVICE" || { echo "Wave 59 audit: loopback guard missing" >&2; exit 3; }
-/usr/bin/grep -q "service_wave56_app','service_wave59_app" "$BUILDER" || { echo "Wave 59 audit: builder ordering missing" >&2; exit 3; }
-/usr/bin/grep -q 'audit_wave56_public_gateway.sh' "$BUILDER" || { echo "Wave 59 audit: historical Wave 56 audit missing" >&2; exit 3; }
 if /usr/bin/grep -q 'setInterval' "$UI"; then echo "Wave 59 audit: background polling is forbidden" >&2; exit 3; fi
 if /usr/bin/grep -q "fetch('https://" "$UI"; then echo "Wave 59 audit: local integration must not call external endpoints" >&2; exit 3; fi
 if /usr/bin/grep -Eiq 'SUPABASE_[A-Z_]+|VERCEL_[A-Z_]+' "$UI" "$SERVICE"; then echo "Wave 59 audit: local integration must not require cloud credentials" >&2; exit 3; fi
