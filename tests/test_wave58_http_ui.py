@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
+from binario_marketing.public_gateway_wave58 import derive_versioned_tenant_secret
 from binario_marketing.service_wave58_app import AppRuntime, create_server
 
 
@@ -118,10 +119,19 @@ class Wave58HttpUiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(result["center"]["readiness"]["ready_to_sync"])
         self.assertFalse(result["secret_returned"])
+        self.assertNotIn("site_secret", result)
+        self.assertNotIn("pull_secret", result)
+        self.assertNotIn("site_secret", result["tenant"])
+        self.assertNotIn("pull_secret", result["tenant"])
         text = json.dumps(result)
+        actual_ingress_secret = derive_versioned_tenant_secret(MASTER, TENANT, purpose="ingress", version=1)
+        actual_pull_secret = derive_versioned_tenant_secret(MASTER, TENANT, purpose="pull", version=1)
         self.assertNotIn(MASTER, text)
-        self.assertNotIn("site_secret", text)
-        self.assertNotIn("pull_secret", text)
+        self.assertNotIn(actual_ingress_secret, text)
+        self.assertNotIn(actual_pull_secret, text)
+        self.assertTrue(result["center"]["protocol"]["site_secret_is_tenant_derived"])
+        self.assertFalse(result["center"]["safety"]["pull_secret_exposed_to_browser"])
+        self.assertFalse(result["center"]["tenant_registry"]["secret_values_included"])
 
     def test_loader_orders_wave58_after_wave56_and_builder_keeps_historical_chain(self):
         loader = (ROOT / "web" / "audiences-wave39-loader.js").read_text(encoding="utf-8")
