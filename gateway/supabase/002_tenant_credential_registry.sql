@@ -38,6 +38,143 @@ grant select, insert, update on table public.binario_gateway_tenants to service_
 grant select, insert on table public.binario_gateway_tenant_audit to service_role;
 grant usage, select on sequence public.binario_gateway_tenant_audit_audit_id_seq to service_role;
 
+create or replace function public.binario_gateway_tenant_register(p_tenant_id text)
+returns public.binario_gateway_tenants
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+    v_row public.binario_gateway_tenants;
+    v_inserted integer := 0;
+begin
+    if p_tenant_id !~ '^tenant_[0-9a-f]{24}$' then
+        raise exception 'invalid tenant id';
+    end if;
+    insert into public.binario_gateway_tenants (tenant_id)
+    values (p_tenant_id)
+    on conflict (tenant_id) do nothing;
+    get diagnostics v_inserted = row_count;
+    if v_inserted = 1 then
+        insert into public.binario_gateway_tenant_audit (tenant_id, action)
+        values (p_tenant_id, 'REGISTER');
+    end if;
+    select * into strict v_row from public.binario_gateway_tenants where tenant_id = p_tenant_id;
+    return v_row;
+end;
+$$;
+
+create or replace function public.binario_gateway_tenant_rotate(p_tenant_id text, p_purpose text)
+returns public.binario_gateway_tenants
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+    v_row public.binario_gateway_tenants;
+    v_old integer;
+begin
+    if p_tenant_id !~ '^tenant_[0-9a-f]{24}$' then
+        raise exception 'invalid tenant id';
+    end if;
+    if p_purpose = 'ingress' then
+        update public.binario_gateway_tenants
+        set ingress_version = ingress_version + 1, updated_at = now()
+        where tenant_id = p_tenant_id and status = 'ACTIVE' and ingress_version < 2147483647
+        returning ingress_version - 1, * into v_old, v_row;
+    elsif p_purpose = 'pull' then
+        update public.binario_gateway_tenants
+        set pull_version = pull_version + 1, updated_at = now()
+        where tenant_id = p_tenant_id and status = 'ACTIVE' and pull_version < 2147483647
+        returning pull_version - 1, * into v_old, v_row;
+    else
+        raise exception 'invalid rotation purpose';
+    end if;
+    if not found then
+        if exists (select 1 from public.binario_gateway_tenants where tenant_id = p_tenant_id and status = 'REVOKED') then
+            raise exception 'tenant is revoked';
+        elsif exists (select 1 from public.binario_gateway_tenants where tenant_id = p_tenant_id) then
+            raise exception 'credential version exhausted';
+        else
+            raise exception 'tenant is not registered';
+        end if;
+    end if;
+    insert into public.binario_gateway_tenant_audit (tenant_id, action, purpose, from_version, to_version)
+    values (
+        p_tenant_id,
+        case when p_purpose = 'ingress' then 'ROTATE_INGRESS' else 'ROTATE_PULL' end,
+        p_purpose,
+        v_old,
+        v_old + 1
+    );
+    return v_row;
+end;
+$$;
+
+create or replace function public.binario_gateway_tenant_revoke(p_tenant_id text)
+returns public.binario_gateway_tenants
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+    v_row public.binario_gateway_tenants;
+begin
+    update public.binario_gateway_tenants
+    set status = 'REVOKED', updated_at = now(), revoked_at = now()
+    where tenant_id = p_tenant_id and status = 'ACTIVE'
+    returning * into v_row;
+    if found then
+        insert into public.binario_gateway_tenant_audit (tenant_id, action) values (p_tenant_id, 'REVOKE');
+        return v_row;
+    end if;
+    select * into v_row from public.binario_gateway_tenants where tenant_id = p_tenant_id;
+    if not found then raise exception 'tenant is not registered'; end if;
+    return v_row;
+end;
+$$;
+
+create or replace function public.binario_gateway_tenant_reactivate(p_tenant_id text)
+returns public.binario_gateway_tenants
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+    v_row public.binario_gateway_tenants;
+begin
+    update public.binario_gateway_tenants
+    set status = 'ACTIVE',
+        ingress_version = ingress_version + 1,
+        pull_version = pull_version + 1,
+        updated_at = now(),
+        revoked_at = null
+    where tenant_id = p_tenant_id
+      and status = 'REVOKED'
+      and ingress_version < 2147483647
+      and pull_version < 2147483647
+    returning * into v_row;
+    if found then
+        insert into public.binario_gateway_tenant_audit (tenant_id, action) values (p_tenant_id, 'REACTIVATE');
+        return v_row;
+    end if;
+    select * into v_row from public.binario_gateway_tenants where tenant_id = p_tenant_id;
+    if not found then raise exception 'tenant is not registered'; end if;
+    if v_row.status = 'ACTIVE' then return v_row; end if;
+    raise exception 'credential version exhausted';
+end;
+$$;
+
+revoke all on function public.binario_gateway_tenant_register(text) from public, anon, authenticated;
+revoke all on function public.binario_gateway_tenant_rotate(text, text) from public, anon, authenticated;
+revoke all on function public.binario_gateway_tenant_revoke(text) from public, anon, authenticated;
+revoke all on function public.binario_gateway_tenant_reactivate(text) from public, anon, authenticated;
+
+grant execute on function public.binario_gateway_tenant_register(text) to service_role;
+grant execute on function public.binario_gateway_tenant_rotate(text, text) to service_role;
+grant execute on function public.binario_gateway_tenant_revoke(text) to service_role;
+grant execute on function public.binario_gateway_tenant_reactivate(text) to service_role;
+
 comment on table public.binario_gateway_tenants is
 'BINARIO Marketing Wave 58 tenant credential control registry. Stores status and version counters only; never tenant HMAC secrets.';
 comment on table public.binario_gateway_tenant_audit is
