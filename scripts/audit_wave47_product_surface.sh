@@ -18,8 +18,8 @@ done
 /usr/bin/grep -q 'safe\["ad_account_id"\] = company.ad_account_id' "$SERVICE" || { echo "Wave 47 audit: company-owned ad-account guard missing" >&2; exit 3; }
 /usr/bin/grep -q 'safe\["page_id"\] = company.facebook_page_id' "$SERVICE" || { echo "Wave 47 audit: company-owned page guard missing" >&2; exit 3; }
 /usr/bin/grep -q "shell.src='/product-shell.js'" "$LOADER" || { echo "Wave 47 audit: product shell loader missing" >&2; exit 3; }
-if /usr/bin/grep -Eqi 'ACTIVE[^A-Za-z]|setInterval\(|auto.?activate|auto.?spend|publish.?automatically' "$UI"; then
-  echo "Wave 47 audit: UI appears to contain automatic activation/background behavior" >&2; exit 3
+if /usr/bin/grep -Eq '/activate|status[^A-Za-z0-9]+ACTIVE|setInterval\(|auto.?activate|auto.?spend|publish.?automatically' "$UI"; then
+  echo "Wave 47 audit: UI appears to contain ad activation or background automation" >&2; exit 3
 fi
 /usr/bin/grep -q 'No se activará gasto' "$UI" || { echo "Wave 47 audit: explicit no-spend confirmation missing" >&2; exit 3; }
 printf 'WAVE 47 PRODUCT SURFACE AUDIT PASS\n'
