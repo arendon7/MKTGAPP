@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from binario_marketing.service_wave55_app import AppRuntime, create_server
+from binario_marketing.service_wave55_guard_app import AppRuntime, create_server
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,13 +86,16 @@ class Wave55LeadIntakeHttpUiTests(unittest.TestCase):
         audit = (ROOT / "scripts" / "audit_wave55_lead_intake.sh").read_text(encoding="utf-8")
         ui = (ROOT / "web" / "lead-intake.js").read_text(encoding="utf-8")
         service = (ROOT / "src" / "binario_marketing" / "service_wave55_app.py").read_text(encoding="utf-8")
+        guard = (ROOT / "src" / "binario_marketing" / "service_wave55_guard_app.py").read_text(encoding="utf-8")
         self.assertIn("capture.addEventListener('load',loadLeadIntake", loader)
         self.assertIn("lead.src='/lead-intake.js'", loader)
-        self.assertIn("service_wave54_app','service_wave55_app", builder)
+        self.assertIn("service_wave54_app','service_wave55_app','service_wave55_guard_app", builder)
         self.assertIn("audit_wave55_lead_intake.sh", builder)
         self.assertIn("Wave 52", builder)
         self.assertIn("Wave 53", builder)
+        self.assertIn("Wave 54", builder)
         self.assertIn("Wave 55", builder)
+        self.assertIn("_lead_attribution_prepared", guard)
         self.assertNotIn("setInterval", ui)
         self.assertNotIn("fetch('https://", ui)
         self.assertIn('"public_desktop_webhook": False', service)
