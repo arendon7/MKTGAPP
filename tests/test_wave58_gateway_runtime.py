@@ -221,11 +221,16 @@ class Wave58GatewayRuntimeTests(unittest.TestCase):
         context = self.runtime._ai_context(self.company["id"], task="STRATEGY", campaign_id=None, creative_media_id=None)
         learning = self.runtime.learning_payload(self.company["id"])
         text = json.dumps({"context": context, "learning": learning}, ensure_ascii=False)
+        actual_ingress_secret = derive_versioned_tenant_secret(MASTER, TENANT, purpose="ingress", version=1)
+        actual_pull_secret = derive_versioned_tenant_secret(MASTER, TENANT, purpose="pull", version=1)
         self.assertNotIn(MASTER, text)
         self.assertNotIn(TENANT, text)
         self.assertNotIn("gateway.example.com", text)
-        self.assertNotIn("site_secret", text)
-        self.assertNotIn("pull_secret", text)
+        self.assertNotIn(actual_ingress_secret, text)
+        self.assertNotIn(actual_pull_secret, text)
+        self.assertFalse(context["public_gateway"]["privacy"]["site_secret_included"])
+        self.assertFalse(context["public_gateway"]["privacy"]["master_secret_included"])
+        self.assertFalse(context["public_gateway"]["privacy"]["tenant_id_included"])
 
 
 if __name__ == "__main__":
