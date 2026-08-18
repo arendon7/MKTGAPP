@@ -146,7 +146,7 @@ class Wave58HttpUiTests(unittest.TestCase):
         for marker in ("audit_wave52_learning_loop.sh", "audit_wave53_attribution_foundation.sh", "audit_wave54_capture_bridge.sh", "audit_wave55_lead_intake.sh"):
             self.assertIn(marker, builder)
 
-    def test_sql_registry_is_rls_locked_atomic_service_role_only_and_secret_free(self):
+    def test_sql_registry_is_rls_locked_atomic_service_role_only_secret_free_and_replay_safe(self):
         sql = (ROOT / "gateway" / "supabase" / "002_tenant_credential_registry.sql").read_text(encoding="utf-8")
         lower = sql.lower()
         self.assertGreaterEqual(lower.count("enable row level security"), 2)
@@ -154,10 +154,16 @@ class Wave58HttpUiTests(unittest.TestCase):
         self.assertIn("security definer", lower)
         self.assertIn("set search_path = pg_catalog, public", lower)
         self.assertIn("binario_gateway_tenant_rotate", lower)
+        self.assertIn("request_nonce text", lower)
+        self.assertIn("rotation_nonce_uq", lower)
+        self.assertIn("for update", lower)
+        self.assertIn("p_request_nonce", lower)
+        self.assertIn("admin nonce was already used for another rotation purpose", lower)
         self.assertIn("returning * into v_row", lower)
-        self.assertIn("v_old := v_row.ingress_version - 1", lower)
-        self.assertIn("v_old := v_row.pull_version - 1", lower)
-        self.assertIn("grant execute on function public.binario_gateway_tenant_rotate(text, text) to service_role", lower)
+        self.assertIn("v_old := v_row.ingress_version", lower)
+        self.assertIn("v_old := v_row.pull_version", lower)
+        self.assertIn("drop function if exists public.binario_gateway_tenant_rotate(text, text)", lower)
+        self.assertIn("grant execute on function public.binario_gateway_tenant_rotate(text, text, text) to service_role", lower)
         tenant_columns = lower.split("create table if not exists public.binario_gateway_tenants", 1)[1].split(");", 1)[0]
         for forbidden in ("master_secret", "ingress_secret", "pull_secret", "hmac_secret", " site_secret"):
             self.assertNotIn(forbidden, tenant_columns)
@@ -166,6 +172,8 @@ class Wave58HttpUiTests(unittest.TestCase):
         shared = (ROOT / "api" / "_shared.py").read_text(encoding="utf-8")
         health = (ROOT / "api" / "health.py").read_text(encoding="utf-8")
         tenant_api = (ROOT / "api" / "tenant.py").read_text(encoding="utf-8")
+        admin = (ROOT / "gateway" / "tenant_admin.py").read_text(encoding="utf-8")
+        remote = (ROOT / "gateway" / "supabase_tenant_registry.py").read_text(encoding="utf-8")
         self.assertIn("VersionedGatewayService", shared)
         self.assertIn("SupabaseTenantCredentialRegistry", shared)
         self.assertIn("tenant_admin_service", shared)
@@ -173,6 +181,8 @@ class Wave58HttpUiTests(unittest.TestCase):
         self.assertIn("HMAC_SHA256_V1_VERSIONED", health)
         self.assertIn("tenant_admin_service().execute", tenant_api)
         self.assertIn("max_bytes=8 * 1024", tenant_api)
+        self.assertIn("request_nonce=request_nonce", admin)
+        self.assertIn('"p_request_nonce": _nonce(request_nonce)', remote)
 
     def test_exactly_three_canonical_workflows_remain(self):
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
