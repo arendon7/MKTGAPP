@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadLocalProduct=()=>{
+    if(document.querySelector('script[data-local-product-wave59]'))return;
+    const local=document.createElement('script');
+    local.src='/local-product-integration.js';
+    local.defer=true;
+    local.dataset.localProductWave59='1';
+    document.head.append(local);
+  };
   const loadPublicGateway=()=>{
-    if(document.querySelector('script[data-public-gateway-wave56]'))return;
+    const existing=document.querySelector('script[data-public-gateway-wave56]');
+    if(existing){if(typeof wave56EnsureNav==='function')loadLocalProduct();else existing.addEventListener('load',loadLocalProduct,{once:true});return}
     const gateway=document.createElement('script');
     gateway.src='/public-gateway.js';
     gateway.defer=true;
     gateway.dataset.publicGatewayWave56='1';
+    gateway.addEventListener('load',loadLocalProduct,{once:true});
     document.head.append(gateway);
   };
   const loadLeadIntake=()=>{
@@ -169,7 +179,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 56 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 59 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
