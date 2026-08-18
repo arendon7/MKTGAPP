@@ -71,11 +71,13 @@ class Wave47ProductSurfaceHttpUiTests(unittest.TestCase):
         self.assertIn("shell.src='/product-shell.js'", loader)
         self.assertIn("reschedule.addEventListener('load',loadProductShell", loader)
 
-    def test_arm64_iteration_wrapper_rejects_intel_and_launches_wave47(self):
-        build = (ROOT / "scripts" / "build_full_mac_wave47.sh").read_text(encoding="utf-8")
-        self.assertIn('[[ "$ARCH" == "arm64" ]]', build)
-        self.assertIn("service_wave47_app import serve", build)
-        self.assertIn("audit_wave47_product_surface.sh", build)
+    def test_arm64_compatibility_wrapper_routes_through_current_builder(self):
+        shim = (ROOT / "scripts" / "build_full_mac_wave47.sh").read_text(encoding="utf-8")
+        current = (ROOT / "scripts" / "build_full_mac_current.sh").read_text(encoding="utf-8")
+        self.assertIn("build_full_mac_current.sh", shim)
+        self.assertIn('[[ "$ARCH" == "arm64" ]]', current)
+        self.assertIn("service_wave47_app", current)
+        self.assertIn("audit_wave47_product_surface.sh", current)
 
 
 if __name__ == "__main__":
