@@ -88,10 +88,12 @@ def _ingest(origin: str, tenant_id: str, ingress_secret: str) -> str:
             "X-Binario-Signature": signature,
         },
     ))
+    if response.get("schema") != "binario.marketing.public-intake-receipt.v1":
+        raise RuntimeError("ingress receipt schema mismatch")
     if response.get("event_id") != event_id:
         raise RuntimeError("ingress response event mismatch")
-    if response.get("status") not in {"accepted", "idempotent"}:
-        raise RuntimeError("ingress response status mismatch")
+    if response.get("accepted") is not True or not isinstance(response.get("idempotent_reuse"), bool):
+        raise RuntimeError("ingress receipt acceptance contract mismatch")
     return event_id
 
 
