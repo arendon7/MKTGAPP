@@ -7,13 +7,12 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .atomic import write_json_atomic
-from .paid_media_store import PAID_MEDIA_ID_RE
 from .social_store import _now
 
 PLAN_SCHEMA = "binario.marketing.paid-media-plan.v1"
-_CAMPAIGN_ID_RE = re.compile(r"^cmp_[a-f0-9]{20}$")
-_MEDIA_ID_RE = re.compile(r"^med_[a-f0-9]{20}$")
+_DRAFT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_CAMPAIGN_ID_RE = re.compile(r"^campaign_[0-9a-f]{24}$")
+_MEDIA_ID_RE = re.compile(r"^media_[0-9a-f]{24}$")
 _ALLOWED_SOURCE_KINDS = {"public_url", "company_media"}
 _ALLOWED_DATE_PRESETS = {"today", "yesterday", "last_7d", "last_14d", "last_30d", "this_month", "last_month", "maximum"}
 
@@ -51,11 +50,7 @@ class PaidMediaPlan:
 
 
 class PaidMediaPlanStore:
-    """Additive company/product metadata around the certified PaidMediaDraft store.
-
-    This deliberately does not rewrite legacy paid-media JSON. It owns only product-level
-    relationships and provider-readback preferences keyed by the existing draft id.
-    """
+    """Additive product metadata keyed by the certified 32-hex PaidMediaDraft id."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -64,18 +59,14 @@ class PaidMediaPlanStore:
 
     def _path(self, draft_id: str) -> Path:
         value = str(draft_id or "").strip()
-        if not PAID_MEDIA_ID_RE.fullmatch(value):
+        if not _DRAFT_ID_RE.fullmatch(value):
             raise ValueError("invalid paid media draft id")
         return self.root / f"{value}.json"
 
     @staticmethod
-    def _validated(
-        draft_id: str,
-        company_id: str,
-        payload: dict,
-        *,
-        created_at: str | None = None,
-    ) -> PaidMediaPlan:
+    def _validated(draft_id: str, company_id: str, payload: dict, *, created_at: str | None = None) -> PaidMediaPlan:
+        if not _DRAFT_ID_RE.fullmatch(str(draft_id or "").strip()):
+            raise ValueError("invalid paid media draft id")
         if not isinstance(payload, dict):
             raise ValueError("paid media plan payload must be an object")
         campaign_id = str(payload.get("campaign_id") or "").strip() or None
@@ -106,7 +97,7 @@ class PaidMediaPlanStore:
         now = _now()
         return PaidMediaPlan(
             schema=PLAN_SCHEMA,
-            draft_id=draft_id,
+            draft_id=str(draft_id),
             company_id=str(company_id),
             campaign_id=campaign_id,
             source_kind=source_kind,
@@ -128,6 +119,7 @@ class PaidMediaPlanStore:
             if path.exists():
                 raise ValueError("paid media plan metadata already exists")
             row = self._validated(draft_id, company_id, payload)
+            from .atomic import write_json_atomic
             write_json_atomic(path, asdict(row))
             return row
 
@@ -139,7 +131,9 @@ class PaidMediaPlanStore:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or payload.get("schema") != PLAN_SCHEMA:
                 raise ValueError("invalid paid media plan metadata")
-            return PaidMediaPlan(**payload)
+            row = PaidMediaPlan(**payload)
+            self._validated(row.draft_id, row.company_id, payload, created_at=row.created_at)
+            return row
 
     def get_for_company(self, company_id: str, draft_id: str) -> PaidMediaPlan:
         row = self.get(draft_id)
@@ -154,12 +148,15 @@ class PaidMediaPlanStore:
         with self._lock:
             row = self.get_for_company(company_id, draft_id)
             updated = replace(row, image_hash=value, updated_at=_now())
+            from .atomic import write_json_atomic
             write_json_atomic(self._path(draft_id), asdict(updated))
             return updated
 
     def list(self, company_id: str) -> list[PaidMediaPlan]:
         rows = []
-        for path in sorted(self.root.glob("pm_*.json")):
+        for path in sorted(self.root.glob("*.json")):
+            if not _DRAFT_ID_RE.fullmatch(path.stem):
+                continue
             try:
                 row = self.get(path.stem)
             except (OSError, ValueError, json.JSONDecodeError):
