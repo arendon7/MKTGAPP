@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from binario_marketing.service_wave55_app import AppRuntime
+from binario_marketing.service_wave55_guard_app import AppRuntime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +134,37 @@ class Wave55LeadIntakeRuntimeTests(unittest.TestCase):
         self.assertEqual(attribution["summary"]["attributed_won"], 1)
         self.assertEqual(attribution["summary"]["value_by_currency"]["COP"]["won_value"], 500000)
         self.assertEqual(result["converted_opportunity_id"], claims[0].opportunity_id)
+
+    def test_tampered_durable_attribution_fails_before_any_crm_write(self):
+        campaign = self.runtime.create_campaign(self.company["id"], {
+            "name": "Campaña Guard", "objective": "LEADS", "status": "IN_PROGRESS"
+        })
+        link = self.runtime.create_tracking_link(self.company["id"], {
+            "campaign_id": campaign["id"],
+            "destination_url": "https://example.com/form",
+            "utm_source": "instagram",
+            "utm_medium": "paid_social",
+        })
+        lead = self.runtime.intake_lead(self.company["id"], {
+            "connector": "FIRST_PARTY_FORM",
+            "source_ref": "tamper_1",
+            "name": "Guarded",
+            "email": "guarded@example.com",
+            "attribution_capture": {"bm_tid": link["tracking_code"]},
+        })
+        path = Path(self.tmp.name) / "data" / "State" / "lead-intake" / f"{lead['id']}.json"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw["utm_source"] = "facebook"
+        path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        before_contacts = len(self.runtime.crm.list_contacts(self.company["id"]))
+        before_opportunities = len(self.runtime.crm.list_opportunities(self.company["id"]))
+        with self.assertRaisesRegex(ValueError, "no longer matches canonical tracking link"):
+            self.runtime.convert_lead(self.company["id"], lead["id"], {
+                "action": "CREATE_CONTACT",
+                "opportunity": {"title": "Should not exist", "stage": "NEW", "currency": "COP"},
+            })
+        self.assertEqual(len(self.runtime.crm.list_contacts(self.company["id"])), before_contacts)
+        self.assertEqual(len(self.runtime.crm.list_opportunities(self.company["id"])), before_opportunities)
 
     def test_tampered_utm_is_rejected_before_intake_and_ai_context_is_aggregate_only(self):
         campaign = self.runtime.create_campaign(self.company["id"], {"name": "C", "objective": "LEADS"})
