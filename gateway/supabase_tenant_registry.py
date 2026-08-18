@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from .tenant_registry import TenantCredentialRecord, _tenant
+from .tenant_registry import TenantCredentialRecord, _nonce, _tenant
 
 
 TABLE = "binario_gateway_tenants"
@@ -92,10 +92,14 @@ class SupabaseTenantCredentialRegistry:
     def register(self, tenant_id: str) -> TenantCredentialRecord:
         return self._rpc("binario_gateway_tenant_register", {"p_tenant_id": _tenant(tenant_id)})
 
-    def rotate(self, tenant_id: str, purpose: str) -> TenantCredentialRecord:
+    def rotate(self, tenant_id: str, purpose: str, *, request_nonce: str) -> TenantCredentialRecord:
         if purpose not in {"ingress", "pull"}:
             raise ValueError("credential rotation purpose must be ingress or pull")
-        return self._rpc("binario_gateway_tenant_rotate", {"p_tenant_id": _tenant(tenant_id), "p_purpose": purpose})
+        return self._rpc("binario_gateway_tenant_rotate", {
+            "p_tenant_id": _tenant(tenant_id),
+            "p_purpose": purpose,
+            "p_request_nonce": _nonce(request_nonce),
+        })
 
     def revoke(self, tenant_id: str) -> TenantCredentialRecord:
         return self._rpc("binario_gateway_tenant_revoke", {"p_tenant_id": _tenant(tenant_id)})
@@ -107,7 +111,7 @@ class SupabaseTenantCredentialRegistry:
         tenant = _tenant(tenant_id)
         bounded = max(1, min(int(limit), 100))
         query = "?" + urlencode({
-            "select": "audit_id,tenant_id,action,purpose,from_version,to_version,actor,occurred_at",
+            "select": "audit_id,tenant_id,action,purpose,from_version,to_version,request_nonce,actor,occurred_at",
             "tenant_id": f"eq.{tenant}",
             "order": "occurred_at.desc,audit_id.desc",
             "limit": str(bounded),
