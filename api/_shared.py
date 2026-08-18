@@ -4,13 +4,21 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler
 
-from gateway.core import GatewayError, GatewayService
+from gateway.core import GatewayError
 from gateway.supabase_storage import SupabaseRestStorage
+from gateway.supabase_tenant_registry import SupabaseTenantCredentialRegistry
+from gateway.tenant_admin import TenantAdminService
+from gateway.versioned_service import VersionedGatewayService
 
 
-def service() -> GatewayService:
+def service() -> VersionedGatewayService:
     master = os.environ.get("BINARIO_GATEWAY_MASTER_SECRET", "")
-    return GatewayService(SupabaseRestStorage(), master)
+    return VersionedGatewayService(SupabaseRestStorage(), master, SupabaseTenantCredentialRegistry())
+
+
+def tenant_admin_service() -> TenantAdminService:
+    master = os.environ.get("BINARIO_GATEWAY_MASTER_SECRET", "")
+    return TenantAdminService(SupabaseTenantCredentialRegistry(), master)
 
 
 def read_body(handler: BaseHTTPRequestHandler, *, max_bytes: int = 64 * 1024) -> bytes:
