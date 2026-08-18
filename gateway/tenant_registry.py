@@ -81,7 +81,7 @@ class MemoryTenantCredentialRegistry:
     def __init__(self):
         self.rows: dict[str, TenantCredentialRecord] = {}
         self.audit: list[dict] = []
-        self.rotate_nonces: dict[tuple[str, str], TenantCredentialRecord] = {}
+        self.rotate_nonces: dict[tuple[str, str], str] = {}
 
     def get(self, tenant_id: str) -> TenantCredentialRecord | None:
         return self.rows.get(_tenant(tenant_id))
@@ -100,17 +100,22 @@ class MemoryTenantCredentialRegistry:
     def rotate(self, tenant_id: str, purpose: str, *, request_nonce: str) -> TenantCredentialRecord:
         tenant = _tenant(tenant_id)
         nonce = _nonce(request_nonce)
+        if purpose not in {"ingress", "pull"}:
+            raise ValueError("credential rotation purpose must be ingress or pull")
         replay_key = (tenant, nonce)
-        replay = self.rotate_nonces.get(replay_key)
-        if replay is not None:
-            return replay
+        replay_purpose = self.rotate_nonces.get(replay_key)
+        if replay_purpose is not None:
+            if replay_purpose != purpose:
+                raise ValueError("admin nonce was already used for another rotation purpose")
+            current = self.rows.get(tenant)
+            if not current:
+                raise KeyError("tenant is not registered")
+            return current
         current = self.rows.get(tenant)
         if not current:
             raise KeyError("tenant is not registered")
         if current.status != ACTIVE:
             raise Unauthorized("tenant is revoked")
-        if purpose not in {"ingress", "pull"}:
-            raise ValueError("credential rotation purpose must be ingress or pull")
         old_version = current.ingress_version if purpose == "ingress" else current.pull_version
         if old_version >= MAX_VERSION:
             raise ValueError("credential version exhausted")
@@ -122,7 +127,7 @@ class MemoryTenantCredentialRegistry:
             updated_at=now,
         )
         self.rows[tenant] = row
-        self.rotate_nonces[replay_key] = row
+        self.rotate_nonces[replay_key] = purpose
         self.audit.append({
             "tenant_id": tenant,
             "action": "ROTATE_INGRESS" if purpose == "ingress" else "ROTATE_PULL",
