@@ -27,7 +27,7 @@ class TenantAdminService:
         self.registry = registry
         self.admin_secret = derive_admin_secret(master_secret)
 
-    def _verify(self, headers: object, raw_body: bytes, *, now: int) -> None:
+    def _verify(self, headers: object, raw_body: bytes, *, now: int) -> str:
         timestamp = _header(headers, "X-Binario-Admin-Timestamp")
         nonce = _header(headers, "X-Binario-Admin-Nonce").lower()
         if not re.fullmatch(r"[0-9a-f]{32}", nonce):
@@ -42,6 +42,7 @@ class TenantAdminService:
         supplied = _header(headers, "X-Binario-Admin-Signature")
         if not hmac.compare_digest(expected, supplied):
             raise Unauthorized("invalid admin signature")
+        return nonce
 
     @staticmethod
     def _payload(row, *, action: str, idempotent: bool = False) -> dict:
@@ -57,7 +58,7 @@ class TenantAdminService:
 
     def execute(self, headers: object, raw_body: bytes, *, now: int | None = None) -> tuple[int, dict]:
         clock = int(time.time() if now is None else now)
-        self._verify(headers, raw_body, now=clock)
+        request_nonce = self._verify(headers, raw_body, now=clock)
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
@@ -89,8 +90,12 @@ class TenantAdminService:
         if action == "ROTATE":
             if purpose not in {"ingress", "pull"}:
                 raise GatewayError("ROTATE requires ingress or pull purpose")
-            row = self.registry.rotate(tenant, purpose)
-            return 200, self._payload(row, action=f"ROTATE_{purpose.upper()}")
+            before = self.registry.get(tenant)
+            row = self.registry.rotate(tenant, purpose, request_nonce=request_nonce)
+            old_version = (before.ingress_version if purpose == "ingress" else before.pull_version) if before else None
+            new_version = row.ingress_version if purpose == "ingress" else row.pull_version
+            replay = old_version is not None and new_version == old_version
+            return 200, self._payload(row, action=f"ROTATE_{purpose.upper()}", idempotent=replay)
         if action == "REVOKE":
             if purpose:
                 raise GatewayError("REVOKE does not accept purpose")
