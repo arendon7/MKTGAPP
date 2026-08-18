@@ -4,7 +4,7 @@ import json
 import re
 import threading
 import uuid
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,7 @@ class AISession:
     context_sha256: str
     context: dict[str, Any]
     output: dict[str, Any]
+    provider_meta: dict[str, Any]
     created_at: str
 
 
@@ -136,6 +137,7 @@ class AISessionStore:
         context_sha256: str,
         context: dict[str, Any],
         output: dict[str, Any],
+        provider_meta: dict[str, Any] | None = None,
     ) -> AISession:
         company = _company(company_id)
         provider_value = str(provider or "").strip().lower()
@@ -150,6 +152,10 @@ class AISessionStore:
             raise ValueError("invalid AI context sha256")
         if not isinstance(context, dict) or not isinstance(output, dict):
             raise ValueError("AI context/output must be objects")
+        meta = dict(provider_meta or {})
+        for key in list(meta):
+            if str(key).lower() in {"api_key", "access_token", "authorization", "token", "secret"}:
+                meta.pop(key, None)
         row = AISession(
             schema=AI_SESSION_SCHEMA,
             id=f"ai_{uuid.uuid4().hex[:24]}",
@@ -163,6 +169,7 @@ class AISessionStore:
             context_sha256=digest,
             context=context,
             output=output,
+            provider_meta=meta,
             created_at=_now(),
         )
         folder = self._folder(company)
