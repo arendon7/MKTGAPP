@@ -145,7 +145,7 @@ class Wave55LeadIntakeRuntimeTests(unittest.TestCase):
                 "connector": "API_IMPORT", "name": "Privado", "email": "private@example.com",
                 "attribution_capture": {"bm_tid": link["tracking_code"], "utm_source": "facebook"},
             })
-        self.runtime.intake_lead(self.company["id"], {
+        private_lead = self.runtime.intake_lead(self.company["id"], {
             "connector": "API_IMPORT", "name": "Privado", "email": "private@example.com"
         })
         context = self.runtime._ai_context(self.company["id"], task="STRATEGY", campaign_id=None, creative_media_id=None)
@@ -153,7 +153,7 @@ class Wave55LeadIntakeRuntimeTests(unittest.TestCase):
         self.assertIn("lead_intake", context)
         self.assertNotIn("Privado", text)
         self.assertNotIn("private@example.com", text)
-        self.assertNotIn("lead_", text)
+        self.assertNotIn(private_lead["id"], text)
         self.assertNotIn(link["tracking_code"], text)
 
     def test_csv_reimport_is_idempotent_and_performs_zero_crm_mutations(self):
