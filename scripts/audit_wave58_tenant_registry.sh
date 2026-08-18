@@ -33,16 +33,19 @@ done
 /usr/bin/grep -q 'tenant is revoked' "$CORE" || { echo "Wave 58 audit: revocation authentication gate missing" >&2; exit 3; }
 /usr/bin/grep -q 'credential version is stale' "$CORE" || { echo "Wave 58 audit: stale credential rejection missing" >&2; exit 3; }
 /usr/bin/grep -q 'binario-gateway-v2:tenant-admin' "$REGISTRY" || { echo "Wave 58 audit: isolated admin derivation missing" >&2; exit 3; }
+/usr/bin/grep -q 'request_nonce=request_nonce' "$ADMIN" || { echo "Wave 58 audit: signed admin nonce is not bound to rotate mutation" >&2; exit 3; }
 /usr/bin/grep -q 'master_secret_returned.*False' "$ADMIN" || { echo "Wave 58 audit: admin master-secret response boundary missing" >&2; exit 3; }
 /usr/bin/grep -q 'secret_returned.*False' "$ADMIN" || { echo "Wave 58 audit: admin secret response boundary missing" >&2; exit 3; }
+/usr/bin/grep -q 'p_request_nonce' "$REMOTE" || { echo "Wave 58 audit: remote rotation adapter does not send replay nonce" >&2; exit 3; }
 /usr/bin/grep -q 'SupabaseTenantCredentialRegistry' "$SHARED" || { echo "Wave 58 audit: deployed gateway does not use durable tenant registry" >&2; exit 3; }
 /usr/bin/grep -q 'registry.healthcheck()' "$HEALTH" || { echo "Wave 58 audit: live health does not prove tenant registry readiness" >&2; exit 3; }
-for marker in 'binario_gateway_tenants' 'binario_gateway_tenant_audit' 'security definer' 'set search_path = pg_catalog, public' 'binario_gateway_tenant_rotate' 'binario_gateway_tenant_revoke' 'binario_gateway_tenant_reactivate'; do
+for marker in 'binario_gateway_tenants' 'binario_gateway_tenant_audit' 'security definer' 'set search_path = pg_catalog, public' 'binario_gateway_tenant_rotate' 'binario_gateway_tenant_revoke' 'binario_gateway_tenant_reactivate' 'request_nonce' 'for update' 'rotation_nonce_uq'; do
   /usr/bin/grep -qi "$marker" "$SQL" || { echo "Wave 58 audit: SQL contract missing: $marker" >&2; exit 3; }
 done
 [[ "$(/usr/bin/grep -ic 'enable row level security' "$SQL")" -ge 2 ]] || { echo "Wave 58 audit: both tenant tables must enable RLS" >&2; exit 3; }
 [[ "$(/usr/bin/grep -ic 'revoke all on table.*anon, authenticated' "$SQL")" -ge 2 ]] || { echo "Wave 58 audit: public roles must be revoked from both tenant tables" >&2; exit 3; }
-/usr/bin/grep -q 'grant execute on function public.binario_gateway_tenant_rotate(text, text) to service_role' "$SQL" || { echo "Wave 58 audit: service-role-only rotation RPC missing" >&2; exit 3; }
+/usr/bin/grep -q 'drop function if exists public.binario_gateway_tenant_rotate(text, text)' "$SQL" || { echo "Wave 58 audit: unsafe draft rotate overload cleanup missing" >&2; exit 3; }
+/usr/bin/grep -q 'grant execute on function public.binario_gateway_tenant_rotate(text, text, text) to service_role' "$SQL" || { echo "Wave 58 audit: service-role-only replay-safe rotation RPC missing" >&2; exit 3; }
 if /usr/bin/grep -Eq '^[[:space:]]*(secret|master_secret|ingress_secret|pull_secret|hmac_secret)[[:space:]]' "$SQL"; then echo "Wave 58 audit: tenant registry must not contain secret columns" >&2; exit 3; fi
 /usr/bin/grep -q 'tenant_secret_persisted_in_registry.*False' "$SERVICE" || { echo "Wave 58 audit: desktop registry secret boundary missing" >&2; exit 3; }
 /usr/bin/grep -q 'crm_mutations.*0' "$SERVICE" || { echo "Wave 58 audit: CRM zero-mutation contract missing" >&2; exit 3; }
