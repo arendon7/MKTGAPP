@@ -90,7 +90,7 @@ class Wave58TenantCredentialTests(unittest.TestCase):
     def test_rotate_ingress_invalidates_only_old_ingress_and_pull_v1_still_works(self):
         first = lead_body("First")
         self.service.ingest(gateway_headers(self.secret("ingress", 1), purpose="ingress", version=1, body=first), first, now=NOW)
-        row = self.registry.rotate(TENANT, "ingress")
+        row = self.registry.rotate(TENANT, "ingress", request_nonce="1" * 32)
         self.assertEqual((row.ingress_version, row.pull_version), (2, 1))
 
         stale = lead_body("Stale")
@@ -120,8 +120,8 @@ class Wave58TenantCredentialTests(unittest.TestCase):
         self.assertEqual(batch["count"], 2)
 
     def test_rotate_pull_invalidates_only_old_pull_and_current_ingress_still_works(self):
-        self.registry.rotate(TENANT, "ingress")
-        row = self.registry.rotate(TENANT, "pull")
+        self.registry.rotate(TENANT, "ingress", request_nonce="2" * 32)
+        row = self.registry.rotate(TENANT, "pull", request_nonce="3" * 32)
         self.assertEqual((row.ingress_version, row.pull_version), (2, 2))
         pull_body = canonical_json_bytes({"limit": 10})
         with self.assertRaisesRegex(Unauthorized, "stale"):
@@ -147,8 +147,8 @@ class Wave58TenantCredentialTests(unittest.TestCase):
         self.assertEqual(receipt["credential_version"], 2)
 
     def test_revoke_blocks_ingress_pull_and_ack_then_reactivate_invalidates_all_old_keys(self):
-        self.registry.rotate(TENANT, "ingress")
-        self.registry.rotate(TENANT, "pull")
+        self.registry.rotate(TENANT, "ingress", request_nonce="4" * 32)
+        self.registry.rotate(TENANT, "pull", request_nonce="5" * 32)
         self.registry.revoke(TENANT)
         body = lead_body("Blocked")
         with self.assertRaisesRegex(Unauthorized, "revoked"):
@@ -181,7 +181,7 @@ class Wave58TenantCredentialTests(unittest.TestCase):
     def test_registry_actions_are_idempotent_where_safe_and_audited(self):
         again = self.registry.register(TENANT)
         self.assertEqual((again.ingress_version, again.pull_version), (1, 1))
-        self.registry.rotate(TENANT, "ingress")
+        self.registry.rotate(TENANT, "ingress", request_nonce="6" * 32)
         revoked = self.registry.revoke(TENANT)
         self.assertEqual(self.registry.revoke(TENANT), revoked)
         active = self.registry.reactivate(TENANT)
@@ -189,6 +189,39 @@ class Wave58TenantCredentialTests(unittest.TestCase):
         actions = [row["action"] for row in self.registry.audit]
         self.assertEqual(actions, ["REGISTER", "ROTATE_INGRESS", "REVOKE", "REACTIVATE"])
         self.assertEqual((active.ingress_version, active.pull_version), (3, 2))
+
+    def test_exact_rotate_replay_never_increments_twice_and_never_downgrades_current_state(self):
+        nonce = "7" * 32
+        first = self.registry.rotate(TENANT, "ingress", request_nonce=nonce)
+        self.assertEqual((first.ingress_version, first.pull_version), (2, 1))
+        replay = self.registry.rotate(TENANT, "ingress", request_nonce=nonce)
+        self.assertEqual((replay.ingress_version, replay.pull_version), (2, 1))
+        self.assertEqual(len([row for row in self.registry.audit if row["action"] == "ROTATE_INGRESS"]), 1)
+
+        newer = self.registry.rotate(TENANT, "ingress", request_nonce="8" * 32)
+        self.assertEqual(newer.ingress_version, 3)
+        late_replay = self.registry.rotate(TENANT, "ingress", request_nonce=nonce)
+        self.assertEqual(late_replay.ingress_version, 3)
+        self.assertEqual(self.registry.get(TENANT).ingress_version, 3)
+        with self.assertRaisesRegex(ValueError, "another rotation purpose"):
+            self.registry.rotate(TENANT, "pull", request_nonce=nonce)
+
+    def test_admin_rotate_exact_signed_replay_is_idempotent(self):
+        registry = MemoryTenantCredentialRegistry()
+        registry.register(TENANT)
+        admin = TenantAdminService(registry, MASTER)
+        admin_secret = derive_admin_secret(MASTER)
+        body = canonical_json_bytes({"action": "ROTATE", "tenant_id": TENANT, "purpose": "ingress"})
+        headers = admin_headers(admin_secret, body, nonce="9" * 32)
+        status, first = admin.execute(headers, body, now=NOW)
+        self.assertEqual(status, 200)
+        self.assertFalse(first["idempotent"])
+        self.assertEqual(first["tenant"]["ingress_version"], 2)
+        status, replay = admin.execute(headers, body, now=NOW)
+        self.assertEqual(status, 200)
+        self.assertTrue(replay["idempotent"])
+        self.assertEqual(replay["tenant"]["ingress_version"], 2)
+        self.assertEqual(len([row for row in registry.audit if row["action"] == "ROTATE_INGRESS"]), 1)
 
     def test_admin_key_is_separate_from_site_and_pull_keys_and_response_is_secret_free(self):
         registry = MemoryTenantCredentialRegistry()
