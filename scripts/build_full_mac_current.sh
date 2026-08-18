@@ -42,6 +42,7 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave52_learning_loop.sh" "$APP"
 # Wave 53 Attribution Foundation remains an explicit audited prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave53_attribution_foundation.sh" "$APP"
+# Wave 54 First-Party Capture Bridge remains an explicit audited prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave54_capture_bridge.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave55_lead_intake.sh" "$APP"
 printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 55 · %s\n' "$APP"
