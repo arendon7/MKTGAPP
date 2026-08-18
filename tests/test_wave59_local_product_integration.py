@@ -83,9 +83,6 @@ class Wave59LocalProductIntegrationTests(unittest.TestCase):
     def test_builder_keeps_all_historical_gates_and_makes_wave59_current(self):
         builder = (ROOT / "scripts" / "build_full_mac_current.sh").read_text(encoding="utf-8")
         self.assertIn("service_wave55_guard_app','service_wave56_app','service_wave59_app", builder)
-        for wave in range(47, 57):
-            if wave == 46:
-                continue
         for marker in (
             "audit_wave47_product_surface.sh", "audit_wave48_paid_media_center.sh", "audit_wave49_creative_studio.sh",
             "audit_wave50_command_center.sh", "audit_wave51_ai_copilot.sh", "audit_wave52_learning_loop.sh",
