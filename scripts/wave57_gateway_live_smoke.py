@@ -53,6 +53,8 @@ def _health(origin: str) -> dict:
     payload = _read_json(Request(origin + "/api/health", method="GET", headers={"Accept": "application/json"}))
     if payload.get("schema") != "binario.marketing.public-gateway-health.v1" or payload.get("status") != "ok":
         raise RuntimeError("gateway health contract mismatch")
+    if payload.get("ready_for_intake") is not True:
+        raise RuntimeError("gateway is not ready for intake")
     if payload.get("browser_secret_supported") is not False:
         raise RuntimeError("gateway health weakened browser-secret safety")
     return payload
@@ -117,6 +119,7 @@ def run(origin: str, tenant_id: str, master_secret: str, *, ack: bool = True) ->
         "schema": "binario.marketing.wave57-live-smoke.v1",
         "status": "PASS",
         "health": health.get("status"),
+        "ready_for_intake": health.get("ready_for_intake"),
         "authentication": health.get("authentication"),
         "queue": health.get("queue"),
         "ingress": "PASS",
