@@ -32,17 +32,17 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
 
     def test_company_paid_media_overrides_browser_meta_identity(self):
         self.runtime.companies.update(self.company["id"], {
-            "facebook_page_id": "page_authoritative",
+            "facebook_page_id": "112233445566",
             "facebook_page_name": "Greenatics",
-            "instagram_id": "ig_authoritative",
+            "instagram_id": "998877665544",
             "instagram_username": "greenatics",
-            "ad_account_id": "act_authoritative",
+            "ad_account_id": "123456789012",
             "ad_account_name": "Greenatics Ads",
         })
         payload = {
-            "ad_account_id": "act_attacker",
-            "page_id": "page_attacker",
-            "instagram_actor_id": "ig_attacker",
+            "ad_account_id": "999999999999",
+            "page_id": "888888888888",
+            "instagram_actor_id": "777777777777",
             "campaign_name": "Leads agosto",
             "campaign_objective": "OUTCOME_LEADS",
             "special_ad_categories": [],
@@ -58,9 +58,9 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
             "ad_name": "Ad A",
         }
         row = self.runtime.create_company_paid_media(self.company["id"], payload)
-        self.assertEqual(row["ad_account_id"], "act_authoritative")
-        self.assertEqual(row["page_id"], "page_authoritative")
-        self.assertEqual(row["instagram_actor_id"], "ig_authoritative")
+        self.assertEqual(row["ad_account_id"], "123456789012")
+        self.assertEqual(row["page_id"], "112233445566")
+        self.assertEqual(row["instagram_actor_id"], "998877665544")
         workspace = self.runtime.company_workspace_summary(self.company["id"])
         self.assertEqual(workspace["paid_media"], 1)
         self.assertEqual(self.runtime.company_paid_media(self.company["id"])[0]["id"], row["id"])
@@ -83,9 +83,9 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
             self.runtime.create_company_paid_media(self.company["id"], payload)
 
     def test_paid_media_draft_is_not_accessible_from_another_company(self):
-        self.runtime.companies.update(self.company["id"], {"facebook_page_id": "page_a", "ad_account_id": "act_a"})
+        self.runtime.companies.update(self.company["id"], {"facebook_page_id": "111111111111", "ad_account_id": "222222222222"})
         other = self.runtime.create_company({"name": "Otra"})
-        self.runtime.companies.update(other["id"], {"facebook_page_id": "page_b", "ad_account_id": "act_b"})
+        self.runtime.companies.update(other["id"], {"facebook_page_id": "333333333333", "ad_account_id": "444444444444"})
         row = self.runtime.create_company_paid_media(self.company["id"], {
             "campaign_name": "A", "campaign_objective": "OUTCOME_TRAFFIC", "adset_name": "A",
             "daily_budget": 10000, "optimization_goal": "LINK_CLICKS",
