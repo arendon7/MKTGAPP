@@ -14,8 +14,9 @@ done
 "$ROOT/scripts/build_full_mac_app.sh" --arch "$ARCH" --out "$OUT"
 APP="$OUT/Binario Marketing IA.app"
 LAUNCH="$APP/Contents/Resources/launch.py"
-[[ -f "$LAUNCH" ]] || { echo "Wave 47 launch.py missing" >&2; exit 4; }
-"/usr/bin/python3" - "$LAUNCH" <<'PY'
+PYTHON="$APP/Contents/Resources/runtime/python/bin/python3"
+[[ -f "$LAUNCH" && -x "$PYTHON" ]] || { echo "Wave 47 launch/runtime missing" >&2; exit 4; }
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
 path=Path(sys.argv[1])
