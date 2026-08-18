@@ -81,12 +81,14 @@ begin
         update public.binario_gateway_tenants
         set ingress_version = ingress_version + 1, updated_at = now()
         where tenant_id = p_tenant_id and status = 'ACTIVE' and ingress_version < 2147483647
-        returning ingress_version - 1, * into v_old, v_row;
+        returning * into v_row;
+        if found then v_old := v_row.ingress_version - 1; end if;
     elsif p_purpose = 'pull' then
         update public.binario_gateway_tenants
         set pull_version = pull_version + 1, updated_at = now()
         where tenant_id = p_tenant_id and status = 'ACTIVE' and pull_version < 2147483647
-        returning pull_version - 1, * into v_old, v_row;
+        returning * into v_row;
+        if found then v_old := v_row.pull_version - 1; end if;
     else
         raise exception 'invalid rotation purpose';
     end if;
