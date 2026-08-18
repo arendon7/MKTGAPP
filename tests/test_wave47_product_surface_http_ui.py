@@ -51,7 +51,7 @@ class Wave47ProductSurfaceHttpUiTests(unittest.TestCase):
         self.assertEqual(first["project_id"], second["project_id"])
 
     def test_paid_media_api_is_company_scoped(self):
-        self.runtime.companies.update(self.company["id"], {"facebook_page_id": "page_a", "ad_account_id": "act_a"})
+        self.runtime.companies.update(self.company["id"], {"facebook_page_id": "111111111111", "ad_account_id": "222222222222"})
         payload = {
             "campaign_name": "Traffic", "campaign_objective": "OUTCOME_TRAFFIC", "special_ad_categories": [],
             "adset_name": "CO", "daily_budget": 10000, "optimization_goal": "LINK_CLICKS",
@@ -61,7 +61,7 @@ class Wave47ProductSurfaceHttpUiTests(unittest.TestCase):
         }
         status, row = self.request_json(f"/api/companies/{self.company['id']}/paid-media", method="POST", body=payload)
         self.assertEqual(status, 201)
-        self.assertEqual(row["ad_account_id"], "act_a")
+        self.assertEqual(row["ad_account_id"], "222222222222")
         _, rows = self.request_json(f"/api/companies/{self.company['id']}/paid-media")
         self.assertEqual([item["id"] for item in rows], [row["id"]])
 
