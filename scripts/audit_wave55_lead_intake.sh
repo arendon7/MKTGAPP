@@ -5,10 +5,11 @@ APP="${1:-}"
 RES="$APP/Contents/Resources"
 UI="$RES/source/web/lead-intake.js"
 SERVICE="$RES/source/src/binario_marketing/service_wave55_app.py"
+GUARD="$RES/source/src/binario_marketing/service_wave55_guard_app.py"
 STORE="$RES/source/src/binario_marketing/lead_intake_store.py"
 LOADER="$RES/source/web/audiences-wave39-loader.js"
-[[ -f "$UI" && -f "$SERVICE" && -f "$STORE" && -f "$LOADER" ]] || { echo "Wave 55 audit: source missing" >&2; exit 3; }
-/usr/bin/grep -q 'service_wave55_app import serve' "$RES/launch.py" || { echo "Wave 55 audit: Mac launch is not using Wave 55" >&2; exit 3; }
+[[ -f "$UI" && -f "$SERVICE" && -f "$GUARD" && -f "$STORE" && -f "$LOADER" ]] || { echo "Wave 55 audit: source missing" >&2; exit 3; }
+/usr/bin/grep -q 'service_wave55_guard_app import serve' "$RES/launch.py" || { echo "Wave 55 audit: Mac launch is not using certified Wave 55 guard" >&2; exit 3; }
 for text in 'Lead Intake & Conversion' 'Registrar lead sin tocar CRM' 'Importar primero a intake' 'Exact identity · no fuzzy'; do
   /usr/bin/grep -q "$text" "$UI" || { echo "Wave 55 audit: missing UI contract: $text" >&2; exit 3; }
 done
@@ -17,6 +18,8 @@ done
 /usr/bin/grep -q 'ORIGINAL_LEAD_RECEIVED_AT' "$SERVICE" || { echo "Wave 55 audit: attribution time contract missing" >&2; exit 3; }
 /usr/bin/grep -q 'exact CRM identity match exists' "$SERVICE" || { echo "Wave 55 audit: duplicate contact guard missing" >&2; exit 3; }
 /usr/bin/grep -q 'public_desktop_webhook.*False' "$SERVICE" || { echo "Wave 55 audit: public ingress boundary missing" >&2; exit 3; }
+/usr/bin/grep -q '_lead_attribution_prepared.*company.id.*lead' "$GUARD" || { echo "Wave 55 audit: pre-conversion attribution integrity guard missing" >&2; exit 3; }
+/usr/bin/grep -q 'before any CRM mutation' "$GUARD" || { echo "Wave 55 audit: preflight ordering contract missing" >&2; exit 3; }
 /usr/bin/grep -q 'LEAD_INTAKE_SCHEMA' "$STORE" || { echo "Wave 55 audit: durable schema missing" >&2; exit 3; }
 /usr/bin/grep -q 'source_ref already exists with a different lead payload' "$STORE" || { echo "Wave 55 audit: idempotency fail-closed guard missing" >&2; exit 3; }
 /usr/bin/grep -q 'name_fuzzy_matching.*False' "$SERVICE" || { echo "Wave 55 audit: no-fuzzy contract missing" >&2; exit 3; }
