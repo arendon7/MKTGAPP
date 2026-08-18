@@ -147,6 +147,26 @@ class AppRuntime(base.AppRuntime):
         path = self.renders.output_path(render.id)
         if not path.is_file() or path.stat().st_size <= 0:
             raise FileNotFoundError(path)
+
+        # Promotion is content-addressed: clicking the same completed render twice must
+        # not duplicate the company library. Reuse the managed media with matching SHA.
+        if render.sha256:
+            existing = next(
+                (
+                    row for row in self.company_media.list(company.id)
+                    if row.sha256 == render.sha256 and (render.bytes is None or row.bytes == render.bytes)
+                ),
+                None,
+            )
+            if existing is not None:
+                if self.creatives.get(company.id, existing.id) is None:
+                    clean = dict(payload or {})
+                    clean.setdefault("title", str(clean.get("title") or render.output_name))
+                    clean.setdefault("stage", "DRAFT")
+                    clean.setdefault("purpose", "OTHER")
+                    self.creatives.upsert(company.id, existing.id, clean)
+                return self._creative_payload(company.id, existing)
+
         with path.open("rb") as handle:
             media = self.company_media.add_uploaded(company.id, render.output_name, "video", handle, path.stat().st_size)
         try:
@@ -230,6 +250,10 @@ class AppRuntime(base.AppRuntime):
             raise ValueError("paid media payload must be an object")
         clean = dict(payload)
         creative_media_id = str(clean.pop("creative_media_id", "") or "").strip() or None
+        if not creative_media_id and str(clean.get("source_kind") or "").strip().lower() == "company_media":
+            candidate = str(clean.get("company_media_id") or "").strip()
+            if candidate and self.creatives.get(company_id, candidate) is not None:
+                creative_media_id = candidate
         creative = None
         if creative_media_id:
             company = self.companies.get(company_id)
@@ -239,14 +263,16 @@ class AppRuntime(base.AppRuntime):
             creative = self.creatives.get(company.id, media.id)
             if creative is None:
                 raise ValueError("save the creative brief before sending it to Pauta")
-            clean.setdefault("campaign_id", creative.campaign_id)
+            if not str(clean.get("campaign_id") or "").strip() and creative.campaign_id:
+                clean["campaign_id"] = creative.campaign_id
             clean["source_kind"] = "company_media"
             clean["company_media_id"] = media.id
             if creative.primary_copy and not str(clean.get("message") or "").strip():
                 clean["message"] = creative.primary_copy
             if creative.destination_url and not str(clean.get("link_url") or "").strip():
                 clean["link_url"] = creative.destination_url
-            clean.setdefault("call_to_action", creative.call_to_action)
+            if not str(clean.get("call_to_action") or "").strip():
+                clean["call_to_action"] = creative.call_to_action
         row = super().create_company_paid_media(company_id, clean)
         if creative_media_id and creative is not None:
             profile = self.creatives.link_paid_media(company_id, creative_media_id, row["id"])
