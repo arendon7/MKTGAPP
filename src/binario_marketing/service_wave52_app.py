@@ -50,8 +50,8 @@ def _derived(metrics: dict) -> dict:
     interactions = float(_number(metrics.get("total_interactions")) or 0)
     result = dict(metrics)
     result["paid_ctr"] = round(clicks * 100 / impressions, 4) if impressions else None
-    result["paid_cpc"] = round(spend / clicks, 6) if clicks else None
-    result["paid_cpm"] = round(spend * 1000 / impressions, 6) if impressions else None
+    result["paid_cpc"] = round(spend / clicks, 6) if clicks and "spend" in metrics else None
+    result["paid_cpm"] = round(spend * 1000 / impressions, 6) if impressions and "spend" in metrics else None
     result["paid_frequency"] = round(impressions / paid_reach, 4) if paid_reach else None
     result["organic_interaction_rate"] = round(interactions * 100 / organic_reach, 4) if organic_reach else None
     return result
@@ -106,8 +106,17 @@ class AppRuntime(base.AppRuntime):
                 bucket["lost_count"] += 1; bucket["lost_value"] += value
             else:
                 bucket["open_count"] += 1; bucket["open_value"] += value
+        raw = self.crm.summary(company_id)
+        summary = {
+            "contacts": raw.get("contacts", 0),
+            "opportunities_open": raw.get("opportunities_open", 0),
+            "opportunities_won": raw.get("opportunities_won", 0),
+            "pending_activities": raw.get("pending_activities", 0),
+            "overdue_activities": raw.get("overdue_activities", 0),
+            "stage_counts": raw.get("stage_counts") or {},
+        }
         return {
-            "summary": self.crm.summary(company_id),
+            "summary": summary,
             "value_by_currency": by_currency,
             "attributed_to_campaign": False,
             "attribution_reason": "CRM opportunities do not yet carry a certified campaign/source attribution key.",
@@ -152,8 +161,8 @@ class AppRuntime(base.AppRuntime):
             "observations": social_observations,
         }
 
-        paid_rows = [row for row in self.company_paid_media(company.id) if row.get("campaign_id") or row.get("ad_id")]
-        paid_rows = list(reversed(paid_rows))[:paid_limit]
+        all_paid_rows = [row for row in self.company_paid_media(company.id) if row.get("campaign_id") or row.get("ad_id")]
+        paid_rows = list(reversed(all_paid_rows))[:paid_limit]
         paid_observations = []
         paid_errors = 0
         paid_measured = 0
@@ -193,18 +202,28 @@ class AppRuntime(base.AppRuntime):
                 })
 
         paid_totals: dict[str, float | int] = {}
+        paid_totals_by_currency: dict[str, dict] = {}
         currencies = sorted({row.get("currency") for row in paid_observations if row.get("currency")})
         for row in paid_observations:
-            _add_metrics(paid_totals, row.get("metrics") or {}, _PAID_TOTAL_METRICS)
+            metrics = row.get("metrics") or {}
+            _add_metrics(paid_totals, metrics, _PAID_TOTAL_METRICS)
+            currency = row.get("currency") or "UNKNOWN"
+            bucket = paid_totals_by_currency.setdefault(currency, {})
+            _add_metrics(bucket, metrics, _PAID_TOTAL_METRICS)
+        spend_aggregated = len(currencies) <= 1
+        if not spend_aggregated:
+            paid_totals.pop("spend", None)
         paid_evidence = {
             "coverage": {
-                "eligible": len([row for row in self.company_paid_media(company.id) if row.get("campaign_id") or row.get("ad_id")]),
+                "eligible": len(all_paid_rows),
                 "requested": len(paid_rows),
                 "measured": paid_measured,
                 "errors": paid_errors,
             },
             "currencies": currencies,
+            "spend_aggregated": spend_aggregated,
             "totals": paid_totals,
+            "totals_by_currency": paid_totals_by_currency,
             "observations": paid_observations,
         }
         crm_evidence = self._crm_learning_evidence(company.id)
@@ -302,6 +321,12 @@ class AppRuntime(base.AppRuntime):
                 _add_metrics(campaigns[campaign_id]["metrics"], mapped, tuple(mapped))
                 if metrics: campaigns[campaign_id]["paid_observations"] += 1
 
+        if snapshot.paid_media.get("spend_aggregated") is False:
+            for item in campaigns.values():
+                item["metrics"].pop("spend", None)
+            for item in creatives.values():
+                item["metrics"].pop("spend", None)
+
         decisions = self.learning.list_decisions(company_id, limit=100)
         latest_decision = {}
         for row in decisions:
@@ -387,6 +412,7 @@ class AppRuntime(base.AppRuntime):
         context = super()._ai_context(company_id, task=task, campaign_id=campaign_id, creative_media_id=creative_media_id)
         learning = self.learning_payload(company_id)
         latest = learning.get("latest_snapshot") or {}
+        crm_source = latest.get("crm") or learning.get("crm_current") or {}
         context["learning"] = {
             "snapshot_id": latest.get("id"),
             "captured_at": latest.get("created_at"),
@@ -404,7 +430,11 @@ class AppRuntime(base.AppRuntime):
                 "latest_decision": (row.get("latest_decision") or {}).get("action"),
             } for row in learning.get("creatives") or []][:20],
             "leaders": learning.get("leaders") or {},
-            "crm_company_outcome": latest.get("crm") or learning.get("crm_current") or {},
+            "crm_company_outcome": {
+                "summary": crm_source.get("summary") or {},
+                "value_by_currency": crm_source.get("value_by_currency") or {},
+                "attributed_to_campaign": False,
+            },
         }
         return context
 
