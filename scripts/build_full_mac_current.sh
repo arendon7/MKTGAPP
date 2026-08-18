@@ -24,7 +24,7 @@ text=path.read_text(encoding='utf-8')
 anchor='from binario_marketing.service_wave45_app import serve\n'
 if anchor not in text:
     raise SystemExit('Current build blocked: Wave 45 entrypoint marker missing')
-for module in ('service_wave47_app','service_wave48_app'):
+for module in ('service_wave47_app','service_wave48_app','service_wave49_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
@@ -35,4 +35,5 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave47_product_surface.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave48_paid_media_center.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 48 · %s\n' "$APP"
+/bin/bash "$ROOT/scripts/audit_wave49_creative_studio.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 49 · %s\n' "$APP"
