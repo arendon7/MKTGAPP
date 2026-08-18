@@ -62,6 +62,12 @@ IFS=$'\t' read -r PRODUCT_VERSION MACOS_SHORT_VERSION MACOS_BUNDLE_VERSION <<< "
 /usr/bin/ditto "$ROOT/src" "$SOURCE/src"
 /usr/bin/ditto "$ROOT/apps" "$SOURCE/apps"
 /usr/bin/ditto "$ROOT/web" "$SOURCE/web"
+# Wave 56 deployable gateway source is provenance/audit material inside the desktop bundle.
+# It is not imported by the loopback desktop runtime and does not make localhost public.
+/usr/bin/ditto "$ROOT/gateway" "$SOURCE/gateway"
+/usr/bin/ditto "$ROOT/api" "$SOURCE/api"
+/usr/bin/ditto "$ROOT/native" "$SOURCE/native"
+/bin/cp "$ROOT/vercel.json" "$SOURCE/vercel.json"
 /bin/cp "$ROOT/pyproject.toml" "$SOURCE/pyproject.toml"
 /bin/cp "$ROOT/scripts/release_candidate_gate.py" "$RELEASE_TOOLS/release_candidate_gate.py"
 /bin/cp "$ROOT/scripts/collect_release_uat.py" "$RELEASE_TOOLS/collect_release_uat.py"
