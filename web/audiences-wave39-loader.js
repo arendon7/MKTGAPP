@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadProductShell=()=>{
+    if(document.querySelector('script[data-product-shell-wave47]'))return;
+    const shell=document.createElement('script');
+    shell.src='/product-shell.js';
+    shell.defer=true;
+    shell.dataset.productShellWave47='1';
+    document.head.append(shell);
+  };
   const loadFollowupReschedule=()=>{
-    if(document.querySelector('script[data-followup-reschedule-wave45]'))return;
+    const existing=document.querySelector('script[data-followup-reschedule-wave45]');
+    if(existing){if(ready('#followup-reschedule-wave45-style'))loadProductShell();else existing.addEventListener('load',loadProductShell,{once:true});return}
     const reschedule=document.createElement('script');
     reschedule.src='/followup-reschedule.js';
     reschedule.defer=true;
     reschedule.dataset.followupRescheduleWave45='1';
+    reschedule.addEventListener('load',loadProductShell,{once:true});
     document.head.append(reschedule);
   };
   const loadDailyActions=()=>{
@@ -69,7 +79,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 45 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 47 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
