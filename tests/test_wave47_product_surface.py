@@ -31,7 +31,7 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
         self.assertIn("Greenatics", projects[0].name)
 
     def test_company_paid_media_overrides_browser_meta_identity(self):
-        company = self.runtime.update_company(self.company["id"], {
+        self.runtime.companies.update(self.company["id"], {
             "facebook_page_id": "page_authoritative",
             "facebook_page_name": "Greenatics",
             "instagram_id": "ig_authoritative",
@@ -57,13 +57,13 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
             "call_to_action": "LEARN_MORE",
             "ad_name": "Ad A",
         }
-        row = self.runtime.create_company_paid_media(company["id"], payload)
+        row = self.runtime.create_company_paid_media(self.company["id"], payload)
         self.assertEqual(row["ad_account_id"], "act_authoritative")
         self.assertEqual(row["page_id"], "page_authoritative")
         self.assertEqual(row["instagram_actor_id"], "ig_authoritative")
-        workspace = self.runtime.company_workspace_summary(company["id"])
+        workspace = self.runtime.company_workspace_summary(self.company["id"])
         self.assertEqual(workspace["paid_media"], 1)
-        self.assertEqual(self.runtime.company_paid_media(company["id"])[0]["id"], row["id"])
+        self.assertEqual(self.runtime.company_paid_media(self.company["id"])[0]["id"], row["id"])
 
     def test_company_paid_media_requires_associated_meta_assets(self):
         payload = {
@@ -83,9 +83,9 @@ class Wave47ProductSurfaceTests(unittest.TestCase):
             self.runtime.create_company_paid_media(self.company["id"], payload)
 
     def test_paid_media_draft_is_not_accessible_from_another_company(self):
-        self.runtime.update_company(self.company["id"], {"facebook_page_id": "page_a", "ad_account_id": "act_a"})
+        self.runtime.companies.update(self.company["id"], {"facebook_page_id": "page_a", "ad_account_id": "act_a"})
         other = self.runtime.create_company({"name": "Otra"})
-        self.runtime.update_company(other["id"], {"facebook_page_id": "page_b", "ad_account_id": "act_b"})
+        self.runtime.companies.update(other["id"], {"facebook_page_id": "page_b", "ad_account_id": "act_b"})
         row = self.runtime.create_company_paid_media(self.company["id"], {
             "campaign_name": "A", "campaign_objective": "OUTCOME_TRAFFIC", "adset_name": "A",
             "daily_budget": 10000, "optimization_goal": "LINK_CLICKS",
