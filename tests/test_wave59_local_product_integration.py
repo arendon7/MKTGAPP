@@ -77,8 +77,8 @@ class Wave59LocalProductIntegrationTests(unittest.TestCase):
         self.assertIn("lead.addEventListener('load',loadPublicGateway", loader)
         self.assertIn("gateway.src='/public-gateway.js'", loader)
         self.assertIn("gateway.addEventListener('load',loadLocalProduct", loader)
+        self.assertIn("existing.addEventListener('load',loadLocalProduct", loader)
         self.assertIn("local.src='/local-product-integration.js'", loader)
-        self.assertLess(loader.index("gateway.src='/public-gateway.js'"), loader.index("local.src='/local-product-integration.js'"))
 
     def test_builder_keeps_all_historical_gates_and_makes_wave59_current(self):
         builder = (ROOT / "scripts" / "build_full_mac_current.sh").read_text(encoding="utf-8")
