@@ -28,6 +28,11 @@ private let slots: [String: SecretSlot] = [
         account: "api-key",
         label: "BINARIO Marketing · Gemini API Key"
     ),
+    "gateway": SecretSlot(
+        service: "com.sistemabinario.marketing.public-gateway",
+        account: "master-secret",
+        label: "BINARIO Marketing · Public Gateway Master Secret"
+    ),
 ]
 private let metaSlot = slots["meta"]!
 
@@ -215,7 +220,7 @@ do {
         let value = namespace == "meta" ? try readMetaSecret() : try readSecret(slot)
         print(value == nil ? "missing" : "configured")
     default:
-        fputs("usage: binario-keychain-helper [get|set|delete|status] [meta|openai|anthropic|gemini]\n", stderr)
+        fputs("usage: binario-keychain-helper [get|set|delete|status] [meta|openai|anthropic|gemini|gateway]\n", stderr)
         exit(64)
     }
 } catch {
