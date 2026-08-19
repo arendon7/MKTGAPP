@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadCommercialDesk=()=>{
+    if(document.querySelector('script[data-commercial-desk-wave61]'))return;
+    const commercial=document.createElement('script');
+    commercial.src='/commercial-desk.js';
+    commercial.defer=true;
+    commercial.dataset.commercialDeskWave61='1';
+    document.head.append(commercial);
+  };
   const loadWorkdesk=()=>{
-    if(document.querySelector('script[data-workdesk-wave60]'))return;
+    const existing=document.querySelector('script[data-workdesk-wave60]');
+    if(existing){if(ready('#wave60-workdesk-style'))loadCommercialDesk();else existing.addEventListener('load',loadCommercialDesk,{once:true});return}
     const workdesk=document.createElement('script');
     workdesk.src='/workdesk.js';
     workdesk.defer=true;
     workdesk.dataset.workdeskWave60='1';
+    workdesk.addEventListener('load',loadCommercialDesk,{once:true});
     document.head.append(workdesk);
   };
   const loadLocalProduct=()=>{
@@ -189,7 +199,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 60 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 61 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
