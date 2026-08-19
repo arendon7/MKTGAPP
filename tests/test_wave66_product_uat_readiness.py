@@ -113,7 +113,7 @@ class Wave66ProductUATReadinessTests(unittest.TestCase):
         self.assertEqual(second["company"]["id"], other["id"])
         self.assertEqual(first["evidence"]["execution_summary"]["active_campaigns"], 1)
         self.assertEqual(second["evidence"]["execution_summary"]["active_campaigns"], 1)
-        with self.assertRaises(KeyError):
+        with self.assertRaises(ValueError):
             self.runtime.product_uat_readiness("company-does-not-exist")
 
     def test_release_and_workflow_contracts_remain_fail_closed(self):
@@ -216,6 +216,7 @@ class Wave66ProductUATReadinessTests(unittest.TestCase):
         self.assertNotIn("def do_PATCH", service)
         self.assertNotIn("def do_DELETE", service)
         self.assertIn('host: str = "127.0.0.1"', service)
+        self.assertIn("workflow_names = sorted(_CANONICAL_WORKFLOWS)", service)
         self.assertIn("WAVE 66 PRODUCT UAT READINESS AUDIT PASS", audit)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
