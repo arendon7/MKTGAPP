@@ -24,7 +24,7 @@ text=path.read_text(encoding='utf-8')
 anchor='from binario_marketing.service_wave45_app import serve\n'
 if anchor not in text:
     raise SystemExit('Current build blocked: Wave 45 entrypoint marker missing')
-for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app'):
+for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
@@ -50,6 +50,8 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave56_public_gateway.sh" "$APP"
 # Historical certified marker retained for the Wave 59 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 59
 /bin/bash "$ROOT/scripts/audit_wave59_local_product_integration.sh" "$APP"
-# Wave 60 composes daily local work across Hoy, Inbox and CRM without adding provider side effects.
+# Wave 60 remains the certified local daily-work composition prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave60_daily_workdesk.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 60 · %s\n' "$APP"
+# Wave 61 composes cached Inbox, Lead Intake and CRM into one explicit commercial workflow.
+/bin/bash "$ROOT/scripts/audit_wave61_commercial_desk.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 61 · %s\n' "$APP"
