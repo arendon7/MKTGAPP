@@ -100,8 +100,10 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         self.assertEqual(blocked_done["status"], "BLOCKED")
         self.assertFalse(blocked_done["physical_uat_complete"])
 
-    def test_required_scenarios_cannot_be_skipped_and_pending_blocks_finish(self):
+    def test_required_scenarios_cannot_be_skipped_pending_blocks_finish_and_active_is_unique(self):
         session = self._start()
+        with self.assertRaises(ValueError):
+            self._start()
         required = next(row for row in session["scenarios"] if row["required"])
         optional = next(row for row in session["scenarios"] if not row["required"])
         with self.assertRaises(ValueError):
@@ -188,9 +190,11 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         service = (ROOT / "src" / "binario_marketing" / "service_wave67_app.py").read_text(encoding="utf-8")
         store = (ROOT / "src" / "binario_marketing" / "physical_uat_store.py").read_text(encoding="utf-8")
         audit = (ROOT / "scripts" / "audit_wave67_physical_uat_harness.sh").read_text(encoding="utf-8")
-        self.assertIn("service_wave66_app','service_wave67_app", builder)
+        self.assertIn("'service_wave65_app','service_wave66_app')", builder)
+        self.assertIn("line='from binario_marketing.service_wave67_app import serve", builder)
         self.assertIn("audit_wave66_product_uat_readiness.sh", builder)
         self.assertIn("audit_wave67_physical_uat_harness.sh", builder)
+        self.assertLess(builder.index("audit_wave66_product_uat_readiness.sh"), builder.index("service_wave67_app import serve"))
         for wave in (59, 60, 61, 62, 63, 64, 65, 66, 67):
             self.assertIn(f"CURRENT ARM64 ITERATION BUILD PASS: Wave {wave}", builder)
         self.assertIn("service_wave66_app as base", service)
