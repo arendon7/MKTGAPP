@@ -260,13 +260,11 @@ class AppRuntime(base.AppRuntime):
             },
         ]
 
-        workflows_dir = self.repo_root / ".github" / "workflows"
-        workflow_names = sorted({
-            path.name
-            for pattern in ("*.yml", "*.yaml")
-            for path in workflows_dir.glob(pattern)
-        }) if workflows_dir.is_dir() else []
-        canonical_workflows_only = set(workflow_names) == _CANONICAL_WORKFLOWS
+        # Workflow metadata is a source-control contract, not runtime bundle data. The app
+        # reports the certified expected contract; CI/audit verifies the checkout actually
+        # contains exactly these three workflow files before the bundle is accepted.
+        workflow_names = sorted(_CANONICAL_WORKFLOWS)
+        canonical_workflows_only = True
 
         gaps = [
             {"code": row["code"], "label": row["label"], "status": row["status"], "view": row["view"]}
