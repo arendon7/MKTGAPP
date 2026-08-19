@@ -50,7 +50,7 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave56_public_gateway.sh" "$APP"
 # Historical certified marker retained for the Wave 59 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 59
 /bin/bash "$ROOT/scripts/audit_wave59_local_product_integration.sh" "$APP"
-# Wave 60 remains the certified local daily-work composition prerequisite.
+# Historical certified marker retained for the Wave 60 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 60
 /bin/bash "$ROOT/scripts/audit_wave60_daily_workdesk.sh" "$APP"
 # Wave 61 composes cached Inbox, Lead Intake and CRM into one explicit commercial workflow.
 /bin/bash "$ROOT/scripts/audit_wave61_commercial_desk.sh" "$APP"
