@@ -1,12 +1,22 @@
 (function loadWave39AfterWave38(){
   if(document.querySelector('script[data-audiences-wave38-chain]'))return;
   const ready=(selector)=>Boolean(document.querySelector(selector));
+  const loadContact360=()=>{
+    if(document.querySelector('script[data-contact-360-wave62]'))return;
+    const contact360=document.createElement('script');
+    contact360.src='/contact-360.js';
+    contact360.defer=true;
+    contact360.dataset.contact360Wave62='1';
+    document.head.append(contact360);
+  };
   const loadCommercialDesk=()=>{
-    if(document.querySelector('script[data-commercial-desk-wave61]'))return;
+    const existing=document.querySelector('script[data-commercial-desk-wave61]');
+    if(existing){if(ready('#wave61-commercial-style'))loadContact360();else existing.addEventListener('load',loadContact360,{once:true});return}
     const commercial=document.createElement('script');
     commercial.src='/commercial-desk.js';
     commercial.defer=true;
     commercial.dataset.commercialDeskWave61='1';
+    commercial.addEventListener('load',loadContact360,{once:true});
     document.head.append(commercial);
   };
   const loadWorkdesk=()=>{
@@ -199,7 +209,7 @@
       if(ready('#analytics-wave38-style')){loadInbox();return}
       attempts+=1;
       if(attempts<200)setTimeout(waitForAnalytics,25);
-      else console.error('Wave 61 loader: Wave 38 analytics did not finish loading');
+      else console.error('Wave 62 loader: Wave 38 analytics did not finish loading');
     };
     waitForAnalytics();
   },{once:true});
