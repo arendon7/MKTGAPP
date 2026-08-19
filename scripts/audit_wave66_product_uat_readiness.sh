@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:?usage: audit_wave66_product_uat_readiness.sh <Binario Marketing IA.app>}"
 RES="$APP/Contents/Resources"
 SRC="$RES/source"
@@ -21,6 +22,7 @@ VERSION="$SRC/src/binario_marketing/version.py"
 /usr/bin/grep -q 'cloud_required.*False' "$SERVICE"
 /usr/bin/grep -q 'host: str = "127.0.0.1"' "$SERVICE"
 /usr/bin/grep -q 'RELEASE_READY' "$SERVICE"
+/usr/bin/grep -q 'workflow_names = sorted(_CANONICAL_WORKFLOWS)' "$SERVICE"
 ! /usr/bin/grep -q '^    def do_POST' "$SERVICE"
 ! /usr/bin/grep -q '^    def do_PATCH' "$SERVICE"
 ! /usr/bin/grep -q '^    def do_DELETE' "$SERVICE"
@@ -40,17 +42,23 @@ VERSION="$SRC/src/binario_marketing/version.py"
 /usr/bin/grep -q '0.9.0.dev1' "$VERSION"
 /usr/bin/grep -q 'RELEASE_READY = False' "$VERSION"
 
-"$PY" -I -B - "$LAUNCH" "$SRC" <<'PY'
+"$PY" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
 launch = Path(sys.argv[1]).read_text(encoding='utf-8')
-source = Path(sys.argv[2])
 imports = [line.strip() for line in launch.splitlines() if line.startswith('from binario_marketing.service_wave') and line.endswith(' import serve')]
 assert imports, imports
 assert imports[-1] == 'from binario_marketing.service_wave66_app import serve', imports[-5:]
-workflows = sorted(path.name for path in (source / '.github' / 'workflows').glob('*.yml'))
+print('Wave 66 bundled runtime chain PASS')
+PY
+
+"$PY" -I -B - "$ROOT/.github/workflows" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+workflows = sorted({path.name for pattern in ('*.yml', '*.yaml') for path in root.glob(pattern)})
 assert workflows == ['ci.yml', 'full-mac-app.yml', 'persistent-release.yml'], workflows
-print('Wave 66 bundled runtime chain + workflow contract PASS')
+print('Wave 66 source workflow contract PASS')
 PY
 
 printf 'WAVE 66 PRODUCT UAT READINESS AUDIT PASS\n'
