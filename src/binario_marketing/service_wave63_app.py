@@ -243,6 +243,28 @@ class MarketingHandler(base.MarketingHandler):
         else:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
+    def _static(self, path: str) -> None:
+        if path == "/contact-360.js":
+            target = self.server.runtime.repo_root / "web" / "contact-360.js"
+            if not target.is_file():
+                self._error(HTTPStatus.NOT_FOUND, "not found")
+                return
+            bootstrap = """
+;(function loadWave63AfterContact360(){
+  if(document.querySelector('script[data-commercial-pipeline-wave63]'))return;
+  const pipeline=document.createElement('script');
+  pipeline.src='/commercial-pipeline.js';
+  pipeline.defer=true;
+  pipeline.dataset.commercialPipelineWave63='1';
+  document.head.append(pipeline);
+})();
+"""
+            body = (target.read_text(encoding="utf-8") + bootstrap).encode("utf-8")
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
+            self.wfile.write(body)
+            return
+        super()._static(path)
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/commercial-pipeline.js":
