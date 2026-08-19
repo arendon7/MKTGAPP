@@ -24,7 +24,7 @@ text=path.read_text(encoding='utf-8')
 anchor='from binario_marketing.service_wave45_app import serve\n'
 if anchor not in text:
     raise SystemExit('Current build blocked: Wave 45 entrypoint marker missing')
-for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app','service_wave64_app','service_wave65_app','service_wave66_app'):
+for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app','service_wave64_app','service_wave65_app','service_wave66_app','service_wave67_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
@@ -62,6 +62,8 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave64_execution_workspace.sh" "$APP"
 # Historical certified marker retained for the Wave 65 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 65
 /bin/bash "$ROOT/scripts/audit_wave65_results_intelligence.sh" "$APP"
-# Wave 66 hardens the end-to-end product journey and prepares manual physical UAT without opening release gates.
+# Historical certified marker retained for the Wave 66 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 66
 /bin/bash "$ROOT/scripts/audit_wave66_product_uat_readiness.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 66 · %s\n' "$APP"
+# Wave 67 records explicit physical-UAT evidence while keeping CI ineligible for the physical gate.
+/bin/bash "$ROOT/scripts/audit_wave67_physical_uat_harness.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 67 · %s\n' "$APP"
