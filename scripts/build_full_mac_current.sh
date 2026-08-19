@@ -24,7 +24,7 @@ text=path.read_text(encoding='utf-8')
 anchor='from binario_marketing.service_wave45_app import serve\n'
 if anchor not in text:
     raise SystemExit('Current build blocked: Wave 45 entrypoint marker missing')
-for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app'):
+for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app','service_wave64_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
@@ -56,6 +56,8 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave61_commercial_desk.sh" "$APP"
 # Historical certified marker retained for the Wave 62 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 62
 /bin/bash "$ROOT/scripts/audit_wave62_contact_360.sh" "$APP"
-# Wave 63 upgrades the canonical CRM pipeline with explicit stage saves and deterministic local attention priority.
+# Historical certified marker retained for the Wave 63 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 63
 /bin/bash "$ROOT/scripts/audit_wave63_commercial_pipeline.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 63 · %s\n' "$APP"
+# Wave 64 composes campaign execution without adding provider mutations or background automation.
+/bin/bash "$ROOT/scripts/audit_wave64_execution_workspace.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 64 · %s\n' "$APP"
