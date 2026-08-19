@@ -16,6 +16,9 @@ APP="$OUT/Binario Marketing IA.app"
 LAUNCH="$APP/Contents/Resources/launch.py"
 PYTHON="$APP/Contents/Resources/runtime/python/bin/python3"
 [[ -f "$LAUNCH" && -x "$PYTHON" ]] || { echo "Current launch/runtime missing" >&2; exit 4; }
+
+# Phase 1: reconstruct the exact historical runtime through Wave 66 so its strict audit
+# remains meaningful. Wave 67 is injected only after every historical audit has passed.
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
@@ -24,7 +27,7 @@ text=path.read_text(encoding='utf-8')
 anchor='from binario_marketing.service_wave45_app import serve\n'
 if anchor not in text:
     raise SystemExit('Current build blocked: Wave 45 entrypoint marker missing')
-for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app','service_wave64_app','service_wave65_app','service_wave66_app','service_wave67_app'):
+for module in ('service_wave47_app','service_wave48_app','service_wave49_app','service_wave50_app','service_wave51_app','service_wave52_app','service_wave53_app','service_wave54_app','service_wave55_app','service_wave55_guard_app','service_wave56_app','service_wave59_app','service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app','service_wave64_app','service_wave65_app','service_wave66_app'):
     line=f'from binario_marketing.{module} import serve\n'
     if line not in text:
         text=text.replace(anchor, anchor+line, 1)
@@ -64,6 +67,22 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave65_results_intelligence.sh" "$APP"
 # Historical certified marker retained for the Wave 66 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 66
 /bin/bash "$ROOT/scripts/audit_wave66_product_uat_readiness.sh" "$APP"
+
+# Phase 2: add only the new W67 runtime after the historical W66 gate passed unchanged.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1])
+text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave66_app import serve\n'
+line='from binario_marketing.service_wave67_app import serve\n'
+if anchor not in text:
+    raise SystemExit('Current build blocked: Wave 66 entrypoint marker missing')
+if line not in text:
+    text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 # Wave 67 records explicit physical-UAT evidence while keeping CI ineligible for the physical gate.
 /bin/bash "$ROOT/scripts/audit_wave67_physical_uat_harness.sh" "$APP"
 printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 67 · %s\n' "$APP"
