@@ -77,6 +77,8 @@ class PhysicalUATStore:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("invalid physical UAT payload")
+        if payload.get("status") not in SESSION_STATUSES:
+            raise ValueError("invalid physical UAT session status")
         return payload
 
     def get(self, company_id: str, session_id: str) -> dict:
@@ -146,6 +148,8 @@ class PhysicalUATStore:
             "physical_uat_complete": False,
         }
         with self._lock:
+            if any(item.get("status") == "IN_PROGRESS" for item in self.list(company, limit=100)):
+                raise ValueError("physical UAT session already in progress for this company")
             write_json_atomic(self._path(company, row["id"]), row)
         return row
 
