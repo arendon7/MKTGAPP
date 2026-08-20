@@ -18,7 +18,7 @@ PYTHON="$APP/Contents/Resources/runtime/python/bin/python3"
 [[ -f "$LAUNCH" && -x "$PYTHON" ]] || { echo "Current launch/runtime missing" >&2; exit 4; }
 
 # Phase 1: reconstruct the exact historical runtime through Wave 66 so its strict audit
-# remains meaningful. Wave 67 is injected only after every historical audit has passed.
+# remains meaningful. Waves 67+ are injected only after every historical audit has passed.
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
@@ -68,7 +68,7 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 # Historical certified marker retained for the Wave 66 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 66
 /bin/bash "$ROOT/scripts/audit_wave66_product_uat_readiness.sh" "$APP"
 
-# Phase 2: add only the new W67 runtime after the historical W66 gate passed unchanged.
+# Phase 2: add W67 only after the strict historical W66 audit passed unchanged.
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
@@ -85,4 +85,22 @@ PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 # Wave 67 records explicit physical-UAT evidence while keeping CI ineligible for the physical gate.
 /bin/bash "$ROOT/scripts/audit_wave67_physical_uat_harness.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 67 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 67 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 67
+
+# Phase 3: W68 adds operator guidance only after the strict W67 evidence harness passed unchanged.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1])
+text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave67_app import serve\n'
+line='from binario_marketing.service_wave68_app import serve\n'
+if anchor not in text:
+    raise SystemExit('Current build blocked: Wave 67 entrypoint marker missing')
+if line not in text:
+    text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave68_guided_physical_uat.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 68 · %s\n' "$APP"
