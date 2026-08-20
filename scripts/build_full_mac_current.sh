@@ -103,4 +103,22 @@ path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave68_guided_physical_uat.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 68 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 68 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 68
+
+# Phase 4: W69 adds a read-only machine/bundle preflight after W68 guidance is certified unchanged.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1])
+text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave68_app import serve\n'
+line='from binario_marketing.service_wave69_app import serve\n'
+if anchor not in text:
+    raise SystemExit('Current build blocked: Wave 68 entrypoint marker missing')
+if line not in text:
+    text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave69_physical_uat_preflight.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 69 · %s\n' "$APP"
