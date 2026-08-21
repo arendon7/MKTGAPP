@@ -25,7 +25,7 @@ class AppRuntime(base.AppRuntime):
         sessions = self.physical_uat.list(company.id, limit=20)
         latest = sessions[0] if sessions else None
 
-        preflight_ready = bool(preflight.get("ready_for_physical_uat"))
+        preflight_ready = bool(preflight.get("ready_to_begin_physical_uat"))
         uat_accepted = bool(evidence.get("physical_uat", {}).get("accepted_for_current_build"))
         release_readiness = evidence.get("release_readiness") or {}
         blockers = list(release_readiness.get("blocker_codes") or [])
