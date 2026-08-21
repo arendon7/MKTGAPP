@@ -178,4 +178,18 @@ path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave74_interaction_integrity.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 74 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 74 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 74
+
+# Phase 10: W75 adds an explicit synthetic functional-UAT sandbox after all physical-UAT integrity gates pass unchanged.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave74_app import serve\n';line='from binario_marketing.service_wave75_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 74 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave75_controlled_uat_sandbox.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 75 · %s\n' "$APP"
