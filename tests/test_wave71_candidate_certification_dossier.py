@@ -17,7 +17,7 @@ class Wave71CandidateDossierTests(unittest.TestCase):
         self.runtime = AppRuntime.create(ROOT, Path(self.tmp.name) / "data")
         self.company = self.runtime.create_company({"name": "Greenatics"})
         self.readiness = {"manual_scenarios": [{"id":"journey","title":"Recorrido","required":True,"view":"home","precondition":"empresa","expected":"flujo"}]}
-        self.preflight = {"ready_for_physical_uat": True, "checks": [{"id":"machine","status":"PASS"}], "blockers": []}
+        self.preflight = {"ready_to_begin_physical_uat": True, "checks": [{"id":"machine","status":"PASS"}], "blockers": []}
         self.evidence = {
             "current_build": {"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1","signing_mode":"ad_hoc","notarized":False},
             "physical_uat": {"accepted_for_current_build": False},
