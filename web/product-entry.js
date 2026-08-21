@@ -26,6 +26,11 @@ function wave72EmitContext(forceRefresh=false){
   if(changed){const previous=wave72EntryState.lastCompanyId;wave72EntryState.lastCompanyId=current;window.dispatchEvent(new CustomEvent('marketing-company-change',{detail:{companyId:current,previousCompanyId:previous}}))}
   if(forceRefresh)window.dispatchEvent(new CustomEvent('marketing-ops-refreshed',{detail:{companyId:current}}));
 }
+function wave72BroadcastContext(){
+  const current=wave72CompanyId();wave72EntryState.lastCompanyId=current;
+  window.dispatchEvent(new CustomEvent('marketing-company-change',{detail:{companyId:current,previousCompanyId:current,rebroadcast:true}}));
+  window.dispatchEvent(new CustomEvent('marketing-ops-refreshed',{detail:{companyId:current,rebroadcast:true}}));
+}
 function wave72InstallContextEvents(){
   if(globalThis.__wave72ContextEventsInstalled)return;globalThis.__wave72ContextEventsInstalled=true;wave72EntryState.lastCompanyId=null;
   const baseRefresh=globalThis.refreshMarketingOps;
@@ -49,13 +54,14 @@ async function wave72Boot(){
   if(wave72EntryState.started)return;wave72EntryState.started=true;wave72BootNotice('Preparando MERCADEO APP…');
   try{
     await wave72EnsureScript('/marketing-ops.js','marketing-ops',()=>typeof globalThis.refreshMarketingOps==='function'&&Boolean(document.querySelector('#marketing-ops-shell')));
+    wave72InstallContextEvents();await wave72FinishOnboarding();
     await wave72EnsureScript('/crm.js','crm-wave32',()=>typeof globalThis.renderOpsCrm==='function');
     await wave72EnsureScript('/company-content.js','company-content-wave34',()=>typeof globalThis.submitOpsPublication==='function');
     await wave72EnsureScript('/campaigns.js','campaigns-wave35',()=>Boolean(document.querySelector('[data-ops-view="campaigns"]')));
     await wave72EnsureScript('/audiences.js','audiences-wave36',()=>Boolean(document.querySelector('script[data-audiences-wave38-chain]'))||Boolean(document.querySelector('#audience-wave36-style')));
     await wave72WaitFor(()=>Boolean(document.querySelector('#wave47-product-shell-style')),15000);
     await wave72WaitFor(()=>Boolean(document.querySelector('#wave71-dossier-style')),20000);
-    wave72InstallContextEvents();await wave72FinishOnboarding();
+    await wave72FinishOnboarding();wave72BroadcastContext();
     const integrity=await wave72Integrity();if(!integrity.ready)throw new Error(`Integridad incompleta: ${[...(integrity.missing?.web_assets||[]),...(integrity.missing?.runtime_methods||[]),...(integrity.missing?.failed_company_projections||[])].join(', ')||'revisar diagnóstico'}`);
     wave72EntryState.ready=true;wave72BootNotice(`Producto listo · ${integrity.inventory.present_web_assets}/${integrity.inventory.required_web_assets} superficies · ${integrity.inventory.registered_apps} apps`,'ok');
     setTimeout(()=>document.querySelector('#wave72-boot')?.remove(),3500)
