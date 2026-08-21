@@ -136,4 +136,18 @@ path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave71_candidate_certification_dossier.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 71 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 71 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 71
+
+# Phase 7: W72 fixes the physical-UAT entry blocker and verifies the complete company-scoped product surface.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave71_app import serve\n';line='from binario_marketing.service_wave72_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 71 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave72_product_entry_integrity.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 72 · %s\n' "$APP"
