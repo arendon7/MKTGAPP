@@ -72,18 +72,13 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
-path=Path(sys.argv[1])
-text=path.read_text(encoding='utf-8')
-anchor='from binario_marketing.service_wave66_app import serve\n'
-line='from binario_marketing.service_wave67_app import serve\n'
-if anchor not in text:
-    raise SystemExit('Current build blocked: Wave 66 entrypoint marker missing')
-if line not in text:
-    text=text.replace(anchor, anchor+line, 1)
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave66_app import serve\n';line='from binario_marketing.service_wave67_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 66 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
 path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
-# Wave 67 records explicit physical-UAT evidence while keeping CI ineligible for the physical gate.
 /bin/bash "$ROOT/scripts/audit_wave67_physical_uat_harness.sh" "$APP"
 # Historical certified marker retained for the Wave 67 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 67
 
@@ -91,14 +86,10 @@ PY
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
-path=Path(sys.argv[1])
-text=path.read_text(encoding='utf-8')
-anchor='from binario_marketing.service_wave67_app import serve\n'
-line='from binario_marketing.service_wave68_app import serve\n'
-if anchor not in text:
-    raise SystemExit('Current build blocked: Wave 67 entrypoint marker missing')
-if line not in text:
-    text=text.replace(anchor, anchor+line, 1)
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave67_app import serve\n';line='from binario_marketing.service_wave68_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 67 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
 path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
@@ -109,14 +100,10 @@ PY
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
-path=Path(sys.argv[1])
-text=path.read_text(encoding='utf-8')
-anchor='from binario_marketing.service_wave68_app import serve\n'
-line='from binario_marketing.service_wave69_app import serve\n'
-if anchor not in text:
-    raise SystemExit('Current build blocked: Wave 68 entrypoint marker missing')
-if line not in text:
-    text=text.replace(anchor, anchor+line, 1)
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave68_app import serve\n';line='from binario_marketing.service_wave69_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 68 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
 path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
@@ -127,16 +114,26 @@ PY
 "$PYTHON" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
 import sys
-path=Path(sys.argv[1])
-text=path.read_text(encoding='utf-8')
-anchor='from binario_marketing.service_wave69_app import serve\n'
-line='from binario_marketing.service_wave70_app import serve\n'
-if anchor not in text:
-    raise SystemExit('Current build blocked: Wave 69 entrypoint marker missing')
-if line not in text:
-    text=text.replace(anchor, anchor+line, 1)
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave69_app import serve\n';line='from binario_marketing.service_wave70_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 69 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
 path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave70_release_evidence.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 70 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 70 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 70
+
+# Phase 6: W71 consolidates candidate evidence into a read-only, exportable certification dossier.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave70_app import serve\n';line='from binario_marketing.service_wave71_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 70 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave71_candidate_certification_dossier.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 71 · %s\n' "$APP"
