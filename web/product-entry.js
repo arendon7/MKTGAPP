@@ -19,14 +19,15 @@ function wave72EnsureScript(src,datasetKey,ready){
     script=document.createElement('script');script.src=src;script.defer=true;script.dataset[datasetKey.replace(/-([a-z])/g,(_m,c)=>c.toUpperCase())]='1';script.addEventListener('load',done,{once:true});script.addEventListener('error',()=>reject(new Error(`No se pudo cargar ${src}`)),{once:true});document.head.append(script)
   })
 }
-function wave72CompanyId(){return globalThis.marketingOpsState?.selectedCompanyId||null}
+function wave72CompanyId(){return typeof marketingOpsState!=='undefined'?marketingOpsState.selectedCompanyId||null:null}
+function wave72Companies(){return typeof marketingOpsState!=='undefined'?marketingOpsState.companies||[]:[]}
 function wave72EmitContext(forceRefresh=false){
   const current=wave72CompanyId(),changed=current!==wave72EntryState.lastCompanyId;
   if(changed){const previous=wave72EntryState.lastCompanyId;wave72EntryState.lastCompanyId=current;window.dispatchEvent(new CustomEvent('marketing-company-change',{detail:{companyId:current,previousCompanyId:previous}}))}
   if(forceRefresh)window.dispatchEvent(new CustomEvent('marketing-ops-refreshed',{detail:{companyId:current}}));
 }
 function wave72InstallContextEvents(){
-  if(globalThis.__wave72ContextEventsInstalled)return;globalThis.__wave72ContextEventsInstalled=true;wave72EntryState.lastCompanyId=wave72CompanyId();
+  if(globalThis.__wave72ContextEventsInstalled)return;globalThis.__wave72ContextEventsInstalled=true;wave72EntryState.lastCompanyId=null;
   const baseRefresh=globalThis.refreshMarketingOps;
   if(typeof baseRefresh==='function')globalThis.refreshMarketingOps=async function(...args){const result=await baseRefresh(...args);wave72EmitContext(true);return result};
 }
@@ -40,7 +41,7 @@ async function wave72Integrity(){
 }
 async function wave72FinishOnboarding(){
   await globalThis.refreshMarketingOps?.(true);wave72EmitContext(true);wave72EnsureCompanyAction();
-  const companies=globalThis.marketingOpsState?.companies||[];
+  const companies=wave72Companies();
   if(!companies.length){globalThis.opsShowView?.('companies');setTimeout(()=>document.querySelector('#marketing-ops-view input[required]')?.focus(),0);return}
   if(!wave72CompanyId()&&typeof globalThis.wave47EnsureCompanySelection==='function'){globalThis.wave47EnsureCompanySelection();await globalThis.refreshMarketingOps?.(true)}
 }
