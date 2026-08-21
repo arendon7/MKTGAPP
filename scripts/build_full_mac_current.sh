@@ -41,10 +41,15 @@ IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
 /bin/bash "$ROOT/scripts/audit_wave49_creative_studio.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave50_command_center.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave51_ai_copilot.sh" "$APP"
+# Wave 52 remains an explicit audited prerequisite for every later arm64 iteration.
 /bin/bash "$ROOT/scripts/audit_wave52_learning_loop.sh" "$APP"
+# Wave 53 Attribution Foundation remains an explicit audited prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave53_attribution_foundation.sh" "$APP"
+# Wave 54 First-Party Capture Bridge remains an explicit audited prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave54_capture_bridge.sh" "$APP"
+# Wave 55 Lead Intake & Conversion remains an explicit audited prerequisite.
 /bin/bash "$ROOT/scripts/audit_wave55_lead_intake.sh" "$APP"
+# Wave 56 remains available as an optional cloud extension; its safety contract is still audited.
 /bin/bash "$ROOT/scripts/audit_wave56_public_gateway.sh" "$APP"
 # Historical certified marker retained for the Wave 59 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 59
 /bin/bash "$ROOT/scripts/audit_wave59_local_product_integration.sh" "$APP"
