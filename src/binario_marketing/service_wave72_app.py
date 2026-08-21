@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 from urllib.parse import parse_qs, urlparse
 
 from . import service_wave71_app as base
@@ -115,6 +116,26 @@ MarketingHTTPServer = base.MarketingHTTPServer
 
 
 class MarketingHandler(base.MarketingHandler):
+    def _static(self, path: str) -> None:
+        if path in {"/", "/index.html"}:
+            target = self.server.runtime.repo_root / "web" / "index.html"
+            if not target.is_file():
+                self._error(HTTPStatus.NOT_FOUND, "not found")
+                return
+            text = target.read_text(encoding="utf-8")
+            tag = '<script src="/product-entry.js" defer data-product-entry-wave72="1"></script>'
+            if tag not in text:
+                marker = "</body>"
+                if marker not in text:
+                    self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "product entry marker missing")
+                    return
+                text = text.replace(marker, f"  {tag}\n{marker}", 1)
+            body = text.encode("utf-8")
+            self._headers(HTTPStatus.OK, "text/html; charset=utf-8", len(body))
+            self.wfile.write(body)
+            return
+        super()._static(path)
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/product-entry.js":
