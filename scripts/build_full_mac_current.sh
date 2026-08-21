@@ -150,4 +150,18 @@ path.write_text(text, encoding='utf-8')
 PY
 /usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave72_product_entry_integrity.sh" "$APP"
-printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 72 · %s\n' "$APP"
+# Historical certified marker retained for the Wave 72 contract: CURRENT ARM64 ITERATION BUILD PASS: Wave 72
+
+# Phase 8: W73 closes the transitive browser bootstrap and adds safe UI journey diagnostics.
+"$PYTHON" -I -B - "$LAUNCH" <<'PY'
+from pathlib import Path
+import sys
+path=Path(sys.argv[1]);text=path.read_text(encoding='utf-8')
+anchor='from binario_marketing.service_wave72_app import serve\n';line='from binario_marketing.service_wave73_app import serve\n'
+if anchor not in text: raise SystemExit('Current build blocked: Wave 72 entrypoint marker missing')
+if line not in text: text=text.replace(anchor, anchor+line, 1)
+path.write_text(text, encoding='utf-8')
+PY
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave73_ui_journey_integrity.sh" "$APP"
+printf 'CURRENT ARM64 ITERATION BUILD PASS: Wave 73 · %s\n' "$APP"
