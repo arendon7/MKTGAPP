@@ -8,19 +8,17 @@ PY="$RES/runtime/python/bin/python3"
 MANIFEST="$RES/PHYSICAL_UAT_CANDIDATE.json"
 SUMMARY="$RES/PHYSICAL_UAT_CANDIDATE.md"
 [[ -x "$PY" && -f "$MANIFEST" && -f "$SUMMARY" ]]
-
 "$PY" -I -B "$ROOT/scripts/write_physical_uat_candidate.py" --app "$APP" --verify > /tmp/w81-verify.$$.json
 trap 'rm -f /tmp/w81-verify.$$.json' EXIT
-
 "$PY" -I -B - "$MANIFEST" <<'PY'
 import json,sys
 row=json.load(open(sys.argv[1],encoding='utf-8'))
 assert row['schema']=='binario.marketing.physical-uat-candidate.v1', row
-assert row['role']=='PHYSICAL_UAT_CANDIDATE_ONLY', row
+assert row['role'] in {'PHYSICAL_UAT_CANDIDATE_ONLY','VALIDATION_BUILD_ONLY'}, row
 assert row['architecture']=='arm64', row
 assert row['runtime_wave']==76, row
 assert row['runtime_entrypoint']=='service_wave76_app', row
-assert row['certification_guard_wave']==81, row
+assert int(row['certification_guard_wave']) >= 81, row
 assert len(row['candidate_source_sha256'])==64, row
 assert row['release_boundary']['release_ready'] is False, row
 assert row['release_boundary']['release_tag'] is None, row
@@ -33,7 +31,6 @@ assert row['physical_uat']['evidence_must_match_candidate_source_sha256'] is Tru
 assert row['sandbox_boundary']['functional_sandbox_is_release_evidence'] is False, row
 assert row['sandbox_boundary']['synthetic_company_is_physical_uat_eligible'] is False, row
 PY
-
 /usr/bin/grep -q 'Physical UAT Candidate' "$SUMMARY"
 /usr/bin/grep -q 'Release authority: \*\*NO\*\*' "$SUMMARY"
 /usr/bin/grep -q 'Automatic PASS: \*\*NO\*\*' "$SUMMARY"

@@ -302,4 +302,8 @@ jobs:
             FULL_MAC_DELIVERY.json
             PHYSICAL_UAT_CANDIDATE.json
             PHYSICAL_UAT_CANDIDATE.md
+            PHYSICAL_UAT_HANDOFF_VERIFY.py
+            START_PHYSICAL_UAT.command
+            RECORD_RELEASE_UAT.command
+            PHYSICAL_UAT_OPERATOR.md
           if-no-files-found: error

@@ -1,15 +1,18 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _compact(text: str) -> str:
+    return "".join(text.split())
 
 
 class Wave78ReleaseContractDriftGuardTests(unittest.TestCase):
     def test_physical_uat_preflight_key_is_canonical_end_to_end(self):
         wave69 = (ROOT / "src/binario_marketing/service_wave69_app.py").read_text(encoding="utf-8")
         wave71 = (ROOT / "src/binario_marketing/service_wave71_app.py").read_text(encoding="utf-8")
-        self.assertIn('"ready_to_begin_physical_uat": ready', wave69)
+        self.assertIn('"ready_to_begin_physical_uat":ready', _compact(wave69))
         self.assertIn('preflight.get("ready_to_begin_physical_uat")', wave71)
         self.assertNotIn('preflight.get("ready_for_physical_uat")', wave71)
 
