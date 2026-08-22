@@ -12,7 +12,7 @@ class Wave79ReleaseRuntimeParityTests(unittest.TestCase):
         self.assertNotIn('scripts/build_full_mac_app.sh --arch', workflow)
         self.assertIn('service_wave76_app import serve', workflow)
         self.assertIn('"runtime_wave":76', workflow)
-        self.assertIn('"certification_guard_wave":78', workflow)
+        self.assertIn('"certification_guard_wave":80', workflow)
 
     def test_release_candidate_routes_both_architectures_to_current_runtime_builders(self):
         builder = (ROOT / "scripts/build_full_mac_release_candidate.sh").read_text(encoding="utf-8")
