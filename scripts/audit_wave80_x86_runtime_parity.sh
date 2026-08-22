@@ -7,19 +7,21 @@ SRC="$RES/source"
 LAUNCH="$RES/launch.py"
 PY="$RES/runtime/python/bin/python3"
 PROVENANCE="$RES/BUILD_PROVENANCE.json"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 [[ -f "$LAUNCH" && -x "$PY" && -f "$PROVENANCE" ]]
 /usr/bin/grep -q 'service_wave76_app import serve' "$LAUNCH"
 ! /usr/bin/grep -q 'service_wave77_app import serve' "$LAUNCH"
 ! /usr/bin/grep -q 'service_wave78_app import serve' "$LAUNCH"
 
-"$PY" -I -B - "$SRC" "$PROVENANCE" <<'PY'
+"$PY" -I -B - "$SRC" "$PROVENANCE" "$TMP" <<'PY'
 from pathlib import Path
 import json
 import sys
-from unittest.mock import patch
 
 source = Path(sys.argv[1])
 provenance_path = Path(sys.argv[2])
+data_root = Path(sys.argv[3]) / "data"
 sys.path.insert(0, str(source / "src"))
 from binario_marketing.service_wave76_app import AppRuntime
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
@@ -30,7 +32,7 @@ assert provenance["product_version"] == __version__ == "0.9.0.dev1", provenance
 assert RELEASE_READY is False
 assert RELEASE_TAG is None
 
-runtime = AppRuntime.create(source, provenance_path.parent / "W80-Audit-Data")
+runtime = AppRuntime.create(source, data_root)
 try:
     company = runtime.create_company({"name": "W80 x86 Runtime Audit"})
     preflight = runtime.physical_uat_preflight(company["id"])
