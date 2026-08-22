@@ -283,7 +283,7 @@ jobs:
           /usr/bin/grep -q '^1080,1920$' "$RUNNER_TEMP/company-dimensions.txt"
           echo 'CURRENT ARM64 SMOKE PASS: company workspace + product shell + real vertical render'
 
-      - name: Package exact physical UAT candidate
+      - name: Package and hash
         shell: bash
         run: |
           set -euo pipefail
