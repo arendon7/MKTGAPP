@@ -14,20 +14,12 @@ CANDIDATE_SCHEMA = "binario.marketing.physical-uat-candidate.v1"
 ATTESTATION_SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
 EXPECTED_RUNTIME_WAVE = 76
-EXPECTED_GUARD_WAVE = 84
+EXPECTED_CANDIDATE_GUARD_WAVE = 84
+ATTESTATION_WAVE = 85
 REQUIRED_PHASE_B_IDS = {
-    "launcher_relaunch",
-    "persistence",
-    "company_crm",
-    "today_complete",
-    "today_reschedule",
-    "content_library",
-    "social_readonly",
-    "manual_reply",
-    "editorial_management",
-    "video_import_render",
-    "transcription",
-    "credentials",
+    "launcher_relaunch", "persistence", "company_crm", "today_complete",
+    "today_reschedule", "content_library", "social_readonly", "manual_reply",
+    "editorial_management", "video_import_render", "transcription", "credentials",
 }
 
 
@@ -59,7 +51,7 @@ def _require(ok: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def _candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
+def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     resources = app / "Contents" / "Resources"
     candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
     provenance_path = resources / "BUILD_PROVENANCE.json"
@@ -67,19 +59,20 @@ def _candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     _require(provenance_path.is_file(), "build provenance missing")
     candidate = _load(candidate_path)
     provenance = _load(provenance_path)
+    origin = candidate.get("build_origin") or {}
+    ref = str(origin.get("ref") or "")
     _require(candidate.get("schema") == CANDIDATE_SCHEMA, "unexpected candidate schema")
     _require(candidate.get("role") == EXPECTED_ROLE, "candidate is not physical-UAT eligible")
-    _require(candidate.get("trusted_for_physical_uat") is True, "candidate origin is not trusted for physical UAT")
-    origin = candidate.get("build_origin") or {}
+    _require(origin.get("event") == "push", "physical candidate must originate from a push")
     _require(origin.get("trusted_for_physical_uat") is True, "candidate build origin is not trusted")
-    _require(origin.get("event_name") == "push", "physical candidate must originate from a push")
-    ref = str(origin.get("ref") or "")
     _require(ref == "refs/heads/main" or ref.startswith("refs/tags/v"), "physical candidate must originate from main or a version tag")
     _require(candidate.get("architecture") == "arm64", "physical candidate must be arm64")
     _require(candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "candidate runtime wave drift")
-    _require(candidate.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, "candidate guard wave drift")
+    _require(candidate.get("certification_guard_wave") == EXPECTED_CANDIDATE_GUARD_WAVE, "candidate guard wave drift")
     _require(candidate.get("git_sha") == provenance.get("git_sha"), "candidate/provenance git SHA mismatch")
     _require(candidate.get("product_version") == provenance.get("product_version"), "candidate/provenance version mismatch")
+    physical = candidate.get("physical_uat") or {}
+    _require(physical.get("eligible_build_origin") is True, "candidate is not physical-UAT origin eligible")
     boundary = candidate.get("release_boundary") or {}
     _require(boundary.get("release_ready") is False, "candidate unexpectedly carries release-ready authority")
     _require(boundary.get("release_tag") is None, "candidate unexpectedly carries a release tag")
@@ -87,36 +80,33 @@ def _candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     return candidate, candidate_path, provenance
 
 
-def _validate_phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     _require(report.get("schema") == PHASE_A_SCHEMA, "invalid Phase A evidence schema")
-    _require(report.get("release_authority") is False, "Phase A evidence unexpectedly has release authority")
+    _require(report.get("release_authority") is False, "Phase A unexpectedly has release authority")
     session = report.get("session") or {}
-    _require(isinstance(session, dict), "Phase A session missing")
+    machine = session.get("machine") or {}
     _require(session.get("status") == "PASSED", "Phase A session is not PASSED")
     _require(session.get("physical_uat_complete") is True, "Phase A physical_uat_complete is not true")
-    machine = session.get("machine") or {}
     _require(machine.get("system") == "Darwin", "Phase A was not recorded on Darwin")
     _require(str(machine.get("machine") or "").lower() == "arm64", "Phase A was not recorded on arm64")
     _require(machine.get("is_ci") is False, "Phase A cannot come from CI")
     _require(machine.get("physical_gate_eligible") is True, "Phase A machine is not physical-gate eligible")
 
     scenarios = session.get("scenarios") or []
-    _require(isinstance(scenarios, list) and scenarios, "Phase A scenarios missing")
     required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
     _require(bool(required), "Phase A required scenarios missing")
     _require(all(row.get("status") == "PASS" for row in required), "Phase A required scenarios are not all PASS")
 
-    expected_evidence_sha = str(session.get("evidence_sha256") or "")
-    evidence = dict(session)
-    evidence["evidence_sha256"] = None
-    actual_evidence_sha = _digest(evidence)
-    _require(expected_evidence_sha == actual_evidence_sha, "Phase A session evidence digest mismatch")
+    expected_digest = str(session.get("evidence_sha256") or "")
+    digest_payload = dict(session)
+    digest_payload["evidence_sha256"] = None
+    _require(expected_digest == _digest(digest_payload), "Phase A session evidence digest mismatch")
 
     build = session.get("build") or {}
+    _require(build.get("source") == "BUILD_PROVENANCE.json", "Phase A did not use bundled build provenance")
     _require(build.get("git_sha") == candidate.get("git_sha"), "Phase A git SHA mismatch")
     _require(str(build.get("architecture") or "").lower() == "arm64", "Phase A architecture mismatch")
     _require(build.get("product_version") == candidate.get("product_version"), "Phase A product version mismatch")
-    _require(build.get("source") == "BUILD_PROVENANCE.json", "Phase A did not use bundled build provenance")
 
     summary = report.get("summary") or {}
     _require(summary.get("physical_uat_complete") is True, "Phase A summary is not complete")
@@ -124,117 +114,78 @@ def _validate_phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict
     _require(int(summary.get("blocked") or 0) == 0, "Phase A summary contains blockers")
     _require(int(summary.get("pending") or 0) == 0, "Phase A summary contains pending required scenarios")
     _require(int(summary.get("passed") or 0) == len(required), "Phase A summary/pass count mismatch")
-
     return {
-        "session_id": session.get("id"),
-        "evidence_sha256": expected_evidence_sha,
-        "required_scenarios": len(required),
-        "passed_scenarios": len(required),
+        "session_id": session.get("id"), "evidence_sha256": expected_digest,
+        "required_scenarios": len(required), "passed_scenarios": len(required),
         "finished_at": session.get("finished_at"),
     }
 
 
-def _validate_phase_b(report: dict[str, Any], candidate: dict[str, Any], candidate_manifest_sha: str) -> dict[str, Any]:
+def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: str) -> dict[str, Any]:
     _require(report.get("schema") == PHASE_B_SCHEMA, "invalid Phase B evidence schema")
-    _require(report.get("git_sha") == candidate.get("git_sha"), "Phase B git SHA mismatch")
-    _require(report.get("architecture") == "arm64", "Phase B architecture mismatch")
-    _require(report.get("version") == candidate.get("product_version"), "Phase B product version mismatch")
-    _require(report.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "Phase B runtime wave mismatch")
-    _require(report.get("candidate_source_sha256") == candidate.get("candidate_source_sha256"), "Phase B candidate source digest mismatch")
-    _require(report.get("candidate_manifest_sha256") == candidate_manifest_sha, "Phase B candidate manifest digest mismatch")
+    checks = {
+        "git SHA": report.get("git_sha") == candidate.get("git_sha"),
+        "architecture": report.get("architecture") == "arm64",
+        "product version": report.get("version") == candidate.get("product_version"),
+        "runtime wave": report.get("runtime_wave") == EXPECTED_RUNTIME_WAVE,
+        "candidate source digest": report.get("candidate_source_sha256") == candidate.get("candidate_source_sha256"),
+        "candidate manifest digest": report.get("candidate_manifest_sha256") == manifest_sha,
+    }
+    failed = [name for name, ok in checks.items() if not ok]
+    _require(not failed, "Phase B candidate mismatch: " + ", ".join(failed))
     _require(report.get("automatic_passed") is True, "Phase B automatic checks did not pass")
-    _require(report.get("uat_passed") is True, "Phase B uat_passed is not true")
-    _require(report.get("overall") == "UAT_PASS", "Phase B overall result is not UAT_PASS")
+    _require(report.get("uat_passed") is True and report.get("overall") == "UAT_PASS", "Phase B is not UAT_PASS")
 
     manual = report.get("manual_steps") or []
-    _require(isinstance(manual, list), "Phase B manual steps missing")
     ids = {str(row.get("id")) for row in manual if isinstance(row, dict)}
-    _require(ids == REQUIRED_PHASE_B_IDS, "Phase B manual gate set drift")
-    _require(len(manual) == len(REQUIRED_PHASE_B_IDS), "Phase B manual gate count drift")
+    _require(ids == REQUIRED_PHASE_B_IDS and len(manual) == 12, "Phase B manual gate set drift")
     for row in manual:
-        _require(isinstance(row, dict), "invalid Phase B manual gate")
-        _require(row.get("status") == "PASS", f"Phase B gate is not PASS: {row.get('id')}")
-        _require(bool(str(row.get("note") or "").strip()), f"Phase B gate lacks concrete note: {row.get('id')}")
-        _require(bool(str(row.get("recorded_at") or "").strip()), f"Phase B gate lacks recorded_at: {row.get('id')}")
-
-    return {
-        "required_gates": len(REQUIRED_PHASE_B_IDS),
-        "passed_gates": len(REQUIRED_PHASE_B_IDS),
-        "overall": "UAT_PASS",
-        "updated_at": report.get("updated_at"),
-    }
+        gate = str(row.get("id") or "unknown")
+        _require(row.get("status") == "PASS", f"Phase B gate is not PASS: {gate}")
+        _require(bool(str(row.get("note") or "").strip()), f"Phase B gate lacks concrete note: {gate}")
+        _require(bool(str(row.get("recorded_at") or "").strip()), f"Phase B gate lacks recorded_at: {gate}")
+    return {"required_gates": 12, "passed_gates": 12, "overall": "UAT_PASS", "updated_at": report.get("updated_at")}
 
 
 def finalize(app: Path, phase_a_path: Path, phase_b_path: Path) -> dict[str, Any]:
-    app = app.expanduser().resolve()
-    phase_a_path = phase_a_path.expanduser().resolve()
-    phase_b_path = phase_b_path.expanduser().resolve()
+    app, phase_a_path, phase_b_path = (p.expanduser().resolve() for p in (app, phase_a_path, phase_b_path))
     _require(app.is_dir(), f"app bundle missing: {app}")
     _require(phase_a_path.is_file(), f"Phase A evidence missing: {phase_a_path}")
     _require(phase_b_path.is_file(), f"Phase B evidence missing: {phase_b_path}")
-
-    candidate, candidate_path, provenance = _candidate(app)
-    candidate_manifest_sha = _sha256_file(candidate_path)
-    phase_a = _load(phase_a_path)
-    phase_b = _load(phase_b_path)
-    phase_a_summary = _validate_phase_a(phase_a, candidate)
-    phase_b_summary = _validate_phase_b(phase_b, candidate, candidate_manifest_sha)
-
+    candidate, candidate_path, provenance = _load_candidate(app)
+    manifest_sha = _sha256_file(candidate_path)
+    a = _phase_a(_load(phase_a_path), candidate)
+    b = _phase_b(_load(phase_b_path), candidate, manifest_sha)
     binding = {
-        "git_sha": candidate.get("git_sha"),
-        "product_version": candidate.get("product_version"),
-        "architecture": "arm64",
-        "runtime_wave": EXPECTED_RUNTIME_WAVE,
-        "certification_guard_wave": EXPECTED_GUARD_WAVE,
+        "git_sha": candidate.get("git_sha"), "product_version": candidate.get("product_version"),
+        "architecture": "arm64", "runtime_wave": EXPECTED_RUNTIME_WAVE,
+        "candidate_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE, "attestation_wave": ATTESTATION_WAVE,
         "candidate_source_sha256": candidate.get("candidate_source_sha256"),
-        "candidate_manifest_sha256": candidate_manifest_sha,
-        "build_origin": candidate.get("build_origin"),
+        "candidate_manifest_sha256": manifest_sha, "build_origin": candidate.get("build_origin"),
         "provenance_schema": provenance.get("schema"),
     }
     core = {
-        "schema": ATTESTATION_SCHEMA,
-        "binding": binding,
-        "phase_a": {
-            **phase_a_summary,
-            "report_sha256": _sha256_file(phase_a_path),
-        },
-        "phase_b": {
-            **phase_b_summary,
-            "report_sha256": _sha256_file(phase_b_path),
-        },
-        "both_phases_passed": True,
-        "release_authority": False,
-        "production_ready": False,
+        "schema": ATTESTATION_SCHEMA, "binding": binding,
+        "phase_a": {**a, "report_sha256": _sha256_file(phase_a_path)},
+        "phase_b": {**b, "report_sha256": _sha256_file(phase_b_path)},
+        "both_phases_passed": True, "release_authority": False, "production_ready": False,
     }
-    attestation_sha = _digest(core)
-    return {
-        **core,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "attestation_sha256": attestation_sha,
-    }
+    return {**core, "generated_at": datetime.now(timezone.utc).isoformat(), "attestation_sha256": _digest(core)}
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    b = report["binding"]
-    a = report["phase_a"]
-    p = report["phase_b"]
+    b, a, p = report["binding"], report["phase_a"], report["phase_b"]
     return "\n".join([
-        "# BINARIO Marketing IA · Combined Physical UAT Attestation",
-        "",
-        f"- Git SHA: `{b['git_sha']}`",
-        f"- Version: `{b['product_version']}`",
-        f"- Architecture: `{b['architecture']}`",
-        f"- Runtime: `Wave {b['runtime_wave']}`",
+        "# BINARIO Marketing IA · Combined Physical UAT Attestation", "",
+        f"- Git SHA: `{b['git_sha']}`", f"- Version: `{b['product_version']}`",
+        f"- Architecture: `{b['architecture']}`", f"- Runtime: `Wave {b['runtime_wave']}`",
         f"- Candidate source SHA-256: `{b['candidate_source_sha256']}`",
         f"- Candidate manifest SHA-256: `{b['candidate_manifest_sha256']}`",
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
         f"- Phase B: **PASS** · {p['passed_gates']}/{p['required_gates']} release gates",
         f"- Combined attestation SHA-256: `{report['attestation_sha256']}`",
-        "- Release authority: **NO**",
-        "- Production ready: **NO**",
-        "",
-        "This attestation proves only that both physical UAT evidence layers passed on the same trusted exact candidate. It does not enable release flags, signing, notarization or publication.",
-        "",
+        "- Release authority: **NO**", "- Production ready: **NO**", "",
+        "This attestation proves only that both physical UAT layers passed on the same trusted exact candidate.", "",
     ])
 
 
@@ -249,19 +200,11 @@ def main() -> int:
         report = finalize(args.app, args.phase_a, args.phase_b)
     except ValueError as exc:
         raise SystemExit(f"COMBINED PHYSICAL UAT BLOCKED: {exc}") from exc
-    out = args.output.expanduser().resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    out = args.output.expanduser().resolve(); out.mkdir(parents=True, exist_ok=True)
     json_path = out / "combined-physical-uat-attestation.json"
-    md_path = out / "combined-physical-uat-attestation.md"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    md_path.write_text(render_markdown(report), encoding="utf-8")
-    print(json.dumps({
-        "both_phases_passed": report["both_phases_passed"],
-        "git_sha": report["binding"]["git_sha"],
-        "attestation_sha256": report["attestation_sha256"],
-        "output": str(json_path),
-        "release_authority": False,
-    }, ensure_ascii=False, indent=2))
+    (out / "combined-physical-uat-attestation.md").write_text(render_markdown(report), encoding="utf-8")
+    print(json.dumps({"both_phases_passed": True, "git_sha": report["binding"]["git_sha"], "attestation_sha256": report["attestation_sha256"], "output": str(json_path), "release_authority": False}, ensure_ascii=False, indent=2))
     return 0
 
 
