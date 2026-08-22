@@ -30,8 +30,10 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         uses: actions/download-artifact@v4
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
+        run: scripts/build_full_mac_release_candidate.sh --distribution --arch "${{ matrix.arch }}"
+        run: test -f "$APP/Contents/Resources/DISTRIBUTION_REBUILD.json" && test ! -e "$APP/Contents/Resources/PHYSICAL_UAT_CANDIDATE.json" # SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD
         run: scripts/notarize_release_candidate.sh "$APP" release-evidence/distribution-trust-${{ matrix.arch }}.json
-        run: python scripts/verify_distribution_trust.py --evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --git-sha "$GITHUB_SHA" --architecture "${{ matrix.arch }}" # stapler spctl
+        run: python scripts/verify_distribution_trust.py --evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --git-sha "$GITHUB_SHA" --architecture "${{ matrix.arch }}"
         - name: Enforce production release candidate
           run: python scripts/release_candidate_gate.py --repo . --app "$APP" --uat-evidence release-evidence/combined-physical-uat-attestation.json --distribution-evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --production
         - name: Package immutable release asset
@@ -42,7 +44,7 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         verify.verify_pipeline_contract(workflow)
 
-    def test_contract_requires_uat_distribution_trust_and_production_gate_before_packaging(self):
+    def test_contract_requires_uat_distribution_rebuild_trust_and_production_gate_before_packaging(self):
         verify = _module()
         valid = self._valid_pipeline()
         verify.verify_pipeline_contract(valid)
@@ -51,6 +53,10 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
             "missing_uat_verifier": valid.replace("verify_combined_uat_attestation.py", "removed.py"),
             "missing_developer_id": valid.replace("APPLE_DEVELOPER_ID_P12_BASE64", "REMOVED_CERT", 2),
             "missing_notary_key": valid.replace("APPLE_NOTARY_KEY_P8_BASE64", "REMOVED_NOTARY", 2),
+            "missing_distribution_mode": valid.replace("build_full_mac_release_candidate.sh --distribution", "build_full_mac_release_candidate.sh"),
+            "missing_rebuild_manifest": valid.replace("DISTRIBUTION_REBUILD.json", "REMOVED_REBUILD.json"),
+            "missing_rebuild_purpose": valid.replace("SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD", "REMOVED_PURPOSE"),
+            "missing_candidate_absence_check": valid.replace("test ! -e", "test -e"),
             "missing_notarize": valid.replace("notarize_release_candidate.sh", "removed-notary.sh"),
             "missing_distribution_verify": valid.replace("verify_distribution_trust.py", "removed-dist.py"),
             "missing_distribution_gate": valid.replace(" --distribution-evidence release-evidence/distribution-trust-${{ matrix.arch }}.json", ""),
