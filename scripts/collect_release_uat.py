@@ -75,7 +75,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Rule",
         "",
-        "Este archivo se genera inicialmente con `uat_passed=false`. UAT solo puede considerarse PASS cuando todos los gates manuales se ejecuten sobre este mismo SHA, digest de fuente y candidato arm64 generado desde main.",
+        "Este archivo se genera inicialmente con `uat_passed=false`. UAT solo puede considerarse PASS cuando todos los gates manuales se ejecuten sobre este mismo SHA, digest de fuente y candidato arm64 generado desde un origen GitHub confiable.",
         "La generación del reporte no habilita `RELEASE_READY`, no crea un tag y no sustituye firma Developer ID ni notarización.",
         "",
     ]
@@ -101,10 +101,11 @@ def main() -> int:
     host_machine = platform.machine().lower()
     is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
     origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}
+    origin_ref = str(origin.get("ref") or "")
     trusted_origin = (
         candidate.get("role") == PHYSICAL_ROLE
         and origin.get("event") == "push"
-        and origin.get("ref") == "refs/heads/main"
+        and (origin_ref == "refs/heads/main" or origin_ref.startswith("refs/tags/v"))
         and origin.get("trusted_for_physical_uat") is True
         and candidate.get("physical_uat", {}).get("eligible_build_origin") is True
     )
@@ -124,7 +125,7 @@ def main() -> int:
         {"name": "build_provenance", "ok": provenance.get("git_sha") == readiness.get("git_sha") and bool(provenance.get("git_sha"))},
         {"name": "physical_arm64_candidate", "ok": provenance.get("architecture") == "arm64", "value": provenance.get("architecture")},
         {"name": "physical_arm64_host", "ok": physical_host, "value": {"system": host_system, "machine": host_machine, "is_ci": is_ci}},
-        {"name": "trusted_main_build_origin", "ok": trusted_origin, "value": {"role": candidate.get("role"), "origin": origin}},
+        {"name": "trusted_build_origin", "ok": trusted_origin, "value": {"role": candidate.get("role"), "origin": origin}},
         {"name": "candidate_manifest", "ok": candidate_consistent, "value": candidate.get("schema")},
         {"name": "codesign_integrity", "ok": codesign["ok"], "detail": codesign},
         {"name": "launcher_present", "ok": launch_executable.is_file()},
