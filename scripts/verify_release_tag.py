@@ -16,7 +16,7 @@ PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
-    """Require physical UAT transport plus Developer ID/notarization before packaging."""
+    """Require UAT transport, explicit distribution rebuild, Developer ID/notarization, and production gating."""
     text = PERSISTENT_RELEASE.read_text(encoding="utf-8") if workflow_text is None else workflow_text
     markers = {
         "PHYSICAL_UAT_ATTESTATION_B64": "persistent release lacks the physical-UAT attestation transport secret",
@@ -27,6 +27,9 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         "APPLE_DEVELOPER_ID_P12_BASE64": "persistent release lacks Developer ID certificate transport",
         "APPLE_DEVELOPER_IDENTITY": "persistent release lacks expected Developer ID identity",
         "APPLE_NOTARY_KEY_P8_BASE64": "persistent release lacks App Store Connect notary key transport",
+        "build_full_mac_release_candidate.sh --distribution": "persistent release lacks explicit source-equivalent distribution rebuild mode",
+        "DISTRIBUTION_REBUILD.json": "persistent release lacks distribution rebuild identity verification",
+        "SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD": "persistent release lacks explicit distribution rebuild purpose verification",
         "notarize_release_candidate.sh": "persistent release lacks notarization execution",
         "verify_distribution_trust.py": "persistent release lacks distribution trust verification",
         "release_candidate_gate.py": "persistent release lacks release_candidate_gate.py production enforcement",
@@ -40,6 +43,8 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         indexes[marker] = index
 
     uat_verifier = indexes["verify_combined_uat_attestation.py"]
+    rebuild = indexes["build_full_mac_release_candidate.sh --distribution"]
+    rebuild_manifest = indexes["DISTRIBUTION_REBUILD.json"]
     notarize = indexes["notarize_release_candidate.sh"]
     dist_verify = indexes["verify_distribution_trust.py"]
     gate = indexes["release_candidate_gate.py"]
@@ -50,6 +55,10 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         raise ValueError("verified UAT evidence must be uploaded before native production gating")
     if indexes["actions/download-artifact@v4"] > gate:
         raise ValueError("native build must download verified UAT evidence before production gating")
+    if rebuild > rebuild_manifest:
+        raise ValueError("distribution rebuild must execute before its manifest is verified")
+    if rebuild_manifest > notarize:
+        raise ValueError("distribution rebuild identity must be verified before notarization")
     if notarize > dist_verify:
         raise ValueError("native distribution must be notarized before distribution evidence verification")
     if dist_verify > gate:
@@ -60,6 +69,11 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
     uat_window = text[uat_verifier:gate]
     if "--expected-git-sha" not in uat_window or "GITHUB_SHA" not in uat_window:
         raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
+    rebuild_window = text[rebuild:notarize]
+    if "PHYSICAL_UAT_CANDIDATE.json" not in rebuild_window or "test ! -e" not in rebuild_window:
+        raise ValueError("distribution rebuild does not prove absence of exact physical-UAT candidate identity")
+    if "--options runtime" not in (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8") if workflow_text is None else False:
+        raise ValueError("distribution builder lacks hardened-runtime signing")
     distribution_window = text[notarize:gate]
     for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
         if marker not in distribution_window:
