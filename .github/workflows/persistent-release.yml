@@ -174,7 +174,7 @@ jobs:
         with:
           path: .cache/full-mac-whisper-${{ matrix.arch }}
           key: release-whisper-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
-      - name: Build and audit native current-runtime candidate with Developer ID
+      - name: Build source-equivalent native distribution rebuild with Developer ID
         shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
@@ -182,12 +182,20 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/*.sh
-          scripts/build_full_mac_release_candidate.sh --arch "${{ matrix.arch }}"
+          scripts/build_full_mac_release_candidate.sh --distribution --arch "${{ matrix.arch }}"
           scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
-          python - "dist/Binario Marketing IA.app/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
+          APP="dist/Binario Marketing IA.app"
+          test -f "$APP/Contents/Resources/DISTRIBUTION_REBUILD.json"
+          test ! -e "$APP/Contents/Resources/PHYSICAL_UAT_CANDIDATE.json"
+          test ! -e "$APP/Contents/Resources/PHYSICAL_UAT_CANDIDATE.md"
+          python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" "$APP/Contents/Resources/DISTRIBUTION_REBUILD.json" <<'PY'
           import json,sys
-          row=json.load(open(sys.argv[1],encoding='utf-8'))
-          assert row.get('signing_mode')=='developer_id', row
+          provenance=json.load(open(sys.argv[1],encoding='utf-8'))
+          rebuild=json.load(open(sys.argv[2],encoding='utf-8'))
+          assert provenance.get('signing_mode')=='developer_id', provenance
+          assert rebuild.get('purpose')=='SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD', rebuild
+          assert rebuild.get('physical_uat',{}).get('claimed') is False, rebuild
+          assert rebuild.get('git_sha')==provenance.get('git_sha'), (rebuild,provenance)
           PY
       - name: Smoke bundled service
         shell: bash
@@ -240,7 +248,7 @@ jobs:
           SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
           printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
           /bin/cp "release-evidence/distribution-trust-${{ matrix.arch }}.json" "release/DISTRIBUTION-TRUST-${{ matrix.arch }}.json"
-          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":87}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":88}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
       - uses: actions/upload-artifact@v4
         with:
           name: persistent-release-${{ matrix.arch }}

@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 CANDIDATE_SCHEMA = "binario.marketing.physical-uat-candidate.v1"
+DISTRIBUTION_REBUILD_SCHEMA = "binario.marketing.distribution-rebuild.v1"
+DISTRIBUTION_REBUILD_PURPOSE = "SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD"
 RAW_UAT_SCHEMA = "binario.marketing.release-uat-evidence.v1"
 COMBINED_UAT_SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_RUNTIME_WAVE = 76
@@ -101,6 +103,7 @@ def _uat_passed(
         return False, None, None
     data = _load_json(path)
     schema = data.get("schema")
+
     if schema == RAW_UAT_SCHEMA:
         if not git_sha or data.get("git_sha") != git_sha:
             return False, data, None
@@ -114,6 +117,7 @@ def _uat_passed(
             return False, data, None
         passed = bool(data.get("uat_passed") is True and data.get("overall") == "UAT_PASS")
         return passed, data, "exact_raw_release_uat" if passed else None
+
     if schema == COMBINED_UAT_SCHEMA:
         if not _combined_uat_valid(data):
             return False, data, None
@@ -136,6 +140,8 @@ def _uat_passed(
             return True, data, "source_equivalent_arm64_rebuild"
         if architecture == "x86_64":
             return True, data, "source_equivalent_cross_arch_distribution"
+        return False, data, None
+
     return False, data, None
 
 
@@ -164,7 +170,7 @@ def main() -> int:
     from binario_marketing.release_readiness import evaluate_release_readiness
     from verify_distribution_trust import verify as verify_distribution_trust
 
-    provenance = embedded = candidate = None
+    provenance = embedded = candidate = rebuild = None
     candidate_source_sha256 = candidate_manifest_sha256 = current_source_sha256 = None
     signing_mode = notarized = git_sha = architecture = product_version = None
     source_kwargs: dict[str, Any] = {}
@@ -180,6 +186,9 @@ def main() -> int:
             candidate = _load_json(candidate_path)
             candidate_source_sha256 = candidate.get("candidate_source_sha256")
             candidate_manifest_sha256 = _sha256(candidate_path)
+        rebuild_path = resources / "DISTRIBUTION_REBUILD.json"
+        if rebuild_path.is_file():
+            rebuild = _load_json(rebuild_path)
         source_root = resources / "source"
         if source_root.is_dir():
             current_source_sha256 = _source_digest(source_root)
@@ -239,14 +248,38 @@ def main() -> int:
         report["embedded_notarized"] = embedded.get("notarized")
         report["distribution_trust_supersedes_embedded_notarization"] = distribution is not None
 
+    rebuild_consistent = None
+    rebuild_origin: dict[str, Any] = {}
+    if rebuild is not None:
+        rebuild_origin = rebuild.get("build_origin") if isinstance(rebuild.get("build_origin"), dict) else {}
+        rebuild_consistent = bool(
+            rebuild.get("schema") == DISTRIBUTION_REBUILD_SCHEMA
+            and rebuild.get("purpose") == DISTRIBUTION_REBUILD_PURPOSE
+            and rebuild.get("git_sha") == git_sha
+            and rebuild.get("architecture") == architecture
+            and rebuild.get("product_version") == product_version
+            and rebuild.get("runtime_wave") == EXPECTED_RUNTIME_WAVE
+            and rebuild.get("runtime_entrypoint") == "service_wave76_app"
+            and rebuild.get("source_sha256") == current_source_sha256
+            and rebuild_origin.get("event") == "push"
+            and str(rebuild_origin.get("ref") or "").startswith("refs/tags/v")
+            and rebuild_origin.get("eligible_distribution_origin") is True
+            and rebuild.get("physical_uat", {}).get("claimed") is False
+            and rebuild.get("physical_uat", {}).get("exact_bundle_tested") is False
+            and rebuild.get("physical_uat", {}).get("authorization_mode") == "source_equivalent_only"
+            and rebuild.get("release_authority") is False
+        )
+
+    if candidate is not None and rebuild is not None:
+        _append_blocker(report, "candidate_distribution_identity_conflict", "candidate", "El bundle no puede ser simultáneamente candidato físico exacto y rebuild de distribución.")
+
     candidate_consistent = None
     candidate_origin: dict[str, Any] = {}
-    if provenance and architecture == "arm64":
+    if provenance and architecture == "arm64" and rebuild is None:
         candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
-        ref = str(candidate_origin.get("ref") or "")
         trusted_origin = bool(
             candidate_origin.get("event") == "push"
-            and (ref == "refs/heads/main" or ref.startswith("refs/tags/v"))
+            and candidate_origin.get("ref") == "refs/heads/main"
             and candidate_origin.get("trusted_for_physical_uat") is True
             and candidate
             and candidate.get("physical_uat", {}).get("eligible_build_origin") is True
@@ -266,7 +299,7 @@ def main() -> int:
             and candidate_source_sha256 == current_source_sha256
         )
         if not candidate_consistent:
-            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W84 válido de origen GitHub confiable.")
+            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W84 válido de origen main confiable.")
 
     if uat is not None and not uat_passed:
         if uat.get("schema") == RAW_UAT_SCHEMA and architecture == "arm64":
@@ -279,8 +312,13 @@ def main() -> int:
             if binding.get("git_sha") == git_sha and binding.get("candidate_source_sha256") != current_source_sha256:
                 _append_blocker(report, "physical_uat_source_equivalence_mismatch", "uat", "La atestación física no corresponde al digest de fuente del build de distribución actual.")
 
-    if args.production and distribution is None:
-        _append_blocker(report, "distribution_trust_evidence_missing", "distribution", "El gate de producción exige evidencia verificada de Developer ID + notarización + Gatekeeper.")
+    if args.production:
+        if distribution is None:
+            _append_blocker(report, "distribution_trust_evidence_missing", "distribution", "El gate de producción exige evidencia verificada de Developer ID + notarización + Gatekeeper.")
+        if not rebuild_consistent:
+            _append_blocker(report, "distribution_rebuild_manifest_missing_or_invalid", "distribution", "El gate de producción exige un manifiesto de rebuild de distribución source-equivalent válido.")
+        if uat is None or uat.get("schema") != COMBINED_UAT_SCHEMA or uat_binding_mode not in {"source_equivalent_arm64_rebuild", "source_equivalent_cross_arch_distribution"}:
+            _append_blocker(report, "distribution_requires_combined_source_equivalent_uat", "uat", "Un rebuild de distribución debe autorizarse mediante la atestación física combinada y equivalencia exacta de fuente.")
 
     attestation_binding = uat.get("binding") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else {}
     report.update({
@@ -290,6 +328,10 @@ def main() -> int:
         "distribution_trust_schema": distribution.get("schema") if distribution else None,
         "distribution_trust_verified": distribution is not None,
         "distribution_notary_submission_id": distribution.get("notary_submission_id") if distribution else None,
+        "distribution_rebuild_schema": rebuild.get("schema") if rebuild else None,
+        "distribution_rebuild_purpose": rebuild.get("purpose") if rebuild else None,
+        "distribution_rebuild_consistent": rebuild_consistent,
+        "distribution_rebuild_origin": rebuild_origin,
         "provenance_schema": provenance.get("schema") if provenance else None,
         "embedded_readiness_schema": embedded.get("schema") if embedded else None,
         "candidate_schema": candidate.get("schema") if candidate else None,
