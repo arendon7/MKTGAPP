@@ -13,4 +13,5 @@ done
 /bin/bash "$ROOT/scripts/build_full_mac_current.sh" "${ARGS[@]}"
 APP="$OUT/Binario Marketing IA.app"
 /bin/bash "$ROOT/scripts/audit_wave78_release_contract_drift_guard.sh" "$APP"
-printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 78 · %s\n' "$APP"
+/bin/bash "$ROOT/scripts/audit_wave79_release_pipeline_parity.sh"
+printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 79 · %s\n' "$APP"

@@ -41,14 +41,14 @@ jobs:
         with:
           path: .cache/full-mac-media-${{ matrix.arch }}
           key: release-media-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_media_runtime.env') }}
-      - name: Build and audit native app
+      - name: Build and audit native current-runtime candidate
         shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
         run: |
           set -euo pipefail
           chmod +x scripts/*.sh
-          scripts/build_full_mac_app.sh --arch "${{ matrix.arch }}"
+          scripts/build_full_mac_release_candidate.sh --arch "${{ matrix.arch }}"
           scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
       - name: Smoke bundled service
         shell: bash
@@ -67,6 +67,7 @@ jobs:
           done
           if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
           /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
+          /usr/bin/grep -q 'service_wave76_app import serve' "$APP/Contents/Resources/launch.py"
       - name: Package immutable release asset
         shell: bash
         run: |
@@ -77,7 +78,7 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
           SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
           printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
-          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s"}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":78}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
       - uses: actions/upload-artifact@v4
         with:
           name: persistent-release-${{ matrix.arch }}
