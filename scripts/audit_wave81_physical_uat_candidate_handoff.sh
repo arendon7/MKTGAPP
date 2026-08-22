@@ -23,7 +23,8 @@ assert row['runtime_entrypoint']=='service_wave76_app', row
 assert row['certification_guard_wave']==81, row
 assert len(row['candidate_source_sha256'])==64, row
 origin=row.get('build_origin') or {}
-trusted=origin.get('event')=='push' and origin.get('ref')=='refs/heads/main'
+ref=str(origin.get('ref') or '')
+trusted=origin.get('event')=='push' and (ref=='refs/heads/main' or ref.startswith('refs/tags/v'))
 assert origin.get('trusted_for_physical_uat') is trusted, row
 assert (row['role']=='PHYSICAL_UAT_CANDIDATE_ONLY') is trusted, row
 assert row['physical_uat']['eligible_build_origin'] is trusted, row
