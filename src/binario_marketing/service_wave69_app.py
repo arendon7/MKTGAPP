@@ -35,6 +35,7 @@ class AppRuntime(base.AppRuntime):
     def _trusted_physical_uat_candidate(candidate: dict, build: dict) -> bool:
         origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}
         physical = candidate.get("physical_uat") if isinstance(candidate.get("physical_uat"), dict) else {}
+        origin_ref = str(origin.get("ref") or "")
         return bool(
             candidate.get("schema") == "binario.marketing.physical-uat-candidate.v1"
             and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
@@ -45,7 +46,7 @@ class AppRuntime(base.AppRuntime):
             and isinstance(candidate.get("candidate_source_sha256"), str)
             and len(candidate.get("candidate_source_sha256")) == 64
             and origin.get("event") == "push"
-            and origin.get("ref") == "refs/heads/main"
+            and (origin_ref == "refs/heads/main" or origin_ref.startswith("refs/tags/v"))
             and origin.get("trusted_for_physical_uat") is True
             and physical.get("eligible_build_origin") is True
             and physical.get("automatic_pass") is False
@@ -115,10 +116,10 @@ class AppRuntime(base.AppRuntime):
             ),
             check(
                 "trusted-main-candidate",
-                "Candidato físico exacto generado desde main",
+                "Candidato físico exacto de origen GitHub confiable",
                 trusted_candidate,
                 (
-                    "push · refs/heads/main · PHYSICAL_UAT_CANDIDATE_ONLY"
+                    f"push · {origin.get('ref')} · PHYSICAL_UAT_CANDIDATE_ONLY"
                     if trusted_candidate
                     else f"role={candidate.get('role') or 'missing'} · event={origin.get('event') or 'unknown'} · ref={origin.get('ref') or 'unknown'}"
                 ),
