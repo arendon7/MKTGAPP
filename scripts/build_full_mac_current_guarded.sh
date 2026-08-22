@@ -12,6 +12,11 @@ done
 
 /bin/bash "$ROOT/scripts/build_full_mac_current.sh" "${ARGS[@]}"
 APP="$OUT/Binario Marketing IA.app"
+PY="$APP/Contents/Resources/runtime/python/bin/python3"
 /bin/bash "$ROOT/scripts/audit_wave78_release_contract_drift_guard.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave79_release_pipeline_parity.sh"
-printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 79 · %s\n' "$APP"
+"$PY" -I -B "$ROOT/scripts/write_physical_uat_candidate.py" --app "$APP"
+IDENTITY="${BINARIO_CODESIGN_IDENTITY:--}"
+/usr/bin/codesign --force --deep --sign "$IDENTITY" "$APP"
+/bin/bash "$ROOT/scripts/audit_wave81_physical_uat_candidate_handoff.sh" "$APP"
+printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 81 · %s\n' "$APP"

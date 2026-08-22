@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 SCHEMA = "binario.marketing.release-uat-evidence.v1"
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -46,10 +48,19 @@ def main() -> int:
 
     path = args.evidence.expanduser().resolve()
     data = _load(path)
-    if not data.get("git_sha") or not data.get("architecture"):
-        raise SystemExit("UAT evidence is not bound to git_sha/architecture")
+    if not data.get("git_sha") or data.get("architecture") != "arm64":
+        raise SystemExit("UAT evidence is not bound to an arm64 git_sha candidate")
+    source_digest = str(data.get("candidate_source_sha256") or "")
+    manifest_digest = str(data.get("candidate_manifest_sha256") or "")
+    if not SHA256_RE.fullmatch(source_digest) or not SHA256_RE.fullmatch(manifest_digest):
+        raise SystemExit("UAT evidence is not bound to the exact physical candidate digests")
+    if data.get("runtime_wave") != 76:
+        raise SystemExit("UAT evidence runtime is not the canonical Wave 76 product runtime")
     if not data.get("automatic_passed"):
         raise SystemExit("automatic checks must pass before recording manual UAT")
+    note = args.note.strip()
+    if not note:
+        raise SystemExit("manual UAT note must contain concrete evidence/observation")
 
     target = None
     for row in data.get("manual_steps") or []:
@@ -60,11 +71,11 @@ def main() -> int:
         raise SystemExit(f"unknown UAT step: {args.step}")
 
     target["status"] = args.status
-    target["note"] = args.note.strip()
+    target["note"] = note
     target["recorded_at"] = datetime.now(timezone.utc).isoformat()
     _recompute(data)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"step": args.step, "status": args.status, "overall": data["overall"], "uat_passed": data["uat_passed"], "git_sha": data["git_sha"], "architecture": data["architecture"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"step": args.step, "status": args.status, "overall": data["overall"], "uat_passed": data["uat_passed"], "git_sha": data["git_sha"], "candidate_source_sha256": source_digest, "architecture": data["architecture"]}, ensure_ascii=False, indent=2))
     return 2 if data["overall"] in {"AUTOMATIC_FAIL", "UAT_FAIL"} else 0
 
 
