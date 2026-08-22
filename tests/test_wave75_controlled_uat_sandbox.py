@@ -3,7 +3,6 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from binario_marketing.service_wave75_app import AppRuntime, create_server
@@ -29,26 +28,22 @@ class Wave75ControlledUATSandboxTests(unittest.TestCase):
         self.assertFalse(status["contract"]["physical_release_evidence_allowed"])
         self.assertFalse(status["contract"]["provider_evidence_seeded"])
         self.assertFalse(status["contract"]["results_evidence_seeded"])
-
         company_id = status["company"]["id"]
         company = self.runtime.companies.get(company_id)
         self.assertTrue(company.active)
         self.assertIsNone(company.facebook_page_id)
         self.assertIsNone(company.instagram_id)
         self.assertIsNone(company.ad_account_id)
-
         contacts = self.runtime.crm.list_contacts(company_id)
         self.assertEqual(len(contacts), 1)
         self.assertTrue(contacts[0].email.endswith("@binario.invalid"))
         self.assertIn("uat-sandbox", contacts[0].tags)
-
         intake = self.runtime.lead_intake_payload(company_id)
         by_id = {row["id"]: row for row in intake["leads"]}
         self.assertEqual(by_id[status["entities"]["matched_lead_id"]]["status"], "MATCHED")
         self.assertEqual(by_id[status["entities"]["matched_lead_id"]]["exact_match_count"], 1)
         self.assertEqual(by_id[status["entities"]["new_lead_id"]]["status"], "NEW")
         self.assertTrue(by_id[status["entities"]["new_lead_id"]]["email"].endswith("@binario.invalid"))
-
         opportunities = self.runtime.crm.list_opportunities(company_id)
         self.assertEqual(len(opportunities), 1)
         self.assertEqual(opportunities[0].stage, "PROPOSAL")
@@ -63,7 +58,6 @@ class Wave75ControlledUATSandboxTests(unittest.TestCase):
         self.assertEqual(campaigns[0].publication_ids, ())
         self.assertEqual(campaigns[0].media_ids, ())
         self.assertEqual(set(campaigns[0].channels), {"email", "whatsapp"})
-
         results = self.runtime.results_intelligence_workspace(company_id)
         self.assertIsNone(results["latest_snapshot"])
         self.assertEqual(results["summary"]["with_observed_evidence"], 0)
@@ -77,7 +71,6 @@ class Wave75ControlledUATSandboxTests(unittest.TestCase):
         same = self.runtime.create_uat_sandbox({})
         self.assertEqual(first["company"]["id"], same["company"]["id"])
         self.assertEqual(first["generation"], same["generation"])
-
         reset = self.runtime.reset_uat_sandbox({"confirm": True})
         self.assertNotEqual(first["company"]["id"], reset["company"]["id"])
         self.assertEqual(reset["generation"], first["generation"] + 1)
@@ -95,10 +88,12 @@ class Wave75ControlledUATSandboxTests(unittest.TestCase):
             self.runtime.start_physical_uat(sandbox["company"]["id"], {"operator": "QA"})
         self.assertEqual(self.runtime.physical_uat.list(sandbox["company"]["id"]), [])
 
+        # Since W84, even a real company cannot start physical UAT from a source checkout.
+        # The exact packaged arm64 candidate + trusted GitHub origin + physical host are required.
         real = self.runtime.create_company({"name": "Empresa física real"})
-        session = self.runtime.start_physical_uat(real["id"], {"operator": "QA"})
-        self.assertEqual(session["status"], "IN_PROGRESS")
-        self.assertFalse(session["physical_uat_complete"])
+        with self.assertRaisesRegex(ValueError, "physical UAT preflight blocked"):
+            self.runtime.start_physical_uat(real["id"], {"operator": "QA"})
+        self.assertEqual(self.runtime.physical_uat.list(real["id"]), [])
 
     def test_http_routes_are_explicit_and_ui_never_autocreates_or_polls(self):
         server = create_server(self.runtime, "127.0.0.1", 0)
