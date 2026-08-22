@@ -60,12 +60,11 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     candidate = _load(candidate_path)
     provenance = _load(provenance_path)
     origin = candidate.get("build_origin") or {}
-    ref = str(origin.get("ref") or "")
     _require(candidate.get("schema") == CANDIDATE_SCHEMA, "unexpected candidate schema")
     _require(candidate.get("role") == EXPECTED_ROLE, "candidate is not physical-UAT eligible")
     _require(origin.get("event") == "push", "physical candidate must originate from a push")
     _require(origin.get("trusted_for_physical_uat") is True, "candidate build origin is not trusted")
-    _require(ref == "refs/heads/main" or ref.startswith("refs/tags/v"), "physical candidate must originate from main or a version tag")
+    _require(origin.get("ref") == "refs/heads/main", "physical candidate must originate from refs/heads/main; tag builds are distribution rebuilds")
     _require(candidate.get("architecture") == "arm64", "physical candidate must be arm64")
     _require(candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "candidate runtime wave drift")
     _require(candidate.get("certification_guard_wave") == EXPECTED_CANDIDATE_GUARD_WAVE, "candidate guard wave drift")
@@ -74,8 +73,8 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     physical = candidate.get("physical_uat") or {}
     _require(physical.get("eligible_build_origin") is True, "candidate is not physical-UAT origin eligible")
     boundary = candidate.get("release_boundary") or {}
-    _require(boundary.get("release_ready") is False, "candidate unexpectedly carries release-ready authority")
-    _require(boundary.get("release_tag") is None, "candidate unexpectedly carries a release tag")
+    _require(boundary.get("release_ready") is False, "physical candidate source safety flag must remain false")
+    _require(boundary.get("release_tag") is None, "physical candidate source release tag must remain unset")
     _require(boundary.get("production_ready") is False, "candidate unexpectedly reports production-ready")
     return candidate, candidate_path, provenance
 
@@ -91,34 +90,25 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
     _require(str(machine.get("machine") or "").lower() == "arm64", "Phase A was not recorded on arm64")
     _require(machine.get("is_ci") is False, "Phase A cannot come from CI")
     _require(machine.get("physical_gate_eligible") is True, "Phase A machine is not physical-gate eligible")
-
     scenarios = session.get("scenarios") or []
     required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
     _require(bool(required), "Phase A required scenarios missing")
     _require(all(row.get("status") == "PASS" for row in required), "Phase A required scenarios are not all PASS")
-
     expected_digest = str(session.get("evidence_sha256") or "")
-    digest_payload = dict(session)
-    digest_payload["evidence_sha256"] = None
+    digest_payload = dict(session); digest_payload["evidence_sha256"] = None
     _require(expected_digest == _digest(digest_payload), "Phase A session evidence digest mismatch")
-
     build = session.get("build") or {}
     _require(build.get("source") == "BUILD_PROVENANCE.json", "Phase A did not use bundled build provenance")
     _require(build.get("git_sha") == candidate.get("git_sha"), "Phase A git SHA mismatch")
     _require(str(build.get("architecture") or "").lower() == "arm64", "Phase A architecture mismatch")
     _require(build.get("product_version") == candidate.get("product_version"), "Phase A product version mismatch")
-
     summary = report.get("summary") or {}
     _require(summary.get("physical_uat_complete") is True, "Phase A summary is not complete")
     _require(int(summary.get("failed") or 0) == 0, "Phase A summary contains failures")
     _require(int(summary.get("blocked") or 0) == 0, "Phase A summary contains blockers")
     _require(int(summary.get("pending") or 0) == 0, "Phase A summary contains pending required scenarios")
     _require(int(summary.get("passed") or 0) == len(required), "Phase A summary/pass count mismatch")
-    return {
-        "session_id": session.get("id"), "evidence_sha256": expected_digest,
-        "required_scenarios": len(required), "passed_scenarios": len(required),
-        "finished_at": session.get("finished_at"),
-    }
+    return {"session_id": session.get("id"), "evidence_sha256": expected_digest, "required_scenarios": len(required), "passed_scenarios": len(required), "finished_at": session.get("finished_at")}
 
 
 def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: str) -> dict[str, Any]:
@@ -135,7 +125,6 @@ def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: st
     _require(not failed, "Phase B candidate mismatch: " + ", ".join(failed))
     _require(report.get("automatic_passed") is True, "Phase B automatic checks did not pass")
     _require(report.get("uat_passed") is True and report.get("overall") == "UAT_PASS", "Phase B is not UAT_PASS")
-
     manual = report.get("manual_steps") or []
     ids = {str(row.get("id")) for row in manual if isinstance(row, dict)}
     _require(ids == REQUIRED_PHASE_B_IDS and len(manual) == 12, "Phase B manual gate set drift")
@@ -159,10 +148,11 @@ def finalize(app: Path, phase_a_path: Path, phase_b_path: Path) -> dict[str, Any
     binding = {
         "git_sha": candidate.get("git_sha"), "product_version": candidate.get("product_version"),
         "architecture": "arm64", "runtime_wave": EXPECTED_RUNTIME_WAVE,
-        "candidate_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE, "attestation_wave": ATTESTATION_WAVE,
+        "certification_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE, "attestation_wave": ATTESTATION_WAVE,
         "candidate_source_sha256": candidate.get("candidate_source_sha256"),
         "candidate_manifest_sha256": manifest_sha, "build_origin": candidate.get("build_origin"),
         "provenance_schema": provenance.get("schema"),
+        "source_release_ready": False, "source_release_tag": None,
     }
     core = {
         "schema": ATTESTATION_SCHEMA, "binding": binding,
@@ -184,13 +174,14 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
         f"- Phase B: **PASS** · {p['passed_gates']}/{p['required_gates']} release gates",
         f"- Combined attestation SHA-256: `{report['attestation_sha256']}`",
-        "- Release authority: **NO**", "- Production ready: **NO**", "",
-        "This attestation proves only that both physical UAT layers passed on the same trusted exact candidate.", "",
+        "- Source RELEASE_READY: **False**", "- Release authority: **NO**", "- Production ready: **NO**", "",
+        "This attestation proves only that both physical UAT layers passed on the same trusted exact main candidate.",
+        "A separate explicit Wave 89 human authorization is required before a version tag can use this attestation.", "",
     ])
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Finalize Phase A + Phase B physical UAT for one exact trusted BINARIO arm64 candidate.")
+    parser = argparse.ArgumentParser(description="Finalize Phase A + Phase B physical UAT for one exact trusted BINARIO main arm64 candidate.")
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--phase-a", type=Path, required=True)
     parser.add_argument("--phase-b", type=Path, required=True)
