@@ -13,6 +13,10 @@ RAW_UAT_SCHEMA = "binario.marketing.release-uat-evidence.v1"
 COMBINED_UAT_SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
+EXPECTED_REBUILD_SEMANTICS_WAVE = 88
+PHYSICAL_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
+DISTRIBUTION_ROLE = "DISTRIBUTION_REBUILD_ONLY"
+VALIDATION_ROLE = "VALIDATION_BUILD_ONLY"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -147,6 +151,67 @@ def _append_blocker(report: dict[str, Any], code: str, scope: str, message: str)
     report["stage"] = "RELEASE_CANDIDATE_BLOCKED"
 
 
+def _arm64_build_role_valid(
+    candidate: dict[str, Any] | None,
+    *,
+    git_sha: str | None,
+    product_version: str | None,
+    candidate_source_sha256: str | None,
+    current_source_sha256: str | None,
+) -> tuple[bool, str | None, dict[str, Any]]:
+    if not candidate:
+        return False, None, {}
+    origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}
+    physical = candidate.get("physical_uat") if isinstance(candidate.get("physical_uat"), dict) else {}
+    distribution = candidate.get("distribution_rebuild") if isinstance(candidate.get("distribution_rebuild"), dict) else {}
+    role = candidate.get("role")
+    ref = str(origin.get("ref") or "")
+    common = bool(
+        candidate.get("schema") == CANDIDATE_SCHEMA
+        and candidate.get("git_sha") == git_sha
+        and candidate.get("architecture") == "arm64"
+        and candidate.get("product_version") == product_version
+        and candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE
+        and candidate.get("certification_guard_wave") == EXPECTED_GUARD_WAVE
+        and int(candidate.get("rebuild_semantics_wave") or 0) >= EXPECTED_REBUILD_SEMANTICS_WAVE
+        and isinstance(candidate_source_sha256, str)
+        and len(candidate_source_sha256) == 64
+        and candidate_source_sha256 == current_source_sha256
+    )
+    if not common:
+        return False, str(role) if role else None, origin
+    if role == PHYSICAL_ROLE:
+        valid = bool(
+            origin.get("event") == "push"
+            and ref == "refs/heads/main"
+            and origin.get("trusted_for_physical_uat") is True
+            and origin.get("trusted_for_distribution_rebuild") is False
+            and physical.get("eligible_build_origin") is True
+            and physical.get("new_evidence_may_be_recorded") is True
+            and distribution.get("eligible_build_origin") is False
+        )
+        return valid, PHYSICAL_ROLE, origin
+    if role == DISTRIBUTION_ROLE:
+        valid = bool(
+            origin.get("event") == "push"
+            and ref.startswith("refs/tags/v")
+            and origin.get("trusted_for_physical_uat") is False
+            and origin.get("trusted_for_distribution_rebuild") is True
+            and physical.get("eligible_build_origin") is False
+            and physical.get("new_evidence_may_be_recorded") is False
+            and physical.get("source_equivalent_prior_evidence_allowed") is True
+            and distribution.get("eligible_build_origin") is True
+            and distribution.get("must_not_record_new_physical_uat") is True
+            and distribution.get("requires_prior_combined_uat_attestation") is True
+            and distribution.get("requires_distribution_trust_evidence") is True
+            and distribution.get("release_authority") is False
+        )
+        return valid, DISTRIBUTION_ROLE, origin
+    if role == VALIDATION_ROLE:
+        return False, VALIDATION_ROLE, origin
+    return False, str(role) if role else None, origin
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Evaluate BINARIO Marketing release readiness without bypassing production gates.")
     ap.add_argument("--repo", type=Path, default=Path.cwd())
@@ -159,6 +224,7 @@ def main() -> int:
     args = ap.parse_args()
 
     repo = args.repo.expanduser().resolve()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     sys.path.insert(0, str(repo / "src"))
     sys.path.insert(0, str(repo / "scripts"))
     from binario_marketing.release_readiness import evaluate_release_readiness
@@ -240,38 +306,30 @@ def main() -> int:
         report["distribution_trust_supersedes_embedded_notarization"] = distribution is not None
 
     candidate_consistent = None
+    candidate_role: str | None = None
     candidate_origin: dict[str, Any] = {}
     if provenance and architecture == "arm64":
-        candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
-        ref = str(candidate_origin.get("ref") or "")
-        trusted_origin = bool(
-            candidate_origin.get("event") == "push"
-            and (ref == "refs/heads/main" or ref.startswith("refs/tags/v"))
-            and candidate_origin.get("trusted_for_physical_uat") is True
-            and candidate
-            and candidate.get("physical_uat", {}).get("eligible_build_origin") is True
-        )
-        candidate_consistent = bool(
-            candidate
-            and candidate.get("schema") == CANDIDATE_SCHEMA
-            and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
-            and trusted_origin
-            and candidate.get("git_sha") == git_sha
-            and candidate.get("architecture") == architecture
-            and candidate.get("product_version") == product_version
-            and candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE
-            and candidate.get("certification_guard_wave") == EXPECTED_GUARD_WAVE
-            and isinstance(candidate_source_sha256, str)
-            and len(candidate_source_sha256) == 64
-            and candidate_source_sha256 == current_source_sha256
+        candidate_consistent, candidate_role, candidate_origin = _arm64_build_role_valid(
+            candidate,
+            git_sha=git_sha,
+            product_version=product_version,
+            candidate_source_sha256=candidate_source_sha256,
+            current_source_sha256=current_source_sha256,
         )
         if not candidate_consistent:
-            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W84 válido de origen GitHub confiable.")
+            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W88 válido para su rol de build.")
+        elif candidate_role == DISTRIBUTION_ROLE:
+            if uat_passed and uat_binding_mode != "source_equivalent_arm64_rebuild":
+                _append_blocker(report, "distribution_rebuild_uat_binding_invalid", "uat", "Un rebuild de distribución arm64 solo puede heredar UAT física mediante equivalencia exacta de fuente W85/W86.")
+            if args.production and distribution is None:
+                _append_blocker(report, "distribution_rebuild_trust_missing", "distribution", "Un rebuild de distribución requiere evidencia W87 de Developer ID + notarización.")
+        elif candidate_role == PHYSICAL_ROLE and args.production:
+            _append_blocker(report, "physical_candidate_not_distribution_rebuild", "distribution", "El artefacto push-main de UAT física no debe publicarse directamente como rebuild de distribución.")
 
     if uat is not None and not uat_passed:
         if uat.get("schema") == RAW_UAT_SCHEMA and architecture == "arm64":
             if uat.get("git_sha") == git_sha and uat.get("candidate_source_sha256") != candidate_source_sha256:
-                _append_blocker(report, "physical_uat_candidate_source_mismatch", "uat", "La evidencia UAT pertenece a una fuente distinta del candidato físico actual.")
+                _append_blocker(report, "physical_uat_candidate_source_mismatch", "uat", "La evidencia UAT pertenece a una fuente distinta del build actual.")
             if uat.get("git_sha") == git_sha and uat.get("candidate_manifest_sha256") != candidate_manifest_sha256:
                 _append_blocker(report, "physical_uat_candidate_manifest_mismatch", "uat", "La evidencia UAT no coincide con el manifiesto exacto del candidato físico actual.")
         elif uat.get("schema") == COMBINED_UAT_SCHEMA:
@@ -293,12 +351,14 @@ def main() -> int:
         "provenance_schema": provenance.get("schema") if provenance else None,
         "embedded_readiness_schema": embedded.get("schema") if embedded else None,
         "candidate_schema": candidate.get("schema") if candidate else None,
-        "candidate_role": candidate.get("role") if candidate else None,
+        "candidate_role": candidate_role or (candidate.get("role") if candidate else None),
         "candidate_build_origin": candidate_origin,
         "candidate_source_sha256": candidate_source_sha256,
         "current_source_sha256": current_source_sha256,
         "candidate_manifest_sha256": candidate_manifest_sha256,
         "candidate_manifest_consistent": candidate_consistent,
+        "distribution_rebuild": candidate_role == DISTRIBUTION_ROLE,
+        "new_physical_uat_allowed": candidate_role == PHYSICAL_ROLE,
         "uat_schema": uat.get("schema") if uat else None,
         "uat_binding_mode": uat_binding_mode,
         "uat_physical_architecture": attestation_binding.get("architecture") if attestation_binding else (uat.get("architecture") if uat else None),
