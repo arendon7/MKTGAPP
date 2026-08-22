@@ -13,6 +13,7 @@ VERIFY_PATH = ROOT / "scripts" / "verify_distribution_trust.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "persistent-release.yml"
 NOTARIZE = ROOT / "scripts" / "notarize_release_candidate.sh"
 GATE = ROOT / "scripts" / "release_candidate_gate.py"
+BUILDER = ROOT / "scripts" / "build_full_mac_app.sh"
 
 
 def _module():
@@ -68,15 +69,19 @@ class Wave87DeveloperIDNotarizationTrustTests(unittest.TestCase):
     def test_notarization_helper_is_shell_valid_and_checks_apple_trust_chain(self):
         subprocess.run(["bash", "-n", str(NOTARIZE)], check=True)
         source = NOTARIZE.read_text(encoding="utf-8")
-        for marker in ("Developer ID Application:", "notarytool submit", "--wait", "stapler staple", "stapler validate", "spctl --assess", "codesign --verify"):
+        self.assertIn("Developer ID Application identity is required", source)
+        self.assertIn("Developer\\ ID\\ Application:*", source)
+        for marker in ("notarytool submit", "--wait", "stapler staple", "stapler validate", "spctl --assess", "codesign --verify"):
             self.assertIn(marker, source)
         self.assertNotIn("RELEASE_READY=True", source)
 
-    def test_release_gate_requires_distribution_evidence_in_production(self):
+    def test_release_gate_and_embedded_bundle_include_distribution_verifier(self):
         source = GATE.read_text(encoding="utf-8")
+        builder = BUILDER.read_text(encoding="utf-8")
         self.assertIn('ap.add_argument("--distribution-evidence"', source)
         self.assertIn("distribution_trust_evidence_missing", source)
-        self.assertIn("verify_distribution_trust", source)
+        self.assertIn("from verify_distribution_trust import verify", source)
+        self.assertIn('verify_distribution_trust.py" "$RELEASE_TOOLS/verify_distribution_trust.py', builder)
         self.assertIn('signing_mode = "developer_id"', source)
         self.assertIn("notarized = True", source)
 
