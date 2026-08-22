@@ -18,7 +18,8 @@ VALIDATION_ROLE = "VALIDATION_BUILD_ONLY"
 EXPECTED_ARCH = "arm64"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
-EXPECTED_HANDOFF_WAVE = 84
+EXPECTED_HANDOFF_WAVE = 85
+EXPECTED_DUAL_EVIDENCE_GUARD = 85
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -47,11 +48,7 @@ def _require(condition: bool, message: str) -> None:
 def _trusted_origin(payload: dict[str, Any]) -> bool:
     origin = payload.get("build_origin") if isinstance(payload.get("build_origin"), dict) else {}
     ref = str(origin.get("ref") or "")
-    return bool(
-        origin.get("event") == "push"
-        and (ref == "refs/heads/main" or ref.startswith("refs/tags/v"))
-        and origin.get("trusted_for_physical_uat") is True
-    )
+    return bool(origin.get("event") == "push" and (ref == "refs/heads/main" or ref.startswith("refs/tags/v")) and origin.get("trusted_for_physical_uat") is True)
 
 
 def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None, require_physical_host: bool = False) -> dict[str, Any]:
@@ -104,6 +101,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     for label, payload in (("delivery", delivery), ("external candidate", external), ("embedded candidate", internal)):
         _require(payload.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, f"{label} certification guard drift")
     _require(delivery.get("operator_handoff_wave") == EXPECTED_HANDOFF_WAVE, "operator handoff wave drift")
+    _require(delivery.get("dual_evidence_guard_wave") == EXPECTED_DUAL_EVIDENCE_GUARD, "dual evidence guard drift")
 
     source_sha = str(delivery.get("candidate_source_sha256") or "")
     _require(len(source_sha) == 64, "delivery candidate source SHA-256 malformed")
@@ -123,7 +121,14 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     _require(checksum_path.is_file(), "candidate checksum file missing")
     _require(checksum_path.read_text(encoding="utf-8").strip() == f"{artifact_sha}  {artifact_name}", "candidate checksum sidecar mismatch")
 
-    helper_contract = (("PHYSICAL_UAT_HANDOFF_VERIFY.py", "handoff_verifier_sha256"), ("START_PHYSICAL_UAT.command", "start_command_sha256"), ("RECORD_RELEASE_UAT.command", "record_command_sha256"), ("PHYSICAL_UAT_OPERATOR.md", "operator_guide_sha256"))
+    helper_contract = (
+        ("PHYSICAL_UAT_HANDOFF_VERIFY.py", "handoff_verifier_sha256"),
+        ("START_PHYSICAL_UAT.command", "start_command_sha256"),
+        ("RECORD_RELEASE_UAT.command", "record_command_sha256"),
+        ("PRODUCT_UAT_COLLECT.py", "product_uat_collector_sha256"),
+        ("COLLECT_PRODUCT_UAT.command", "product_uat_command_sha256"),
+        ("PHYSICAL_UAT_OPERATOR.md", "operator_guide_sha256"),
+    )
     helper_hashes: dict[str, str] = {}
     for filename, field in helper_contract:
         helper = delivery_dir / filename
@@ -134,6 +139,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
     _require(delivery.get("physical_product_uat_required") is True, "in-app physical product UAT requirement missing")
     _require(delivery.get("release_operational_uat_required") is True, "release operational UAT requirement missing")
+    _require(delivery.get("dual_physical_uat_required") is True, "dual physical UAT requirement missing")
     _require(delivery.get("release_ready") is False, "delivery unexpectedly release-ready")
     _require(delivery.get("release_tag") is None, "delivery unexpectedly has release tag")
     _require(delivery.get("production_ready") is False, "delivery unexpectedly production-ready")
@@ -149,7 +155,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
         _require(role == PHYSICAL_ROLE, "physical UAT requires PHYSICAL_UAT_CANDIDATE_ONLY role")
 
     return {
-        "schema": "binario.marketing.physical-uat-handoff-verification.v2",
+        "schema": "binario.marketing.physical-uat-handoff-verification.v3",
         "git_sha": git_sha,
         "role": role,
         "build_origin": delivery.get("build_origin"),
@@ -158,6 +164,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
         "runtime_wave": EXPECTED_RUNTIME_WAVE,
         "certification_guard_wave": EXPECTED_GUARD_WAVE,
         "operator_handoff_wave": EXPECTED_HANDOFF_WAVE,
+        "dual_evidence_guard_wave": EXPECTED_DUAL_EVIDENCE_GUARD,
         "candidate_source_sha256": source_sha,
         "candidate_manifest_sha256": expected_manifest_sha,
         "artifact": artifact_name,
@@ -166,6 +173,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
         "host": {"system": system, "machine": machine, "is_ci": is_ci, "physical_gate_eligible": physical_host},
         "physical_product_uat_required": True,
         "release_operational_uat_required": True,
+        "dual_physical_uat_required": True,
         "ready_for_operator_uat": physical_host and trusted,
         "automatic_uat_pass": False,
         "release_authority": False,
@@ -174,7 +182,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a W84 UAT delivery; physical start additionally requires trusted origin and real arm64 host.")
+    parser = argparse.ArgumentParser(description="Verify a W85 dual-evidence UAT handoff; physical start requires trusted origin and real arm64 host.")
     parser.add_argument("--delivery-dir", type=Path, required=True)
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
