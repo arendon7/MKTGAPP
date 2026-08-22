@@ -61,8 +61,8 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
     if "--expected-git-sha" not in uat_window or "GITHUB_SHA" not in uat_window:
         raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
     distribution_window = text[notarize:gate]
-    for marker in ("stapler", "spctl", "--git-sha", "--architecture"):
-        if marker not in distribution_window and marker not in text:
+    for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
+        if marker not in distribution_window:
             raise ValueError(f"distribution trust contract missing {marker}")
     gate_window = text[gate:package]
     if "--production" not in gate_window:
