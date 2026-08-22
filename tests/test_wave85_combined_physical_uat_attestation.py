@@ -167,12 +167,19 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         self.assertIn("FINALIZE_PHYSICAL_UAT.py", verifier)
         self.assertIn("combined attestation release-transport boundary missing", verifier)
 
-    def test_release_stays_fail_closed_and_w82_transport_hard_stop_remains(self):
+    def test_release_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
         self.assertIn("RELEASE_READY = False", version)
         self.assertIn("RELEASE_TAG: str | None = None", version)
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
-        self.assertNotIn("release_candidate_gate.py", workflow)
+        self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
+        self.assertIn("verify_combined_uat_attestation.py", workflow)
+        self.assertIn("release_candidate_gate.py", workflow)
+        gate = workflow.index("release_candidate_gate.py")
+        package = workflow.index("Package immutable release asset")
+        self.assertLess(gate, package)
+        self.assertIn("--production", workflow[gate:package])
+        self.assertIn("--uat-evidence", workflow[gate:package])
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
