@@ -52,16 +52,17 @@ class Wave82TrustedPhysicalUATOriginTests(unittest.TestCase):
             cmd.append("--verify")
         return subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
 
-    def test_push_main_is_physical_candidate_and_pr_is_validation_only(self):
+    def test_main_and_version_tag_are_physical_candidates_but_pr_is_validation_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            main_app = self._fake_app(root / "main")
-            main = self._run_writer(main_app, event="push", ref="refs/heads/main")
-            self.assertEqual(main.returncode, 0, main.stdout + main.stderr)
-            main_manifest = json.loads((main_app / "Contents/Resources/PHYSICAL_UAT_CANDIDATE.json").read_text(encoding="utf-8"))
-            self.assertEqual(main_manifest["role"], "PHYSICAL_UAT_CANDIDATE_ONLY")
-            self.assertTrue(main_manifest["build_origin"]["trusted_for_physical_uat"])
-            self.assertTrue(main_manifest["physical_uat"]["eligible_build_origin"])
+            for name, ref in (("main", "refs/heads/main"), ("tag", "refs/tags/v0.9.0")):
+                app = self._fake_app(root / name)
+                proc = self._run_writer(app, event="push", ref=ref)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                manifest = json.loads((app / "Contents/Resources/PHYSICAL_UAT_CANDIDATE.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["role"], "PHYSICAL_UAT_CANDIDATE_ONLY")
+                self.assertTrue(manifest["build_origin"]["trusted_for_physical_uat"])
+                self.assertTrue(manifest["physical_uat"]["eligible_build_origin"])
 
             pr_app = self._fake_app(root / "pr")
             pr = self._run_writer(pr_app, event="pull_request", ref="refs/pull/88/merge")
@@ -95,15 +96,16 @@ class Wave82TrustedPhysicalUATOriginTests(unittest.TestCase):
             self.assertNotEqual(verified.returncode, 0)
             self.assertIn("build-origin trust mismatch", verified.stderr)
 
-    def test_release_uat_and_release_gate_require_trusted_main_origin(self):
+    def test_release_uat_and_release_gate_require_trusted_origin(self):
         collector = (ROOT / "scripts/collect_release_uat.py").read_text(encoding="utf-8")
         gate = (ROOT / "scripts/release_candidate_gate.py").read_text(encoding="utf-8")
         for source in (collector, gate):
             self.assertIn('"PHYSICAL_UAT_CANDIDATE_ONLY"', source)
             self.assertIn('"refs/heads/main"', source)
+            self.assertIn('"refs/tags/v"', source)
             self.assertIn('"trusted_for_physical_uat"', source)
             self.assertIn('"eligible_build_origin"', source)
-        self.assertIn('"trusted_main_build_origin"', collector)
+        self.assertIn('"trusted_build_origin"', collector)
         self.assertIn("physical_uat_candidate_manifest_missing_or_invalid", gate)
 
     def test_in_app_uat_mutations_are_preflight_gated(self):
@@ -111,6 +113,7 @@ class Wave82TrustedPhysicalUATOriginTests(unittest.TestCase):
         self.assertIn('"trusted-main-candidate"', service)
         self.assertIn('"PHYSICAL_UAT_CANDIDATE_ONLY"', service)
         self.assertIn('"refs/heads/main"', service)
+        self.assertIn('"refs/tags/v"', service)
         self.assertIn("def _require_physical_uat_preflight", service)
         self.assertGreaterEqual(service.count("self._require_physical_uat_preflight(company_id)"), 3)
 
