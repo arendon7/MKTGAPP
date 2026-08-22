@@ -64,10 +64,14 @@ def _load_version(source: Path) -> tuple[str, bool, str | None]:
             pass
 
 
+def _trusted_origin(event: str, ref: str) -> bool:
+    return event == "push" and (ref == "refs/heads/main" or ref.startswith("refs/tags/v"))
+
+
 def _environment_origin() -> dict[str, Any]:
     event = str(os.environ.get("GITHUB_EVENT_NAME") or "local")
     ref = str(os.environ.get("GITHUB_REF") or "local")
-    trusted = event == "push" and ref == "refs/heads/main"
+    trusted = _trusted_origin(event, ref)
     return {"event": event, "ref": ref, "trusted_for_physical_uat": trusted}
 
 
@@ -77,7 +81,7 @@ def _validated_origin(origin: dict[str, Any]) -> dict[str, Any]:
     event = str(origin.get("event") or "local")
     ref = str(origin.get("ref") or "local")
     trusted = origin.get("trusted_for_physical_uat") is True
-    expected_trust = event == "push" and ref == "refs/heads/main"
+    expected_trust = _trusted_origin(event, ref)
     if trusted != expected_trust:
         raise ValueError("candidate build-origin trust mismatch")
     return {"event": event, "ref": ref, "trusted_for_physical_uat": trusted}
@@ -169,7 +173,7 @@ def _summary(manifest: dict[str, Any]) -> str:
             "- Physical UAT required: **YES**",
             "- Automatic PASS: **NO**",
             "",
-            "Only an arm64 bundle produced by a GitHub Actions push to refs/heads/main is an eligible physical-UAT candidate.",
+            "Only an arm64 bundle produced by a controlled GitHub Actions push to refs/heads/main or a version tag refs/tags/v* is an eligible physical-UAT candidate.",
             "Pull-request, local and workflow-dispatch bundles are validation artifacts only and must not record physical-UAT evidence.",
             "Functional sandbox results are not physical release evidence.",
             "Any physical UAT evidence must match both this Git SHA and the candidate source SHA-256.",
