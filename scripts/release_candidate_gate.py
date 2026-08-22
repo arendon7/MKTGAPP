@@ -143,9 +143,10 @@ def main() -> int:
     candidate_origin: dict[str, Any] = {}
     if provenance and architecture == "arm64":
         candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
+        origin_ref = str(candidate_origin.get("ref") or "")
         trusted_origin = bool(
             candidate_origin.get("event") == "push"
-            and candidate_origin.get("ref") == "refs/heads/main"
+            and (origin_ref == "refs/heads/main" or origin_ref.startswith("refs/tags/v"))
             and candidate_origin.get("trusted_for_physical_uat") is True
             and candidate
             and candidate.get("physical_uat", {}).get("eligible_build_origin") is True
@@ -167,7 +168,7 @@ def main() -> int:
                 report,
                 "physical_uat_candidate_manifest_missing_or_invalid",
                 "uat",
-                "El bundle arm64 no contiene un manifiesto W81/W82 válido, de origen main confiable, que identifique el candidato físico exacto.",
+                "El bundle arm64 no contiene un manifiesto W81/W82 válido, de origen GitHub confiable, que identifique el candidato físico exacto.",
             )
         elif uat is not None and not uat_passed:
             if uat.get("git_sha") == git_sha and uat.get("candidate_source_sha256") != candidate_source_sha256:
