@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from http import HTTPStatus
 from pathlib import Path
@@ -20,10 +21,41 @@ class AppRuntime(base.AppRuntime):
                 return candidate
         return self.repo_root
 
+    def _physical_uat_candidate_manifest(self) -> dict:
+        path = self._wave69_resources_root() / "PHYSICAL_UAT_CANDIDATE.json"
+        if not path.is_file():
+            return {}
+        try:
+            row = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return {}
+        return row if isinstance(row, dict) else {}
+
+    @staticmethod
+    def _trusted_physical_uat_candidate(candidate: dict, build: dict) -> bool:
+        origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}
+        physical = candidate.get("physical_uat") if isinstance(candidate.get("physical_uat"), dict) else {}
+        return bool(
+            candidate.get("schema") == "binario.marketing.physical-uat-candidate.v1"
+            and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
+            and candidate.get("git_sha") == build.get("git_sha")
+            and candidate.get("architecture") == build.get("architecture") == "arm64"
+            and candidate.get("product_version") == build.get("product_version") == __version__
+            and candidate.get("runtime_wave") == 76
+            and isinstance(candidate.get("candidate_source_sha256"), str)
+            and len(candidate.get("candidate_source_sha256")) == 64
+            and origin.get("event") == "push"
+            and origin.get("ref") == "refs/heads/main"
+            and origin.get("trusted_for_physical_uat") is True
+            and physical.get("eligible_build_origin") is True
+            and physical.get("automatic_pass") is False
+        )
+
     def physical_uat_preflight(self, company_id: str) -> dict:
         company = self.companies.get(company_id)
         machine = machine_snapshot()
         build = self._build_provenance()
+        candidate = self._physical_uat_candidate_manifest()
         overview = self.physical_uat_overview(company.id)
         resources = self._wave69_resources_root()
         runtime = resources / "runtime"
@@ -45,6 +77,7 @@ class AppRuntime(base.AppRuntime):
         manifests_present = paths["whisper_manifest"].is_file()
         embedded_runtime_ready = executable_runtime and manifests_present and model_present
         provenance_present = build.get("source") == "BUILD_PROVENANCE.json"
+        trusted_candidate = self._trusted_physical_uat_candidate(candidate, build)
         architecture_matches = str(build.get("architecture") or "").lower() == "arm64"
         version_matches = str(build.get("product_version") or "") == __version__
         fail_closed_release = (
@@ -66,6 +99,7 @@ class AppRuntime(base.AppRuntime):
                 "detail": detail,
             }
 
+        origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}
         checks = [
             check(
                 "physical-machine",
@@ -78,6 +112,16 @@ class AppRuntime(base.AppRuntime):
                 "Provenance del .app disponible",
                 provenance_present,
                 "BUILD_PROVENANCE.json" if provenance_present else "Checkout fuente sin provenance de bundle",
+            ),
+            check(
+                "trusted-main-candidate",
+                "Candidato físico exacto generado desde main",
+                trusted_candidate,
+                (
+                    "push · refs/heads/main · PHYSICAL_UAT_CANDIDATE_ONLY"
+                    if trusted_candidate
+                    else f"role={candidate.get('role') or 'missing'} · event={origin.get('event') or 'unknown'} · ref={origin.get('ref') or 'unknown'}"
+                ),
             ),
             check(
                 "arm64-build",
@@ -122,7 +166,7 @@ class AppRuntime(base.AppRuntime):
         manual_scenarios = list(readiness.get("manual_scenarios") or [])
         required_scenarios = [row for row in manual_scenarios if row.get("id") != "optional-ai"]
 
-        if overview.get("active_session"):
+        if overview.get("active_session") and ready:
             next_action = {
                 "code": "CONTINUE_SESSION",
                 "label": "Continuar sesión UAT activa",
@@ -143,6 +187,14 @@ class AppRuntime(base.AppRuntime):
             "company": {"id": company.id, "name": company.name},
             "machine": machine,
             "build": build,
+            "candidate": {
+                "schema": candidate.get("schema"),
+                "role": candidate.get("role"),
+                "git_sha": candidate.get("git_sha"),
+                "candidate_source_sha256": candidate.get("candidate_source_sha256"),
+                "build_origin": origin,
+                "trusted_for_physical_uat": trusted_candidate,
+            },
             "checks": checks,
             "blockers": blockers,
             "ready_to_begin_physical_uat": ready,
@@ -171,6 +223,30 @@ class AppRuntime(base.AppRuntime):
                 "cloud_required": False,
             },
         }
+
+    def _require_physical_uat_preflight(self, company_id: str) -> None:
+        preflight = self.physical_uat_preflight(company_id)
+        if not preflight.get("ready_to_begin_physical_uat"):
+            blockers = ", ".join(preflight.get("blockers") or ["unknown"])
+            raise ValueError(f"physical UAT preflight blocked: {blockers}")
+
+    def start_physical_uat(self, company_id: str, payload: dict) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().start_physical_uat(company_id, payload)
+
+    def update_physical_uat_scenario(
+        self,
+        company_id: str,
+        session_id: str,
+        scenario_id: str,
+        payload: dict,
+    ) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().update_physical_uat_scenario(company_id, session_id, scenario_id, payload)
+
+    def finish_physical_uat(self, company_id: str, session_id: str) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().finish_physical_uat(company_id, session_id)
 
 
 MarketingHTTPServer = base.MarketingHTTPServer
