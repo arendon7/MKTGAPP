@@ -31,14 +31,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _uat_passed(
-    path: Path | None,
-    *,
-    git_sha: str | None,
-    architecture: str | None,
-    candidate_source_sha256: str | None = None,
-    candidate_manifest_sha256: str | None = None,
-) -> tuple[bool, dict[str, Any] | None]:
+def _uat_passed(path: Path | None, *, git_sha: str | None, architecture: str | None, candidate_source_sha256: str | None = None, candidate_manifest_sha256: str | None = None) -> tuple[bool, dict[str, Any] | None]:
     if path is None:
         return False, None
     data = _load_json(path)
@@ -79,12 +72,9 @@ def main() -> int:
     sys.path.insert(0, str(repo / "src"))
     from binario_marketing.release_readiness import evaluate_release_readiness
 
-    provenance: dict[str, Any] | None = None
-    embedded: dict[str, Any] | None = None
-    candidate: dict[str, Any] | None = None
-    candidate_manifest_path: Path | None = None
-    candidate_source_sha256: str | None = None
-    candidate_manifest_sha256: str | None = None
+    provenance = embedded = candidate = None
+    candidate_manifest_path = None
+    candidate_source_sha256 = candidate_manifest_sha256 = None
     signing_mode = notarized = git_sha = architecture = None
     source_kwargs: dict[str, Any] = {}
     if args.app:
@@ -101,85 +91,41 @@ def main() -> int:
         notarized = provenance.get("notarized")
         git_sha = provenance.get("git_sha")
         architecture = provenance.get("architecture")
-        source_kwargs = {
-            "version": embedded.get("version"),
-            "release_ready": bool(embedded.get("release_ready_flag")),
-            "release_tag": embedded.get("release_tag"),
-        }
+        source_kwargs = {"version": embedded.get("version"), "release_ready": bool(embedded.get("release_ready_flag")), "release_tag": embedded.get("release_tag")}
 
-    uat_passed: bool | None = None
-    uat: dict[str, Any] | None = None
+    uat_passed = None
+    uat = None
     if args.app or args.uat_evidence:
-        uat_passed, uat = _uat_passed(
-            args.uat_evidence,
-            git_sha=git_sha,
-            architecture=architecture,
-            candidate_source_sha256=candidate_source_sha256,
-            candidate_manifest_sha256=candidate_manifest_sha256,
-        )
+        uat_passed, uat = _uat_passed(args.uat_evidence, git_sha=git_sha, architecture=architecture, candidate_source_sha256=candidate_source_sha256, candidate_manifest_sha256=candidate_manifest_sha256)
 
-    report = evaluate_release_readiness(
-        **source_kwargs,
-        signing_mode=signing_mode,
-        notarized=notarized,
-        uat_passed=uat_passed,
-        git_sha=git_sha,
-        architecture=architecture,
-    )
+    report = evaluate_release_readiness(**source_kwargs, signing_mode=signing_mode, notarized=notarized, uat_passed=uat_passed, git_sha=git_sha, architecture=architecture)
     if embedded:
-        report["embedded_source_state_matches"] = all(
-            report.get(key) == embedded.get(key)
-            for key in ("version", "release_ready_flag", "release_tag", "git_sha", "architecture", "signing_mode", "notarized")
-        )
+        report["embedded_source_state_matches"] = all(report.get(key) == embedded.get(key) for key in ("version", "release_ready_flag", "release_tag", "git_sha", "architecture", "signing_mode", "notarized"))
         if not report["embedded_source_state_matches"]:
-            _append_blocker(
-                report,
-                "embedded_state_mismatch",
-                "candidate",
-                "El estado embebido del candidato no coincide con la evaluación reproducida.",
-            )
+            _append_blocker(report, "embedded_state_mismatch", "candidate", "El estado embebido del candidato no coincide con la evaluación reproducida.")
 
     candidate_consistent = None
+    candidate_origin: dict[str, Any] = {}
     if provenance and architecture == "arm64":
-        candidate_consistent = bool(
-            candidate
-            and candidate.get("schema") == CANDIDATE_SCHEMA
-            and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
-            and candidate.get("git_sha") == git_sha
-            and candidate.get("architecture") == architecture
-            and candidate.get("product_version") == provenance.get("product_version")
-            and candidate.get("runtime_wave") == 76
-            and isinstance(candidate_source_sha256, str)
-            and len(candidate_source_sha256) == 64
-        )
+        candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
+        ref = str(candidate_origin.get("ref") or "")
+        trusted_origin = bool(candidate_origin.get("event") == "push" and (ref == "refs/heads/main" or ref.startswith("refs/tags/v")) and candidate_origin.get("trusted_for_physical_uat") is True and candidate and candidate.get("physical_uat", {}).get("eligible_build_origin") is True)
+        candidate_consistent = bool(candidate and candidate.get("schema") == CANDIDATE_SCHEMA and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY" and trusted_origin and candidate.get("git_sha") == git_sha and candidate.get("architecture") == architecture and candidate.get("product_version") == provenance.get("product_version") and candidate.get("runtime_wave") == 76 and candidate.get("certification_guard_wave") == 83 and isinstance(candidate_source_sha256, str) and len(candidate_source_sha256) == 64)
         if not candidate_consistent:
-            _append_blocker(
-                report,
-                "physical_uat_candidate_manifest_missing_or_invalid",
-                "uat",
-                "El bundle arm64 no contiene un manifiesto W81 válido que identifique el candidato físico exacto.",
-            )
+            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W83 válido, de origen GitHub confiable, que identifique el candidato físico exacto.")
         elif uat is not None and not uat_passed:
             if uat.get("git_sha") == git_sha and uat.get("candidate_source_sha256") != candidate_source_sha256:
-                _append_blocker(
-                    report,
-                    "physical_uat_candidate_source_mismatch",
-                    "uat",
-                    "La evidencia UAT pertenece a una fuente distinta del candidato físico actual.",
-                )
+                _append_blocker(report, "physical_uat_candidate_source_mismatch", "uat", "La evidencia UAT pertenece a una fuente distinta del candidato físico actual.")
             if uat.get("git_sha") == git_sha and uat.get("candidate_manifest_sha256") != candidate_manifest_sha256:
-                _append_blocker(
-                    report,
-                    "physical_uat_candidate_manifest_mismatch",
-                    "uat",
-                    "La evidencia UAT no coincide con el manifiesto exacto del candidato físico actual.",
-                )
+                _append_blocker(report, "physical_uat_candidate_manifest_mismatch", "uat", "La evidencia UAT no coincide con el manifiesto exacto del candidato físico actual.")
 
     report["app_evaluated"] = str(args.app.expanduser().resolve()) if args.app else None
     report["uat_evidence"] = str(args.uat_evidence.expanduser().resolve()) if args.uat_evidence else None
     report["provenance_schema"] = provenance.get("schema") if provenance else None
     report["embedded_readiness_schema"] = embedded.get("schema") if embedded else None
     report["candidate_schema"] = candidate.get("schema") if candidate else None
+    report["candidate_role"] = candidate.get("role") if candidate else None
+    report["candidate_build_origin"] = candidate_origin
     report["candidate_source_sha256"] = candidate_source_sha256
     report["candidate_manifest_sha256"] = candidate_manifest_sha256
     report["candidate_manifest_consistent"] = candidate_consistent
