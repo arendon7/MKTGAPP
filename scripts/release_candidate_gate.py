@@ -140,11 +140,21 @@ def main() -> int:
             )
 
     candidate_consistent = None
+    candidate_origin: dict[str, Any] = {}
     if provenance and architecture == "arm64":
+        candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
+        trusted_origin = bool(
+            candidate_origin.get("event") == "push"
+            and candidate_origin.get("ref") == "refs/heads/main"
+            and candidate_origin.get("trusted_for_physical_uat") is True
+            and candidate
+            and candidate.get("physical_uat", {}).get("eligible_build_origin") is True
+        )
         candidate_consistent = bool(
             candidate
             and candidate.get("schema") == CANDIDATE_SCHEMA
             and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
+            and trusted_origin
             and candidate.get("git_sha") == git_sha
             and candidate.get("architecture") == architecture
             and candidate.get("product_version") == provenance.get("product_version")
@@ -157,7 +167,7 @@ def main() -> int:
                 report,
                 "physical_uat_candidate_manifest_missing_or_invalid",
                 "uat",
-                "El bundle arm64 no contiene un manifiesto W81 válido que identifique el candidato físico exacto.",
+                "El bundle arm64 no contiene un manifiesto W81/W82 válido, de origen main confiable, que identifique el candidato físico exacto.",
             )
         elif uat is not None and not uat_passed:
             if uat.get("git_sha") == git_sha and uat.get("candidate_source_sha256") != candidate_source_sha256:
@@ -180,6 +190,8 @@ def main() -> int:
     report["provenance_schema"] = provenance.get("schema") if provenance else None
     report["embedded_readiness_schema"] = embedded.get("schema") if embedded else None
     report["candidate_schema"] = candidate.get("schema") if candidate else None
+    report["candidate_role"] = candidate.get("role") if candidate else None
+    report["candidate_build_origin"] = candidate_origin
     report["candidate_source_sha256"] = candidate_source_sha256
     report["candidate_manifest_sha256"] = candidate_manifest_sha256
     report["candidate_manifest_consistent"] = candidate_consistent
