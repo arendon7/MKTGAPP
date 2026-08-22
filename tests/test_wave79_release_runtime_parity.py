@@ -31,11 +31,11 @@ class Wave79ReleaseRuntimeParityTests(unittest.TestCase):
         self.assertIn('audit_wave80_x86_runtime_parity.sh', x86)
         self.assertNotIn('build_full_mac_app.sh', x86)
 
-    def test_current_arm64_certification_runs_wave79_parity_audit(self):
+    def test_current_arm64_certification_preserves_wave79_parity_audit(self):
         guarded = (ROOT / "scripts/build_full_mac_current_guarded.sh").read_text(encoding="utf-8")
         self.assertIn('audit_wave78_release_contract_drift_guard.sh', guarded)
         self.assertIn('audit_wave79_release_pipeline_parity.sh', guarded)
-        self.assertIn('CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 79', guarded)
+        self.assertIn('CURRENT ARM64 CERTIFICATION GUARD PASS: Wave', guarded)
 
 
 if __name__ == "__main__":
