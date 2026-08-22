@@ -27,6 +27,12 @@ else
 fi
 NOTARIZED="false"
 RELEASE_CHANNEL="development"
+BUILD_EVENT="${GITHUB_EVENT_NAME:-local}"
+BUILD_REF="${GITHUB_REF:-local}"
+PHYSICAL_UAT_CANDIDATE="false"
+if [[ "$BUILD_EVENT" == "push" && "$BUILD_REF" == "refs/heads/main" ]]; then
+  PHYSICAL_UAT_CANDIDATE="true"
+fi
 
 source "$ROOT/scripts/full_mac_media_runtime.env"
 source "$ROOT/scripts/full_mac_transcription_runtime.env"
@@ -90,6 +96,9 @@ cat > "$RESOURCES/BUILD_PROVENANCE.json" <<JSON
   "macos_short_version": "$MACOS_SHORT_VERSION",
   "macos_bundle_version": "$MACOS_BUNDLE_VERSION",
   "release_channel": "$RELEASE_CHANNEL",
+  "build_event": "$BUILD_EVENT",
+  "build_ref": "$BUILD_REF",
+  "physical_uat_candidate": $PHYSICAL_UAT_CANDIDATE,
   "signing_mode": "$SIGNING_MODE",
   "notarized": $NOTARIZED,
   "embedded_python": "3.12.13",
