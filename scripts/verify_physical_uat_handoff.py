@@ -17,6 +17,7 @@ EXPECTED_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
 EXPECTED_ARCH = "arm64"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 81
+EXPECTED_HANDOFF_WAVE = 84
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -97,6 +98,7 @@ def verify(
     _require(delivery.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, "delivery certification guard drift")
     _require(external.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, "external certification guard drift")
     _require(internal.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, "embedded certification guard drift")
+    _require(delivery.get("operator_handoff_wave") == EXPECTED_HANDOFF_WAVE, "operator handoff wave drift")
 
     source_sha = str(delivery.get("candidate_source_sha256") or "")
     _require(len(source_sha) == 64, "delivery candidate source SHA-256 malformed")
@@ -119,6 +121,23 @@ def verify(
     _require(checksum_path.is_file(), "candidate checksum file missing")
     checksum_line = checksum_path.read_text(encoding="utf-8").strip()
     _require(checksum_line == f"{artifact_sha}  {artifact_name}", "candidate checksum sidecar mismatch")
+
+    helper_contract = (
+        ("PHYSICAL_UAT_HANDOFF_VERIFY.py", "handoff_verifier_sha256"),
+        ("START_PHYSICAL_UAT.command", "start_command_sha256"),
+        ("RECORD_RELEASE_UAT.command", "record_command_sha256"),
+        ("PHYSICAL_UAT_OPERATOR.md", "operator_guide_sha256"),
+    )
+    helper_hashes: dict[str, str] = {}
+    for filename, field in helper_contract:
+        helper = delivery_dir / filename
+        _require(helper.is_file(), f"operator handoff helper missing: {filename}")
+        actual = _sha256(helper)
+        _require(actual == delivery.get(field), f"operator handoff helper digest mismatch: {filename}")
+        helper_hashes[filename] = actual
+
+    _require(delivery.get("physical_product_uat_required") is True, "in-app physical product UAT requirement missing")
+    _require(delivery.get("release_operational_uat_required") is True, "release operational UAT requirement missing")
 
     for label, payload in (("delivery", delivery), ("external candidate", external), ("embedded candidate", internal)):
         if label == "delivery":
@@ -149,11 +168,15 @@ def verify(
         "architecture": EXPECTED_ARCH,
         "runtime_wave": EXPECTED_RUNTIME_WAVE,
         "certification_guard_wave": EXPECTED_GUARD_WAVE,
+        "operator_handoff_wave": EXPECTED_HANDOFF_WAVE,
         "candidate_source_sha256": source_sha,
         "candidate_manifest_sha256": expected_manifest_sha,
         "artifact": artifact_name,
         "artifact_sha256": artifact_sha,
+        "operator_helpers": helper_hashes,
         "host": {"system": system, "machine": machine, "is_ci": is_ci, "physical_gate_eligible": physical_host},
+        "physical_product_uat_required": True,
+        "release_operational_uat_required": True,
         "ready_for_operator_uat": physical_host if require_physical_host else True,
         "automatic_uat_pass": False,
         "release_authority": False,
