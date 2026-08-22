@@ -16,24 +16,54 @@ PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
-    """Require an explicit production gate with physical-UAT evidence before packaging."""
+    """Require verified W85 evidence transport and a blocking production gate before packaging."""
     text = PERSISTENT_RELEASE.read_text(encoding="utf-8") if workflow_text is None else workflow_text
+    transport_secret = "PHYSICAL_UAT_ATTESTATION_B64"
+    verifier_marker = "verify_combined_uat_attestation.py"
+    verified_artifact = "verified-physical-uat-attestation"
+    upload_marker = "actions/upload-artifact@v4"
+    download_marker = "actions/download-artifact@v4"
     gate_marker = "release_candidate_gate.py"
     package_marker = "Package immutable release asset"
-    gate_index = text.find(gate_marker)
-    package_index = text.find(package_marker)
-    if gate_index < 0:
-        raise ValueError("persistent release lacks release_candidate_gate.py production enforcement")
-    if package_index < 0:
-        raise ValueError("persistent release package step is missing")
+
+    required = {
+        transport_secret: "persistent release lacks the physical-UAT attestation transport secret",
+        verifier_marker: "persistent release lacks combined UAT attestation verification",
+        verified_artifact: "persistent release lacks a verified UAT attestation artifact",
+        upload_marker: "persistent release does not upload verified UAT evidence",
+        download_marker: "persistent release does not download verified UAT evidence for native builds",
+        gate_marker: "persistent release lacks release_candidate_gate.py production enforcement",
+        package_marker: "persistent release package step is missing",
+    }
+    indexes: dict[str, int] = {}
+    for marker, message in required.items():
+        index = text.find(marker)
+        if index < 0:
+            raise ValueError(message)
+        indexes[marker] = index
+
+    verifier_index = indexes[verifier_marker]
+    gate_index = indexes[gate_marker]
+    package_index = indexes[package_marker]
+    if verifier_index > gate_index:
+        raise ValueError("combined UAT attestation must be verified before the production release gate")
+    if indexes[upload_marker] > gate_index:
+        raise ValueError("verified UAT evidence must be uploaded before native production gating")
+    if indexes[download_marker] > gate_index:
+        raise ValueError("native build must download verified UAT evidence before production gating")
     if gate_index > package_index:
         raise ValueError("production release gate must execute before immutable packaging")
 
-    gate_window = text[gate_index : package_index]
+    verifier_window = text[verifier_index:gate_index]
+    if "--expected-git-sha" not in verifier_window or "GITHUB_SHA" not in verifier_window:
+        raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
+    gate_window = text[gate_index:package_index]
     if "--production" not in gate_window:
         raise ValueError("persistent release gate is not enforcing --production")
     if "--uat-evidence" not in gate_window:
         raise ValueError("persistent release gate does not consume explicit physical UAT evidence")
+    if "combined-physical-uat-attestation.json" not in gate_window:
+        raise ValueError("persistent release gate is not consuming the verified combined attestation")
     if "--expect-blocked" in gate_window:
         raise ValueError("persistent release cannot substitute --expect-blocked for production enforcement")
     if "|| true" in gate_window:
