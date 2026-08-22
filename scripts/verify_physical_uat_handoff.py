@@ -20,6 +20,7 @@ EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 EXPECTED_HANDOFF_WAVE = 84
 COMBINED_ATTESTATION_WAVE = 85
+RELEASE_AUTHORIZATION_WAVE = 89
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -47,8 +48,7 @@ def _require(condition: bool, message: str) -> None:
 
 def _trusted_origin(payload: dict[str, Any]) -> bool:
     origin = payload.get("build_origin") if isinstance(payload.get("build_origin"), dict) else {}
-    ref = str(origin.get("ref") or "")
-    return bool(origin.get("event") == "push" and (ref == "refs/heads/main" or ref.startswith("refs/tags/v")) and origin.get("trusted_for_physical_uat") is True)
+    return bool(origin.get("event") == "push" and origin.get("ref") == "refs/heads/main" and origin.get("trusted_for_physical_uat") is True)
 
 
 def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None, require_physical_host: bool = False) -> dict[str, Any]:
@@ -112,6 +112,11 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
         _require(combined_wave == COMBINED_ATTESTATION_WAVE, "combined attestation wave drift")
         _require(delivery.get("combined_attestation_required_before_release_transport") is True, "combined attestation release-transport boundary missing")
         helper_contract.extend([("FINALIZE_PHYSICAL_UAT.py", "combined_finalizer_sha256"), ("FINALIZE_PHYSICAL_UAT.command", "finalize_command_sha256")])
+    authorization_wave = delivery.get("release_authorization_wave")
+    if authorization_wave is not None:
+        _require(authorization_wave == RELEASE_AUTHORIZATION_WAVE, "release authorization wave drift")
+        _require(delivery.get("explicit_release_authorization_required") is True, "explicit release authorization boundary missing")
+        helper_contract.append(("AUTHORIZE_RELEASE.py", "release_authorizer_sha256"))
     helper_hashes: dict[str, str] = {}
     for filename, field in helper_contract:
         helper = delivery_dir / filename; _require(helper.is_file(), f"operator handoff helper missing: {filename}")
@@ -119,22 +124,22 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
     _require(delivery.get("physical_product_uat_required") is True, "in-app physical product UAT requirement missing")
     _require(delivery.get("release_operational_uat_required") is True, "release operational UAT requirement missing")
-    _require(delivery.get("release_ready") is False, "delivery unexpectedly release-ready")
-    _require(delivery.get("release_tag") is None, "delivery unexpectedly has release tag")
+    _require(delivery.get("release_ready") is False, "source safety flag must remain false in the physical handoff")
+    _require(delivery.get("release_tag") is None, "source release tag must remain unset in the physical handoff")
     _require(delivery.get("production_ready") is False, "delivery unexpectedly production-ready")
     _require(delivery.get("automatic_uat_pass") is False, "delivery unexpectedly allows automatic UAT pass")
 
     system = platform.system(); machine = platform.machine().lower(); is_ci = str(os.environ.get("GITHUB_ACTIONS") or "").lower() == "true" or str(os.environ.get("CI") or "").lower() == "true"; physical_host = system == "Darwin" and machine == "arm64" and not is_ci
     if require_physical_host:
         _require(physical_host, f"physical UAT requires real non-CI Darwin arm64 host; got {system}/{machine}/CI={is_ci}")
-        _require(trusted, "physical UAT requires a trusted push build from main or a version tag; validation artifacts are forbidden")
+        _require(trusted, "physical UAT requires a trusted push build from refs/heads/main; validation artifacts and tag rebuilds are forbidden")
         _require(role == PHYSICAL_ROLE, "physical UAT requires PHYSICAL_UAT_CANDIDATE_ONLY role")
 
-    return {"schema":"binario.marketing.physical-uat-handoff-verification.v2","git_sha":git_sha,"role":role,"build_origin":delivery.get("build_origin"),"physical_uat_eligible":trusted,"architecture":EXPECTED_ARCH,"runtime_wave":EXPECTED_RUNTIME_WAVE,"certification_guard_wave":EXPECTED_GUARD_WAVE,"operator_handoff_wave":EXPECTED_HANDOFF_WAVE,"combined_attestation_wave":combined_wave,"candidate_source_sha256":source_sha,"candidate_manifest_sha256":expected_manifest_sha,"artifact":artifact_name,"artifact_sha256":artifact_sha,"operator_helpers":helper_hashes,"host":{"system":system,"machine":machine,"is_ci":is_ci,"physical_gate_eligible":physical_host},"physical_product_uat_required":True,"release_operational_uat_required":True,"ready_for_operator_uat":physical_host and trusted,"automatic_uat_pass":False,"release_authority":False,"production_ready":False}
+    return {"schema":"binario.marketing.physical-uat-handoff-verification.v2","git_sha":git_sha,"role":role,"build_origin":delivery.get("build_origin"),"physical_uat_eligible":trusted,"architecture":EXPECTED_ARCH,"runtime_wave":EXPECTED_RUNTIME_WAVE,"certification_guard_wave":EXPECTED_GUARD_WAVE,"operator_handoff_wave":EXPECTED_HANDOFF_WAVE,"combined_attestation_wave":combined_wave,"release_authorization_wave":authorization_wave,"candidate_source_sha256":source_sha,"candidate_manifest_sha256":expected_manifest_sha,"artifact":artifact_name,"artifact_sha256":artifact_sha,"operator_helpers":helper_hashes,"host":{"system":system,"machine":machine,"is_ci":is_ci,"physical_gate_eligible":physical_host},"physical_product_uat_required":True,"release_operational_uat_required":True,"explicit_release_authorization_required":authorization_wave == RELEASE_AUTHORIZATION_WAVE,"ready_for_operator_uat":physical_host and trusted,"automatic_uat_pass":False,"release_authority":False,"production_ready":False}
 
 
 def main() -> int:
-    parser=argparse.ArgumentParser(description="Verify a W84/W85 UAT delivery; physical start additionally requires trusted origin and real arm64 host."); parser.add_argument("--delivery-dir",type=Path,required=True); parser.add_argument("--app",type=Path,required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host",action="store_true"); args=parser.parse_args()
+    parser=argparse.ArgumentParser(description="Verify a W84/W85/W89 UAT delivery; physical start additionally requires trusted main origin and real arm64 host."); parser.add_argument("--delivery-dir",type=Path,required=True); parser.add_argument("--app",type=Path,required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host",action="store_true"); args=parser.parse_args()
     try: report=verify(args.delivery_dir,args.app,expected_git_sha=args.expected_git_sha,require_physical_host=args.require_physical_host)
     except ValueError as exc: raise SystemExit(f"PHYSICAL UAT HANDOFF BLOCKED: {exc}") from exc
     print(json.dumps(report,ensure_ascii=False,indent=2,sort_keys=True)); return 0
