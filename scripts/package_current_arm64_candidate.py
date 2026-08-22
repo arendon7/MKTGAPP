@@ -65,7 +65,7 @@ def _validate_candidate(app: Path, expected_git_sha: str) -> tuple[Path, dict[st
     return manifest_path, manifest
 
 
-def _operator_guide(*, git_sha: str, artifact: str, artifact_sha: str, source_sha: str) -> str:
+def _operator_guide(*, git_sha: str, artifact: str, artifact_sha: str, handoff_archive: str, source_sha: str) -> str:
     return f"""# BINARIO Marketing IA · Physical UAT Operator Handoff
 
 ## Exact candidate
@@ -76,15 +76,18 @@ def _operator_guide(*, git_sha: str, artifact: str, artifact_sha: str, source_sh
 - Candidate guard: `Wave 81`
 - Operator handoff: `Wave 84`
 - Candidate source SHA-256: `{source_sha}`
-- ZIP: `{artifact}`
-- ZIP SHA-256: `{artifact_sha}`
+- Candidate ZIP: `{artifact}`
+- Candidate ZIP SHA-256: `{artifact_sha}`
+- Permission-preserving handoff archive: `{handoff_archive}`
 - Release authority: **NO**
 - Automatic UAT pass: **NO**
 
 ## Start
 
-On a real Apple Silicon Mac, double-click `START_PHYSICAL_UAT.command` from this same delivery folder.
-It verifies the ZIP checksum, extracts the `.app`, verifies code-sign integrity, verifies the exact W81 candidate binding, initializes release-UAT evidence without passing any manual gate, and opens the app.
+From the downloaded GitHub Actions artifact, first expand `{handoff_archive}`. That inner archive is created with macOS `ditto` so the `.command` files retain executable permissions even if the outer Actions artifact normalizes file modes.
+
+Inside the extracted handoff folder, double-click `START_PHYSICAL_UAT.command` on a real Apple Silicon Mac.
+It verifies the candidate ZIP checksum, extracts the `.app`, verifies code-sign integrity, verifies the exact W81 candidate binding, initializes release-UAT evidence without passing any manual gate, and opens the app.
 
 ## Phase A · In-app physical product UAT
 
@@ -128,6 +131,9 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
     zip_name = f"Binario-Marketing-IA-PHYSICAL-UAT-arm64-{short_sha}.zip"
     zip_path = out_dir / zip_name
     checksum_path = out_dir / f"{zip_name}.sha256"
+    handoff_name = f"Binario-Marketing-IA-PHYSICAL-UAT-arm64-HANDOFF-{short_sha}.zip"
+    handoff_path = out_dir / handoff_name
+    handoff_checksum_path = out_dir / f"{handoff_name}.sha256"
     delivery_path = out_dir / "FULL_MAC_DELIVERY.json"
     external_manifest_path = out_dir / "PHYSICAL_UAT_CANDIDATE.json"
     external_summary_path = out_dir / "PHYSICAL_UAT_CANDIDATE.md"
@@ -166,6 +172,7 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
             git_sha=expected_git_sha,
             artifact=zip_name,
             artifact_sha=artifact_sha,
+            handoff_archive=handoff_name,
             source_sha=str(manifest.get("candidate_source_sha256") or ""),
         ),
         encoding="utf-8",
@@ -181,6 +188,7 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
         "runtime_wave": EXPECTED_RUNTIME_WAVE,
         "certification_guard_wave": EXPECTED_GUARD_WAVE,
         "operator_handoff_wave": OPERATOR_HANDOFF_WAVE,
+        "operator_handoff_archive": handoff_name,
         "candidate_source_sha256": manifest.get("candidate_source_sha256"),
         "candidate_manifest_sha256": candidate_manifest_sha,
         "artifact": zip_name,
@@ -201,7 +209,38 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
         json.dumps(delivery, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return delivery
+
+    staging = out_dir / f".physical-uat-handoff-{short_sha}"
+    handoff_root = staging / f"BINARIO-PHYSICAL-UAT-{short_sha}"
+    shutil.rmtree(staging, ignore_errors=True)
+    handoff_root.mkdir(parents=True)
+    handoff_members = (
+        zip_path,
+        checksum_path,
+        delivery_path,
+        external_manifest_path,
+        external_summary_path,
+        verifier_path,
+        starter_path,
+        recorder_path,
+        guide_path,
+    )
+    for source in handoff_members:
+        shutil.copy2(source, handoff_root / source.name)
+    (handoff_root / starter_path.name).chmod(0o755)
+    (handoff_root / recorder_path.name).chmod(0o755)
+    subprocess.run(
+        [str(ditto), "-c", "-k", "--sequesterRsrc", "--keepParent", str(handoff_root), str(handoff_path)],
+        check=True,
+    )
+    handoff_sha = _sha256(handoff_path)
+    handoff_checksum_path.write_text(f"{handoff_sha}  {handoff_name}\n", encoding="utf-8")
+    shutil.rmtree(staging, ignore_errors=True)
+
+    result = dict(delivery)
+    result["operator_handoff_archive_sha256"] = handoff_sha
+    print(json.dumps({"operator_handoff_archive": handoff_name, "sha256": handoff_sha}, ensure_ascii=False))
+    return result
 
 
 def main() -> int:
