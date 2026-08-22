@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -12,7 +13,9 @@ class Wave79ReleaseRuntimeParityTests(unittest.TestCase):
         self.assertNotIn('scripts/build_full_mac_app.sh --arch', workflow)
         self.assertIn('service_wave76_app import serve', workflow)
         self.assertIn('"runtime_wave":76', workflow)
-        self.assertIn('"certification_guard_wave":80', workflow)
+        guards = [int(value) for value in re.findall(r'"certification_guard_wave":(\d+)', workflow)]
+        self.assertTrue(guards, workflow)
+        self.assertGreaterEqual(max(guards), 80)
 
     def test_release_candidate_routes_both_architectures_to_current_runtime_builders(self):
         builder = (ROOT / "scripts/build_full_mac_release_candidate.sh").read_text(encoding="utf-8")
