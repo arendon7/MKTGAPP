@@ -14,4 +14,5 @@ done
 APP="$OUT/Binario Marketing IA.app"
 /bin/bash "$ROOT/scripts/audit_wave78_release_contract_drift_guard.sh" "$APP"
 /bin/bash "$ROOT/scripts/audit_wave79_release_pipeline_parity.sh"
-printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 79 · %s\n' "$APP"
+/bin/bash "$ROOT/scripts/audit_wave81_main_physical_uat_candidate.sh" "$APP"
+printf 'CURRENT ARM64 CERTIFICATION GUARD PASS: Wave 81 · %s\n' "$APP"
