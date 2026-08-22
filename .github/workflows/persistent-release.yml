@@ -130,6 +130,40 @@ jobs:
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
           path: release-evidence
+      - name: Install Developer ID and notarization credentials
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_DEVELOPER_ID_P12_BASE64 APPLE_DEVELOPER_ID_P12_PASSWORD APPLE_DEVELOPER_IDENTITY APPLE_NOTARY_KEY_P8_BASE64 APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+            test -n "${!name:-}" || { echo "RELEASE CREDENTIAL MISSING: $name"; exit 6; }
+          done
+          [[ "$APPLE_DEVELOPER_IDENTITY" == Developer\ ID\ Application:* ]] || { echo 'Invalid Developer ID identity'; exit 6; }
+          KEYCHAIN="$RUNNER_TEMP/binario-release.keychain-db"
+          KEYCHAIN_PASSWORD="$(/usr/bin/uuidgen)"
+          P12="$RUNNER_TEMP/developer-id.p12"
+          NOTARY_KEY="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$APPLE_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$P12"
+          printf '%s' "$APPLE_NOTARY_KEY_P8_BASE64" | base64 --decode > "$NOTARY_KEY"
+          /usr/bin/security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          /usr/bin/security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          /usr/bin/security import "$P12" -k "$KEYCHAIN" -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          /usr/bin/security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          /usr/bin/security list-keychains -d user -s "$KEYCHAIN"
+          /usr/bin/security find-identity -v -p codesigning "$KEYCHAIN" | /usr/bin/grep -F "$APPLE_DEVELOPER_IDENTITY"
+          {
+            echo "BINARIO_CODESIGN_IDENTITY=$APPLE_DEVELOPER_IDENTITY"
+            echo "APPLE_NOTARY_KEY_PATH=$NOTARY_KEY"
+            echo "APPLE_NOTARY_KEY_ID=$APPLE_NOTARY_KEY_ID"
+            echo "APPLE_NOTARY_ISSUER_ID=$APPLE_NOTARY_ISSUER_ID"
+          } >> "$GITHUB_ENV"
       - name: Cache verified FFmpeg runtime when available
         uses: actions/cache@v4
         with:
@@ -140,7 +174,7 @@ jobs:
         with:
           path: .cache/full-mac-whisper-${{ matrix.arch }}
           key: release-whisper-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
-      - name: Build and audit native current-runtime candidate
+      - name: Build and audit native current-runtime candidate with Developer ID
         shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
@@ -150,6 +184,11 @@ jobs:
           chmod +x scripts/*.sh
           scripts/build_full_mac_release_candidate.sh --arch "${{ matrix.arch }}"
           scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+          python - "dist/Binario Marketing IA.app/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
+          import json,sys
+          row=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert row.get('signing_mode')=='developer_id', row
+          PY
       - name: Smoke bundled service
         shell: bash
         run: |
@@ -168,6 +207,18 @@ jobs:
           if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
           /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/health.json"
           /usr/bin/grep -q 'service_wave76_app import serve' "$APP/Contents/Resources/launch.py"
+      - name: Notarize and verify native distribution trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          scripts/notarize_release_candidate.sh \
+            "dist/Binario Marketing IA.app" \
+            "release-evidence/distribution-trust-${{ matrix.arch }}.json"
+          python scripts/verify_distribution_trust.py \
+            --evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
+            --git-sha "$GITHUB_SHA" \
+            --architecture "${{ matrix.arch }}"
       - name: Enforce production release candidate
         shell: bash
         run: |
@@ -176,6 +227,7 @@ jobs:
             --repo . \
             --app "dist/Binario Marketing IA.app" \
             --uat-evidence "release-evidence/combined-physical-uat-attestation.json" \
+            --distribution-evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
             --production
       - name: Package immutable release asset
         shell: bash
@@ -187,7 +239,8 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
           SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
           printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
-          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":80}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+          /bin/cp "release-evidence/distribution-trust-${{ matrix.arch }}.json" "release/DISTRIBUTION-TRUST-${{ matrix.arch }}.json"
+          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":87}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
       - uses: actions/upload-artifact@v4
         with:
           name: persistent-release-${{ matrix.arch }}
@@ -198,17 +251,25 @@ jobs:
     needs: build-native
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           pattern: persistent-release-*
           path: release
           merge-multiple: true
-      - name: Verify both architectures and checksums
+      - name: Verify both architectures, checksums, and distribution evidence
         shell: bash
         run: |
           set -euo pipefail
           test -f release/RELEASE-arm64.json
           test -f release/RELEASE-x86_64.json
+          test -f release/DISTRIBUTION-TRUST-arm64.json
+          test -f release/DISTRIBUTION-TRUST-x86_64.json
+          python scripts/verify_distribution_trust.py --evidence release/DISTRIBUTION-TRUST-arm64.json --git-sha "$GITHUB_SHA" --architecture arm64
+          python scripts/verify_distribution_trust.py --evidence release/DISTRIBUTION-TRUST-x86_64.json --git-sha "$GITHUB_SHA" --architecture x86_64
           cd release
           for checksum in *.zip.sha256; do sha256sum -c "$checksum"; done
       - name: Publish permanent GitHub Release

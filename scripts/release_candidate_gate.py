@@ -101,7 +101,6 @@ def _uat_passed(
         return False, None, None
     data = _load_json(path)
     schema = data.get("schema")
-
     if schema == RAW_UAT_SCHEMA:
         if not git_sha or data.get("git_sha") != git_sha:
             return False, data, None
@@ -115,7 +114,6 @@ def _uat_passed(
             return False, data, None
         passed = bool(data.get("uat_passed") is True and data.get("overall") == "UAT_PASS")
         return passed, data, "exact_raw_release_uat" if passed else None
-
     if schema == COMBINED_UAT_SCHEMA:
         if not _combined_uat_valid(data):
             return False, data, None
@@ -138,8 +136,6 @@ def _uat_passed(
             return True, data, "source_equivalent_arm64_rebuild"
         if architecture == "x86_64":
             return True, data, "source_equivalent_cross_arch_distribution"
-        return False, data, None
-
     return False, data, None
 
 
@@ -156,6 +152,7 @@ def main() -> int:
     ap.add_argument("--repo", type=Path, default=Path.cwd())
     ap.add_argument("--app", type=Path)
     ap.add_argument("--uat-evidence", type=Path)
+    ap.add_argument("--distribution-evidence", type=Path)
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--production", action="store_true")
     mode.add_argument("--expect-blocked", action="store_true")
@@ -163,13 +160,15 @@ def main() -> int:
 
     repo = args.repo.expanduser().resolve()
     sys.path.insert(0, str(repo / "src"))
+    sys.path.insert(0, str(repo / "scripts"))
     from binario_marketing.release_readiness import evaluate_release_readiness
+    from verify_distribution_trust import verify as verify_distribution_trust
 
     provenance = embedded = candidate = None
     candidate_source_sha256 = candidate_manifest_sha256 = current_source_sha256 = None
     signing_mode = notarized = git_sha = architecture = product_version = None
     source_kwargs: dict[str, Any] = {}
-    resources: Path | None = None
+    distribution: dict[str, Any] | None = None
 
     if args.app:
         app = args.app.expanduser().resolve()
@@ -195,6 +194,19 @@ def main() -> int:
             "release_tag": embedded.get("release_tag"),
         }
 
+    if args.distribution_evidence:
+        try:
+            distribution = verify_distribution_trust(
+                args.distribution_evidence,
+                git_sha=git_sha,
+                architecture=architecture,
+                product_version=product_version,
+            )
+        except ValueError as exc:
+            raise SystemExit(f"DISTRIBUTION TRUST BLOCKED: {exc}") from exc
+        signing_mode = "developer_id"
+        notarized = True
+
     uat_passed = False
     uat: dict[str, Any] | None = None
     uat_binding_mode: str | None = None
@@ -219,12 +231,13 @@ def main() -> int:
     )
 
     if embedded:
-        report["embedded_source_state_matches"] = all(
-            report.get(key) == embedded.get(key)
-            for key in ("version", "release_ready_flag", "release_tag", "git_sha", "architecture", "signing_mode", "notarized")
-        )
+        source_keys = ("version", "release_ready_flag", "release_tag", "git_sha", "architecture")
+        report["embedded_source_state_matches"] = all(report.get(key) == embedded.get(key) for key in source_keys)
         if not report["embedded_source_state_matches"]:
             _append_blocker(report, "embedded_state_mismatch", "candidate", "El estado embebido del candidato no coincide con la evaluación reproducida.")
+        report["embedded_signing_mode"] = embedded.get("signing_mode")
+        report["embedded_notarized"] = embedded.get("notarized")
+        report["distribution_trust_supersedes_embedded_notarization"] = distribution is not None
 
     candidate_consistent = None
     candidate_origin: dict[str, Any] = {}
@@ -266,10 +279,17 @@ def main() -> int:
             if binding.get("git_sha") == git_sha and binding.get("candidate_source_sha256") != current_source_sha256:
                 _append_blocker(report, "physical_uat_source_equivalence_mismatch", "uat", "La atestación física no corresponde al digest de fuente del build de distribución actual.")
 
+    if args.production and distribution is None:
+        _append_blocker(report, "distribution_trust_evidence_missing", "distribution", "El gate de producción exige evidencia verificada de Developer ID + notarización + Gatekeeper.")
+
     attestation_binding = uat.get("binding") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else {}
     report.update({
         "app_evaluated": str(args.app.expanduser().resolve()) if args.app else None,
         "uat_evidence": str(args.uat_evidence.expanduser().resolve()) if args.uat_evidence else None,
+        "distribution_evidence": str(args.distribution_evidence.expanduser().resolve()) if args.distribution_evidence else None,
+        "distribution_trust_schema": distribution.get("schema") if distribution else None,
+        "distribution_trust_verified": distribution is not None,
+        "distribution_notary_submission_id": distribution.get("notary_submission_id") if distribution else None,
         "provenance_schema": provenance.get("schema") if provenance else None,
         "embedded_readiness_schema": embedded.get("schema") if embedded else None,
         "candidate_schema": candidate.get("schema") if candidate else None,

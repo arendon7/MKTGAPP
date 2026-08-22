@@ -20,6 +20,9 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         return """
         env:
           PHYSICAL_UAT_ATTESTATION_B64: ${{ secrets.PHYSICAL_UAT_ATTESTATION_B64 }}
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
         run: python scripts/verify_combined_uat_attestation.py --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA"
         uses: actions/upload-artifact@v4
         with:
@@ -27,31 +30,35 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         uses: actions/download-artifact@v4
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
+        run: scripts/notarize_release_candidate.sh "$APP" release-evidence/distribution-trust-${{ matrix.arch }}.json
+        run: python scripts/verify_distribution_trust.py --evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --git-sha "$GITHUB_SHA" --architecture "${{ matrix.arch }}" # stapler spctl
         - name: Enforce production release candidate
-          run: python scripts/release_candidate_gate.py --repo . --app "$APP" --uat-evidence release-evidence/combined-physical-uat-attestation.json --production
+          run: python scripts/release_candidate_gate.py --repo . --app "$APP" --uat-evidence release-evidence/combined-physical-uat-attestation.json --distribution-evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --production
         - name: Package immutable release asset
         """
 
-    def test_current_persistent_release_satisfies_w82_after_w86_transport(self):
+    def test_current_persistent_release_satisfies_hardened_contract(self):
         verify = _module()
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         verify.verify_pipeline_contract(workflow)
 
-    def test_contract_requires_verified_transport_and_production_gate_before_packaging(self):
+    def test_contract_requires_uat_distribution_trust_and_production_gate_before_packaging(self):
         verify = _module()
         valid = self._valid_pipeline()
         verify.verify_pipeline_contract(valid)
-
         cases = {
             "missing_transport_secret": valid.replace("PHYSICAL_UAT_ATTESTATION_B64", "REMOVED", 2),
-            "missing_verifier": valid.replace("verify_combined_uat_attestation.py", "removed.py"),
+            "missing_uat_verifier": valid.replace("verify_combined_uat_attestation.py", "removed.py"),
+            "missing_developer_id": valid.replace("APPLE_DEVELOPER_ID_P12_BASE64", "REMOVED_CERT", 2),
+            "missing_notary_key": valid.replace("APPLE_NOTARY_KEY_P8_BASE64", "REMOVED_NOTARY", 2),
+            "missing_notarize": valid.replace("notarize_release_candidate.sh", "removed-notary.sh"),
+            "missing_distribution_verify": valid.replace("verify_distribution_trust.py", "removed-dist.py"),
+            "missing_distribution_gate": valid.replace(" --distribution-evidence release-evidence/distribution-trust-${{ matrix.arch }}.json", ""),
             "missing_uat": valid.replace(" --uat-evidence release-evidence/combined-physical-uat-attestation.json", ""),
             "missing_production": valid.replace(" --production", ""),
-            "wrong_order": valid.replace("- name: Package immutable release asset", "- name: Package immutable release asset\n        # moved early", 1).replace("run: python scripts/release_candidate_gate.py", "run: python scripts/release_candidate_gate.py", 1),
             "non_blocking": valid.replace(" --production", " --production || true"),
             "expect_blocked": valid.replace(" --production", " --expect-blocked"),
         }
-        # Explicitly construct a wrong-order case because string replacement above keeps relative order.
         cases["wrong_order"] = valid[: valid.index("scripts/release_candidate_gate.py")] + "Package immutable release asset\n" + valid[valid.index("scripts/release_candidate_gate.py") :]
         for name, workflow in cases.items():
             with self.subTest(name=name), self.assertRaises(ValueError):

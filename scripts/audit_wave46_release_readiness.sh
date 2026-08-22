@@ -8,7 +8,7 @@ PROVENANCE="$RES/BUILD_PROVENANCE.json"
 READINESS="$RES/RELEASE_READINESS.json"
 TOOLS="$RES/release-tools"
 [[ -x "$PY" && -f "$PROVENANCE" && -f "$READINESS" ]] || { echo "Wave 46 audit: release evidence missing" >&2; exit 3; }
-for tool in release_candidate_gate.py collect_release_uat.py record_release_uat.py; do
+for tool in release_candidate_gate.py verify_distribution_trust.py collect_release_uat.py record_release_uat.py; do
   [[ -f "$TOOLS/$tool" ]] || { echo "Wave 46 audit: bundled release tool missing: $tool" >&2; exit 3; }
 done
 
@@ -50,7 +50,14 @@ PY
 
 GATE_JSON="$(mktemp "${TMPDIR:-/tmp}/wave46-gate.XXXXXX.json")"
 trap 'rm -f "$GATE_JSON"' EXIT
-"$PY" -I -B "$TOOLS/release_candidate_gate.py" --repo "$RES/source" --app "$APP" --expect-blocked > "$GATE_JSON"
+"$PY" -I -B - "$TOOLS" "$RES/source" "$APP" > "$GATE_JSON" <<'PY'
+import runpy,sys
+from pathlib import Path
+tools=Path(sys.argv[1]).resolve(); repo=Path(sys.argv[2]).resolve(); app=Path(sys.argv[3]).resolve()
+sys.path.insert(0,str(tools))
+sys.argv=[str(tools/'release_candidate_gate.py'),'--repo',str(repo),'--app',str(app),'--expect-blocked']
+runpy.run_path(str(tools/'release_candidate_gate.py'),run_name='__main__')
+PY
 /usr/bin/grep -q '"production_ready": false' "$GATE_JSON" || { cat "$GATE_JSON"; echo "Wave 46 audit: gate did not remain fail-closed" >&2; exit 3; }
 /usr/bin/grep -q '"embedded_source_state_matches": true' "$GATE_JSON" || { cat "$GATE_JSON"; echo "Wave 46 audit: embedded candidate state mismatch" >&2; exit 3; }
 
