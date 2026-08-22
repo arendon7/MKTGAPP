@@ -16,54 +16,61 @@ PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
-    """Require verified W85 evidence transport and a blocking production gate before packaging."""
+    """Require physical UAT transport plus Developer ID/notarization before packaging."""
     text = PERSISTENT_RELEASE.read_text(encoding="utf-8") if workflow_text is None else workflow_text
-    transport_secret = "PHYSICAL_UAT_ATTESTATION_B64"
-    verifier_marker = "verify_combined_uat_attestation.py"
-    verified_artifact = "verified-physical-uat-attestation"
-    upload_marker = "actions/upload-artifact@v4"
-    download_marker = "actions/download-artifact@v4"
-    gate_marker = "release_candidate_gate.py"
-    package_marker = "Package immutable release asset"
-
-    required = {
-        transport_secret: "persistent release lacks the physical-UAT attestation transport secret",
-        verifier_marker: "persistent release lacks combined UAT attestation verification",
-        verified_artifact: "persistent release lacks a verified UAT attestation artifact",
-        upload_marker: "persistent release does not upload verified UAT evidence",
-        download_marker: "persistent release does not download verified UAT evidence for native builds",
-        gate_marker: "persistent release lacks release_candidate_gate.py production enforcement",
-        package_marker: "persistent release package step is missing",
+    markers = {
+        "PHYSICAL_UAT_ATTESTATION_B64": "persistent release lacks the physical-UAT attestation transport secret",
+        "verify_combined_uat_attestation.py": "persistent release lacks combined UAT attestation verification",
+        "verified-physical-uat-attestation": "persistent release lacks a verified UAT attestation artifact",
+        "actions/upload-artifact@v4": "persistent release does not upload verified UAT evidence",
+        "actions/download-artifact@v4": "persistent release does not download verified UAT evidence for native builds",
+        "APPLE_DEVELOPER_ID_P12_BASE64": "persistent release lacks Developer ID certificate transport",
+        "APPLE_DEVELOPER_IDENTITY": "persistent release lacks expected Developer ID identity",
+        "APPLE_NOTARY_KEY_P8_BASE64": "persistent release lacks App Store Connect notary key transport",
+        "notarize_release_candidate.sh": "persistent release lacks notarization execution",
+        "verify_distribution_trust.py": "persistent release lacks distribution trust verification",
+        "release_candidate_gate.py": "persistent release lacks release_candidate_gate.py production enforcement",
+        "Package immutable release asset": "persistent release package step is missing",
     }
     indexes: dict[str, int] = {}
-    for marker, message in required.items():
+    for marker, message in markers.items():
         index = text.find(marker)
         if index < 0:
             raise ValueError(message)
         indexes[marker] = index
 
-    verifier_index = indexes[verifier_marker]
-    gate_index = indexes[gate_marker]
-    package_index = indexes[package_marker]
-    if verifier_index > gate_index:
+    uat_verifier = indexes["verify_combined_uat_attestation.py"]
+    notarize = indexes["notarize_release_candidate.sh"]
+    dist_verify = indexes["verify_distribution_trust.py"]
+    gate = indexes["release_candidate_gate.py"]
+    package = indexes["Package immutable release asset"]
+    if uat_verifier > gate:
         raise ValueError("combined UAT attestation must be verified before the production release gate")
-    if indexes[upload_marker] > gate_index:
+    if indexes["actions/upload-artifact@v4"] > gate:
         raise ValueError("verified UAT evidence must be uploaded before native production gating")
-    if indexes[download_marker] > gate_index:
+    if indexes["actions/download-artifact@v4"] > gate:
         raise ValueError("native build must download verified UAT evidence before production gating")
-    if gate_index > package_index:
+    if notarize > dist_verify:
+        raise ValueError("native distribution must be notarized before distribution evidence verification")
+    if dist_verify > gate:
+        raise ValueError("distribution trust must be verified before the production release gate")
+    if gate > package:
         raise ValueError("production release gate must execute before immutable packaging")
 
-    verifier_window = text[verifier_index:gate_index]
-    if "--expected-git-sha" not in verifier_window or "GITHUB_SHA" not in verifier_window:
+    uat_window = text[uat_verifier:gate]
+    if "--expected-git-sha" not in uat_window or "GITHUB_SHA" not in uat_window:
         raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
-    gate_window = text[gate_index:package_index]
+    distribution_window = text[notarize:gate]
+    for marker in ("stapler", "spctl", "--git-sha", "--architecture"):
+        if marker not in distribution_window and marker not in text:
+            raise ValueError(f"distribution trust contract missing {marker}")
+    gate_window = text[gate:package]
     if "--production" not in gate_window:
         raise ValueError("persistent release gate is not enforcing --production")
-    if "--uat-evidence" not in gate_window:
-        raise ValueError("persistent release gate does not consume explicit physical UAT evidence")
-    if "combined-physical-uat-attestation.json" not in gate_window:
-        raise ValueError("persistent release gate is not consuming the verified combined attestation")
+    if "--uat-evidence" not in gate_window or "combined-physical-uat-attestation.json" not in gate_window:
+        raise ValueError("persistent release gate does not consume verified physical UAT evidence")
+    if "--distribution-evidence" not in gate_window or "distribution-trust-${{ matrix.arch }}.json" not in gate_window:
+        raise ValueError("persistent release gate does not consume verified distribution trust evidence")
     if "--expect-blocked" in gate_window:
         raise ValueError("persistent release cannot substitute --expect-blocked for production enforcement")
     if "|| true" in gate_window:
