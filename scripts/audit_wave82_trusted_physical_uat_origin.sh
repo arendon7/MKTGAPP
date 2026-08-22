@@ -14,7 +14,7 @@ row=json.load(open(sys.argv[1],encoding='utf-8'))
 event=sys.argv[2]
 ref=sys.argv[3]
 origin=row.get('build_origin') or {}
-expected=event=='push' and ref=='refs/heads/main'
+expected=event=='push' and (ref=='refs/heads/main' or ref.startswith('refs/tags/v'))
 assert origin.get('event')==event, (origin,event)
 assert origin.get('ref')==ref, (origin,ref)
 assert origin.get('trusted_for_physical_uat') is expected, row
@@ -27,4 +27,5 @@ PY
 /usr/bin/grep -q '_require_physical_uat_preflight' "$SERVICE"
 /usr/bin/grep -q 'PHYSICAL_UAT_CANDIDATE_ONLY' "$SERVICE"
 /usr/bin/grep -q 'refs/heads/main' "$SERVICE"
+/usr/bin/grep -q 'refs/tags/v' "$SERVICE"
 echo 'WAVE 82 TRUSTED PHYSICAL UAT ORIGIN AUDIT PASS'
