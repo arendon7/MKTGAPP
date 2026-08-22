@@ -15,6 +15,16 @@ async function wave70Load(force=false){
   wave70State.loading=true;
   try{const data=await opsApi(`/api/companies/${encodeURIComponent(company.id)}/release-evidence`);wave70State.companyId=company.id;wave70State.data=data;return data}catch(err){opsToast(err.message);return null}finally{wave70State.loading=false}
 }
+async function wave70DownloadPhaseA(data){
+  const company=wave70Company(),accepted=data?.physical_uat?.accepted,sessionId=accepted?.session_id;
+  if(!company||!sessionId){opsToast('No hay una sesión UAT física aceptada para exportar.');return}
+  try{
+    const report=await opsApi(`/api/companies/${encodeURIComponent(company.id)}/physical-uat/${encodeURIComponent(sessionId)}/report`);
+    const blob=new Blob([JSON.stringify(report,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;link.download=`binario-phase-a-physical-uat-${String(sessionId)}.json`;document.body.append(link);link.click();link.remove();URL.revokeObjectURL(url);
+    opsToast('Evidencia Fase A descargada para el build exacto.');
+  }catch(err){opsToast(err.message)}
+}
 function wave70Panel(data){
   const readiness=data.release_readiness||{},uat=data.physical_uat||{},build=data.current_build||{},panel=opsEl('section','w70-panel'),head=opsEl('div','w70-head'),copy=opsEl('div','');
   copy.append(opsEl('p','eyebrow','RELEASE EVIDENCE · W70'),opsEl('h3','','Puente UAT física → gate de release'),opsEl('p','muted','Una UAT válida solo satisface el blocker físico del build exacto. Versión, tag, firma Developer ID y notarización permanecen gates independientes.'));
@@ -25,7 +35,9 @@ function wave70Panel(data){
   const distOk=build.signing_mode==='developer_id'&&build.notarized===true;const dist=opsEl('div',`w70-card ${distOk?'pass':'blocked'}`);dist.append(opsEl('strong','',distOk?'PASS · DISTRIBUCIÓN':'BLOQUEADO · DISTRIBUCIÓN'),opsEl('span','',`${build.signing_mode||'sin firma'} · notarized=${build.notarized===true}`));grid.append(uatCard,buildCard,dist);panel.append(grid);
   const blockers=readiness.blocker_codes||[],box=opsEl('div','w70-blockers');box.append(opsEl('strong','',blockers.length?'Bloqueos vigentes':'Sin bloqueos'),opsEl('span','',blockers.length?blockers.join(' · '):'Todos los gates canónicos están satisfechos.'));panel.append(box);
   panel.append(opsEl('div','w70-contract','Contrato fail-closed: la evidencia UAT debe tener sesión PASSED, Mac Darwin arm64 fuera de CI, escenarios requeridos PASS, digest válido y coincidencia exacta de git SHA + arquitectura + versión. W70 es solo lectura y no cambia RELEASE_READY, tag, firma ni notarización.'));
-  const actions=opsEl('div','w70-actions'),refresh=opsEl('button','','Revalidar evidencia');refresh.type='button';refresh.addEventListener('click',async()=>{await wave70Load(true);wave70Augment()});actions.append(refresh);panel.append(actions);return panel
+  const actions=opsEl('div','w70-actions'),refresh=opsEl('button','','Revalidar evidencia');refresh.type='button';refresh.addEventListener('click',async()=>{await wave70Load(true);wave70Augment()});actions.append(refresh);
+  if(uat.accepted_for_current_build){const download=opsEl('button','','Descargar evidencia Fase A');download.type='button';download.dataset.wave85PhaseAExport='1';download.addEventListener('click',()=>wave70DownloadPhaseA(data));actions.append(download)}
+  panel.append(actions);return panel
 }
 function wave70Augment(){
   if(marketingOpsState?.view!=='uat-readiness')return;wave70Styles();const shell=document.querySelector('#wave67-physical-uat .w67-shell'),data=wave70State.data;if(!shell||!data)return;let mount=shell.querySelector('#wave70-release-evidence');if(!mount){mount=opsEl('div','');mount.id='wave70-release-evidence';const preflight=shell.querySelector('#wave69-preflight');if(preflight)preflight.insertAdjacentElement('afterend',mount);else shell.prepend(mount)}mount.replaceChildren(wave70Panel(data))
