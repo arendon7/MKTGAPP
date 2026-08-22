@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -72,12 +73,18 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
         raise ValueError("expected Git SHA must be a full 40-character commit SHA")
 
     manifest_path, manifest = _validate_candidate(app, expected_git_sha)
+    summary_path = app / "Contents" / "Resources" / "PHYSICAL_UAT_CANDIDATE.md"
+    if not summary_path.is_file():
+        raise ValueError(f"physical UAT candidate summary missing: {summary_path}")
+
     out_dir.mkdir(parents=True, exist_ok=True)
     short_sha = expected_git_sha[:12]
     zip_name = f"Binario-Marketing-IA-PHYSICAL-UAT-arm64-{short_sha}.zip"
     zip_path = out_dir / zip_name
     checksum_path = out_dir / f"{zip_name}.sha256"
     delivery_path = out_dir / "FULL_MAC_DELIVERY.json"
+    external_manifest_path = out_dir / "PHYSICAL_UAT_CANDIDATE.json"
+    external_summary_path = out_dir / "PHYSICAL_UAT_CANDIDATE.md"
 
     ditto = Path("/usr/bin/ditto")
     if not ditto.is_file():
@@ -89,6 +96,8 @@ def package(app: Path, out_dir: Path, expected_git_sha: str) -> dict[str, Any]:
     artifact_sha = _sha256(zip_path)
     candidate_manifest_sha = _sha256(manifest_path)
     checksum_path.write_text(f"{artifact_sha}  {zip_name}\n", encoding="utf-8")
+    shutil.copy2(manifest_path, external_manifest_path)
+    shutil.copy2(summary_path, external_summary_path)
 
     delivery = {
         "schema": DELIVERY_SCHEMA,
