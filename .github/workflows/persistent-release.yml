@@ -4,12 +4,79 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - "src/**"
+      - "apps/**"
+      - "web/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/persistent-release.yml"
 
 permissions:
   contents: write
 
 jobs:
+  certify-current-runtime-x86:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache verified FFmpeg runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-media-x86_64
+          key: parity-media-${{ runner.os }}-x86_64-${{ hashFiles('scripts/full_mac_media_runtime.env') }}
+      - name: Cache verified Whisper runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-whisper-x86_64
+          key: parity-whisper-${{ runner.os }}-x86_64-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
+      - name: Build and audit x86 current runtime
+        shell: bash
+        env:
+          FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-x86_64
+          FULL_MAC_WHISPER_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-whisper-x86_64
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          scripts/build_full_mac_release_candidate.sh --arch x86_64
+          scripts/audit_full_mac_app.sh "dist/Binario Marketing IA.app"
+          scripts/audit_wave80_x86_runtime_parity.sh "dist/Binario Marketing IA.app"
+      - name: Smoke W76 service on Intel
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="dist/Binario Marketing IA.app"
+          LOG="$RUNNER_TEMP/x86-parity-smoke.log"
+          /usr/bin/grep -q 'service_wave76_app import serve' "$APP/Contents/Resources/launch.py"
+          python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
+          import json,sys
+          row=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert row['architecture']=='x86_64', row
+          assert row['product_version']=='0.9.0.dev1', row
+          PY
+          BINARIO_IA_HOME="$RUNNER_TEMP/x86-parity-data" BINARIO_NO_BROWSER=1 BINARIO_PORT=18767 \
+            "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
+          PID=$!
+          cleanup(){ kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          READY=0
+          for _ in $(seq 1 80); do
+            if /usr/bin/curl --fail --silent http://127.0.0.1:18767/api/health > "$RUNNER_TEMP/x86-health.json"; then READY=1; break; fi
+            sleep 0.25
+          done
+          if [[ "$READY" != "1" ]]; then cat "$LOG"; exit 1; fi
+          /usr/bin/grep -q '"status":"ok"' "$RUNNER_TEMP/x86-health.json"
+          echo 'WAVE 80 X86_64 W76 SMOKE PASS'
+
   release-preflight:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,15 +103,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Cache verified FFmpeg runtime when available
         uses: actions/cache@v4
         with:
           path: .cache/full-mac-media-${{ matrix.arch }}
           key: release-media-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_media_runtime.env') }}
+      - name: Cache verified Whisper runtime when available
+        uses: actions/cache@v4
+        with:
+          path: .cache/full-mac-whisper-${{ matrix.arch }}
+          key: release-whisper-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/full_mac_transcription_runtime.env') }}
       - name: Build and audit native current-runtime candidate
         shell: bash
         env:
           FULL_MAC_FFMPEG_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-media-${{ matrix.arch }}
+          FULL_MAC_WHISPER_CACHE_DIR: ${{ github.workspace }}/.cache/full-mac-whisper-${{ matrix.arch }}
         run: |
           set -euo pipefail
           chmod +x scripts/*.sh
@@ -78,7 +154,7 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "dist/Binario Marketing IA.app" "$ZIP"
           SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
           printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
-          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":78}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":80}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
       - uses: actions/upload-artifact@v4
         with:
           name: persistent-release-${{ matrix.arch }}
