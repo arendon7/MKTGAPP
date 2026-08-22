@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from http import HTTPStatus
 from pathlib import Path
@@ -19,6 +20,32 @@ class AppRuntime(base.AppRuntime):
             if (candidate / "runtime").is_dir() or (candidate / "BUILD_PROVENANCE.json").is_file():
                 return candidate
         return self.repo_root
+
+    def _build_provenance(self) -> dict:
+        build = dict(super()._build_provenance())
+        build.setdefault("build_event", None)
+        build.setdefault("build_ref", None)
+        build.setdefault("physical_uat_candidate", False)
+        if build.get("source") != "BUILD_PROVENANCE.json":
+            return build
+        candidates = [
+            self.repo_root / "BUILD_PROVENANCE.json",
+            self.repo_root.parent / "BUILD_PROVENANCE.json",
+        ]
+        for path in candidates:
+            if not path.is_file():
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            build["build_event"] = payload.get("build_event")
+            build["build_ref"] = payload.get("build_ref")
+            build["physical_uat_candidate"] = payload.get("physical_uat_candidate") is True
+            break
+        return build
 
     def physical_uat_preflight(self, company_id: str) -> dict:
         company = self.companies.get(company_id)
@@ -45,6 +72,11 @@ class AppRuntime(base.AppRuntime):
         manifests_present = paths["whisper_manifest"].is_file()
         embedded_runtime_ready = executable_runtime and manifests_present and model_present
         provenance_present = build.get("source") == "BUILD_PROVENANCE.json"
+        main_candidate_build = (
+            build.get("physical_uat_candidate") is True
+            and build.get("build_event") == "push"
+            and build.get("build_ref") == "refs/heads/main"
+        )
         architecture_matches = str(build.get("architecture") or "").lower() == "arm64"
         version_matches = str(build.get("product_version") or "") == __version__
         fail_closed_release = (
@@ -78,6 +110,16 @@ class AppRuntime(base.AppRuntime):
                 "Provenance del .app disponible",
                 provenance_present,
                 "BUILD_PROVENANCE.json" if provenance_present else "Checkout fuente sin provenance de bundle",
+            ),
+            check(
+                "main-candidate-build",
+                "Candidato físico generado desde main",
+                main_candidate_build,
+                (
+                    "push · refs/heads/main · physical_uat_candidate=true"
+                    if main_candidate_build
+                    else f"event={build.get('build_event') or 'unknown'} · ref={build.get('build_ref') or 'unknown'} · candidate={bool(build.get('physical_uat_candidate'))}"
+                ),
             ),
             check(
                 "arm64-build",
@@ -122,7 +164,7 @@ class AppRuntime(base.AppRuntime):
         manual_scenarios = list(readiness.get("manual_scenarios") or [])
         required_scenarios = [row for row in manual_scenarios if row.get("id") != "optional-ai"]
 
-        if overview.get("active_session"):
+        if overview.get("active_session") and ready:
             next_action = {
                 "code": "CONTINUE_SESSION",
                 "label": "Continuar sesión UAT activa",
@@ -171,6 +213,30 @@ class AppRuntime(base.AppRuntime):
                 "cloud_required": False,
             },
         }
+
+    def _require_physical_uat_preflight(self, company_id: str) -> None:
+        preflight = self.physical_uat_preflight(company_id)
+        if not preflight.get("ready_to_begin_physical_uat"):
+            blockers = ", ".join(preflight.get("blockers") or ["unknown"])
+            raise ValueError(f"physical UAT preflight blocked: {blockers}")
+
+    def start_physical_uat(self, company_id: str, payload: dict) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().start_physical_uat(company_id, payload)
+
+    def update_physical_uat_scenario(
+        self,
+        company_id: str,
+        session_id: str,
+        scenario_id: str,
+        payload: dict,
+    ) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().update_physical_uat_scenario(company_id, session_id, scenario_id, payload)
+
+    def finish_physical_uat(self, company_id: str, session_id: str) -> dict:
+        self._require_physical_uat_preflight(company_id)
+        return super().finish_physical_uat(company_id, session_id)
 
 
 MarketingHTTPServer = base.MarketingHTTPServer
