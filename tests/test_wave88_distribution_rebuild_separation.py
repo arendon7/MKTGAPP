@@ -86,10 +86,10 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
         self.assertIn("refs/tags/v", source)
         self.assertIn("Developer\\ ID\\ Application:*", source)
         self.assertIn("build_full_mac_current.sh", source)
-        self.assertIn("DISTRIBUTION_REBUILD.json", source)
         self.assertIn("PHYSICAL_UAT_CANDIDATE.json", source)
         self.assertIn("--options runtime --timestamp", source)
         self.assertIn("write_distribution_rebuild_manifest.py", source)
+        self.assertIn("--verify", source)
 
     def test_tag_workflow_builds_distribution_rebuild_not_exact_physical_candidate(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
