@@ -35,7 +35,7 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
             "physical_gate_eligible": True,
         }
 
-    def _fake_packaged_runtime(self):
+    def _fake_packaged_runtime(self, *, main_candidate=True):
         resources = Path(self.tmp.name) / "Bundle" / "Contents" / "Resources"
         source = resources / "source"
         source.mkdir(parents=True)
@@ -61,6 +61,9 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
             "architecture": "arm64",
             "product_version": "0.9.0.dev1",
             "release_channel": "development",
+            "build_event": "push" if main_candidate else "pull_request",
+            "build_ref": "refs/heads/main" if main_candidate else "refs/pull/81/merge",
+            "physical_uat_candidate": bool(main_candidate),
             "signing_mode": "ad_hoc",
             "notarized": False,
         }), encoding="utf-8")
@@ -73,6 +76,7 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
         self.assertEqual(payload["schema"], "binario.marketing.physical-uat-preflight.v1")
         self.assertFalse(payload["ready_to_begin_physical_uat"])
         self.assertIn("certified-build-provenance", payload["blockers"])
+        self.assertIn("main-candidate-build", payload["blockers"])
         self.assertIn("embedded-runtime", payload["blockers"])
         self.assertFalse(payload["physical_uat_complete"])
         self.assertFalse(payload["release_boundary"]["physical_preflight_is_release_authority"])
@@ -92,6 +96,18 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
         self.assertFalse(payload["release_boundary"]["release_ready"])
         self.assertFalse(payload["release_boundary"]["production_ready"])
 
+    def test_pr_bundle_is_not_a_physical_uat_candidate_and_start_fails_closed(self):
+        self._fake_packaged_runtime(main_candidate=False)
+        machine = self._eligible_machine()
+        with patch("binario_marketing.service_wave69_app.machine_snapshot", return_value=machine):
+            payload = self.runtime.physical_uat_preflight(self.company["id"])
+            self.assertFalse(payload["ready_to_begin_physical_uat"])
+            self.assertIn("main-candidate-build", payload["blockers"])
+            self.assertEqual(payload["next_action"]["code"], "RESOLVE_PREFLIGHT")
+            with self.assertRaisesRegex(ValueError, "main-candidate-build"):
+                self.runtime.start_physical_uat(self.company["id"], {"operator": "UAT"})
+        self.assertEqual(self.runtime.physical_uat.list(self.company["id"]), [])
+
     def test_ci_is_ineligible_even_with_complete_packaged_runtime(self):
         self._fake_packaged_runtime()
         machine = dict(self._eligible_machine(), is_ci=True, physical_gate_eligible=False)
@@ -103,9 +119,11 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
 
     def test_active_session_changes_next_action_but_preflight_records_no_result(self):
         self._fake_packaged_runtime()
-        with patch("binario_marketing.physical_uat_store.machine_snapshot", return_value=self._eligible_machine()):
+        machine = self._eligible_machine()
+        with patch("binario_marketing.service_wave69_app.machine_snapshot", return_value=machine), patch(
+            "binario_marketing.physical_uat_store.machine_snapshot", return_value=machine
+        ):
             session = self.runtime.start_physical_uat(self.company["id"], {"operator": "UAT"})
-        with patch("binario_marketing.service_wave69_app.machine_snapshot", return_value=self._eligible_machine()):
             payload = self.runtime.physical_uat_preflight(self.company["id"])
         self.assertEqual(payload["active_session_id"], session["id"])
         self.assertEqual(payload["next_action"]["code"], "CONTINUE_SESSION")
