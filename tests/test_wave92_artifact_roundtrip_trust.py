@@ -64,36 +64,11 @@ def _post_package_fixture(module, root: Path, *, architecture: str = "arm64"):
         "runtime_wave": module.RUNTIME_WAVE,
         "certification_guard_wave": module.CERTIFICATION_GUARD_WAVE,
         "source_sha256": "b" * 64,
-        "asset": {
-            "name": asset.name,
-            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(),
-            "size_bytes": asset.stat().st_size,
-        },
-        "archive": {
-            "entry_count": 1,
-            "canonical_app_root": module.APP_NAME,
-            "path_safety_verified": True,
-            "single_product_root_verified": True,
-        },
-        "extracted_app": {
-            "bundle_name": module.APP_NAME,
-            "build_provenance_sha256": "c" * 64,
-            "release_readiness_sha256": "d" * 64,
-            "distribution_rebuild_manifest_sha256": "e" * 64,
-        },
-        "pre_package_distribution_trust": {
-            "schema": trust["schema"],
-            "evidence_file_sha256": hashlib.sha256(trust_path.read_bytes()).hexdigest(),
-            "evidence_sha256": trust["evidence_sha256"],
-            "developer_id_identity": trust["developer_id_identity"],
-            "notary_submission_id": trust["notary_submission_id"],
-        },
-        "roundtrip_trust": {
-            "codesign_verified": True,
-            "developer_id_identity": trust["developer_id_identity"],
-            "stapler_validated": True,
-            "gatekeeper_assessed": True,
-        },
+        "asset": {"name": asset.name, "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(), "size_bytes": asset.stat().st_size},
+        "archive": {"entry_count": 1, "canonical_app_root": module.APP_NAME, "path_safety_verified": True, "single_product_root_verified": True},
+        "extracted_app": {"bundle_name": module.APP_NAME, "build_provenance_sha256": "c" * 64, "release_readiness_sha256": "d" * 64, "distribution_rebuild_manifest_sha256": "e" * 64},
+        "pre_package_distribution_trust": {"schema": trust["schema"], "evidence_file_sha256": hashlib.sha256(trust_path.read_bytes()).hexdigest(), "evidence_sha256": trust["evidence_sha256"], "developer_id_identity": trust["developer_id_identity"], "notary_submission_id": trust["notary_submission_id"]},
+        "roundtrip_trust": {"codesign_verified": True, "developer_id_identity": trust["developer_id_identity"], "stapler_validated": True, "gatekeeper_assessed": True},
         "asset_roundtrip_verified": True,
         "operational_authorization": False,
         "release_authority": False,
@@ -116,16 +91,9 @@ def _native_from_post(post: dict, *, rebuild_sha: str = "e" * 64, readiness_sha:
         "runtime_wave": 76,
         "source_sha256": "b" * 64,
         "asset": dict(post["asset"]),
-        "distribution_trust": {
-            "evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"],
-            "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"],
-            "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"],
-        },
+        "distribution_trust": {"evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"], "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"], "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"]},
         "distribution_rebuild": {"manifest_sha256": rebuild_sha},
-        "build_inputs": {
-            "build_provenance_sha256": "c" * 64,
-            "embedded_readiness_sha256": readiness_sha,
-        },
+        "build_inputs": {"build_provenance_sha256": "c" * 64, "embedded_readiness_sha256": readiness_sha},
         "evidence_sha256": "f" * 64,
     }
 
@@ -169,14 +137,7 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             evidence_path, asset, trust_path, _ = _post_package_fixture(module, root)
-            report = module.verify_evidence(
-                evidence_path,
-                asset=asset,
-                distribution_evidence=trust_path,
-                expected_tag="v1.0.0",
-                expected_git_sha="a" * 40,
-                expected_architecture="arm64",
-            )
+            report = module.verify_evidence(evidence_path, asset=asset, distribution_evidence=trust_path, expected_tag="v1.0.0", expected_git_sha="a" * 40, expected_architecture="arm64")
             self.assertTrue(report["asset_roundtrip_verified"])
             self.assertFalse(report["release_authority"])
             self.assertFalse(report["publication_authority"])
@@ -261,7 +222,7 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
         w91_auth = workflow.find("Build cross-architecture release authorization")
         w92_auth = workflow.find("Build W92 artifact publication authorization")
         w92_verify = workflow.find("Verify W92 final publication authorization")
-        publish = workflow.find("Publish permanent GitHub Release")
+        publish = workflow.find("publish_release_transaction.sh")
         self.assertTrue(0 <= package < roundtrip < w91_auth < w92_auth < w92_verify < publish, (package, roundtrip, w91_auth, w92_auth, w92_verify, publish))
         self.assertIn("POST-PACKAGE-TRUST-${{ matrix.arch }}.json", workflow)
         self.assertIn("RELEASE-ARTIFACT-AUTHORIZATION.json", workflow)
