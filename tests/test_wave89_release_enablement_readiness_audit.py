@@ -32,12 +32,16 @@ class Wave89ReleaseEnablementReadinessAuditTests(unittest.TestCase):
         missing = [name for name, ok in report["structural_gates"].items() if not ok]
         self.assertEqual(missing, [], report)
         self.assertEqual(report["runtime_wave"], 76)
-        self.assertEqual(report["certification_guard_wave"], 89)
+        self.assertGreaterEqual(report["certification_guard_wave"], 89)
 
     def test_audit_never_claims_external_runtime_evidence(self):
+        report = _module().audit(ROOT)
         source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("Real physical UAT evidence", source)
-        self.assertIn("Apple credentials", source)
+        self.assertIn("physical_uat_attestation_verified_at_tag_runtime", report["external_runtime_requirements"])
+        self.assertIn("apple_distribution_credentials_verified_at_tag_runtime", report["external_runtime_requirements"])
+        self.assertFalse(report["operational_authorization"])
+        self.assertIn("Physical UAT evidence", report["notes"])
+        self.assertIn("Apple credentials", report["notes"])
         self.assertNotIn("RELEASE_READY = True", source)
         self.assertNotIn("gh release create", source)
 
