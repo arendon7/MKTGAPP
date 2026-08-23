@@ -14,6 +14,7 @@ from typing import Any
 SCHEMA = "binario.marketing.release-uat-evidence.v1"
 CANDIDATE_SCHEMA = "binario.marketing.physical-uat-candidate.v1"
 PHYSICAL_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
+SOURCE_CONTRACT_WAVE = 94
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
 MANUAL_STEPS = (
@@ -86,6 +87,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Candidate source SHA-256: `{report['candidate_source_sha256']}`",
         f"- Architecture: `{report['architecture']}`",
         f"- Version: `{report['version']}`",
+        f"- Source contract: `Wave {report.get('source_contract_wave')}`",
         f"- Source release state: `{report.get('source_release_state')}`",
         f"- Prepared release tag: `{report.get('source_release_tag')}`",
         f"- Overall: **{report['overall']}**", "", "## Automatic checks",
@@ -116,6 +118,7 @@ def main() -> int:
     host_system = platform.system(); host_machine = platform.machine().lower(); is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
     origin = candidate.get("build_origin") if isinstance(candidate.get("build_origin"), dict) else {}; ref = str(origin.get("ref") or "")
     source_state, source_tag, source_contract_valid = _source_contract(candidate)
+    source_contract_wave = candidate.get("source_contract_wave")
     trusted_origin = bool(
         candidate.get("role") == PHYSICAL_ROLE
         and origin.get("event") == "push"
@@ -127,6 +130,7 @@ def main() -> int:
         candidate.get("schema") == CANDIDATE_SCHEMA
         and trusted_origin
         and source_contract_valid
+        and source_contract_wave == SOURCE_CONTRACT_WAVE
         and candidate.get("git_sha") == provenance.get("git_sha")
         and candidate.get("architecture") == provenance.get("architecture") == "arm64"
         and candidate.get("product_version") == provenance.get("product_version")
@@ -142,7 +146,7 @@ def main() -> int:
         {"name": "physical_arm64_candidate", "ok": provenance.get("architecture") == "arm64", "value": provenance.get("architecture")},
         {"name": "physical_arm64_host", "ok": physical_host, "value": {"system": host_system, "machine": host_machine, "is_ci": is_ci}},
         {"name": "trusted_build_origin", "ok": trusted_origin, "value": {"role": candidate.get("role"), "origin": origin}},
-        {"name": "source_release_contract", "ok": source_contract_valid, "value": {"state": source_state, "tag": source_tag}},
+        {"name": "source_release_contract", "ok": source_contract_valid and source_contract_wave == SOURCE_CONTRACT_WAVE, "value": {"wave": source_contract_wave, "state": source_state, "tag": source_tag}},
         {"name": "candidate_manifest", "ok": candidate_consistent, "value": candidate.get("schema")},
         {"name": "codesign_integrity", "ok": codesign["ok"], "detail": codesign},
         {"name": "launcher_present", "ok": launch_executable.is_file()},
@@ -153,7 +157,7 @@ def main() -> int:
         "schema": SCHEMA, "generated_at": datetime.now(timezone.utc).isoformat(),
         "host": {"system": host_system, "release": platform.release(), "machine": host_machine, "is_ci": is_ci},
         "app": str(app), "git_sha": provenance.get("git_sha"), "architecture": provenance.get("architecture"), "version": provenance.get("product_version"),
-        "source_release_state": source_state, "source_release_tag": source_tag,
+        "source_contract_wave": source_contract_wave, "source_release_state": source_state, "source_release_tag": source_tag,
         "candidate_schema": candidate.get("schema"), "candidate_role": candidate.get("role"), "candidate_build_origin": origin,
         "candidate_source_sha256": candidate.get("candidate_source_sha256"), "candidate_manifest_sha256": _sha256(candidate_path) if candidate_path.is_file() else None,
         "runtime_wave": candidate.get("runtime_wave"), "signing_mode": provenance.get("signing_mode"), "notarized": provenance.get("notarized"),
@@ -164,7 +168,7 @@ def main() -> int:
     out = args.output.expanduser().resolve(); out.mkdir(parents=True, exist_ok=True)
     (out / "release-uat-evidence.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "release-uat-evidence.md").write_text(render_markdown(report), encoding="utf-8")
-    print(json.dumps({"overall": report["overall"], "output": str(out), "git_sha": report["git_sha"], "candidate_source_sha256": report["candidate_source_sha256"], "source_release_state": source_state, "source_release_tag": source_tag, "architecture": report["architecture"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"overall": report["overall"], "output": str(out), "git_sha": report["git_sha"], "candidate_source_sha256": report["candidate_source_sha256"], "source_contract_wave": source_contract_wave, "source_release_state": source_state, "source_release_tag": source_tag, "architecture": report["architecture"]}, ensure_ascii=False, indent=2))
     return 0 if automatic_ok else 2
 
 
