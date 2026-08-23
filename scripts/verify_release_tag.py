@@ -105,13 +105,14 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
 def verify(tag: str) -> None:
     if not TAG_RE.fullmatch(tag):
         raise ValueError(f"invalid release tag format: {tag}")
-    state = source_release_state(version=__version__, release_ready=RELEASE_READY, release_tag=RELEASE_TAG)
-    if state != PREPARED_RELEASE:
-        raise ValueError(f"release tag requires PREPARED_RELEASE source state; got {state}")
+    # Keep the historical fail-closed diagnostics stable for today's LOCKED_SOURCE.
     if not RELEASE_READY:
         raise ValueError("release publishing is disabled by the canonical version contract")
     if not RELEASE_TAG:
         raise ValueError("release publishing is enabled but RELEASE_TAG is unset")
+    state = source_release_state(version=__version__, release_ready=RELEASE_READY, release_tag=RELEASE_TAG)
+    if state != PREPARED_RELEASE:
+        raise ValueError(f"release tag requires PREPARED_RELEASE source state; got {state}")
     expected = f"v{__version__}"
     if RELEASE_TAG != expected:
         raise ValueError(f"canonical RELEASE_TAG drift: {RELEASE_TAG} != {expected}")
