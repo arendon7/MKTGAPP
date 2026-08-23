@@ -29,7 +29,17 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
         manifest=runtime/"transcription/RUNTIME.json"; manifest.parent.mkdir(parents=True,exist_ok=True); manifest.write_text(json.dumps({"engine":"whisper.cpp"}),encoding="utf-8")
         model=runtime/"transcription/models/ggml-tiny.bin"; model.parent.mkdir(parents=True,exist_ok=True); model.write_bytes(b"model")
         (resources/"BUILD_PROVENANCE.json").write_text(json.dumps({"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1","release_channel":"development","signing_mode":"ad_hoc","notarized":False}),encoding="utf-8")
-        (resources/"PHYSICAL_UAT_CANDIDATE.json").write_text(json.dumps({"schema":"binario.marketing.physical-uat-candidate.v1","role":"PHYSICAL_UAT_CANDIDATE_ONLY" if trusted else "VALIDATION_BUILD_ONLY","git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1","runtime_wave":76,"certification_guard_wave":84,"candidate_source_sha256":"b"*64,"build_origin":{"event":"push" if trusted else "pull_request","ref":"refs/heads/main" if trusted else "refs/pull/97/merge","trusted_for_physical_uat":trusted},"physical_uat":{"automatic_pass":False,"eligible_build_origin":trusted}}),encoding="utf-8")
+        candidate={
+            "schema":"binario.marketing.physical-uat-candidate.v1",
+            "role":"PHYSICAL_UAT_CANDIDATE_ONLY" if trusted else "VALIDATION_BUILD_ONLY",
+            "git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1",
+            "runtime_wave":76,"certification_guard_wave":84,"source_contract_wave":92,
+            "source_release_state":"LOCKED_SOURCE","candidate_source_sha256":"b"*64,
+            "build_origin":{"event":"push" if trusted else "pull_request","ref":"refs/heads/main" if trusted else "refs/pull/97/merge","trusted_for_physical_uat":trusted},
+            "release_boundary":{"source_release_state":"LOCKED_SOURCE","release_ready":False,"release_tag":None,"operational_authorization":False,"release_authority":False,"publication_authority":False,"production_ready":False},
+            "physical_uat":{"automatic_pass":False,"eligible_build_origin":trusted},
+        }
+        (resources/"PHYSICAL_UAT_CANDIDATE.json").write_text(json.dumps(candidate),encoding="utf-8")
         self.runtime.repo_root=source; return resources
 
     def test_source_checkout_is_not_misreported_as_physical_bundle_ready(self):
@@ -39,7 +49,7 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
     def test_trusted_packaged_arm64_runtime_can_pass_preflight(self):
         self._fake_packaged_runtime()
         with patch("binario_marketing.service_wave69_app.machine_snapshot",return_value=self._eligible_machine()): payload=self.runtime.physical_uat_preflight(self.company["id"])
-        self.assertTrue(payload["ready_to_begin_physical_uat"]); self.assertEqual(payload["blockers"],[]); self.assertTrue(payload["candidate"]["trusted_for_physical_uat"]); self.assertEqual(payload["next_action"]["code"],"START_PHYSICAL_UAT")
+        self.assertTrue(payload["ready_to_begin_physical_uat"]); self.assertEqual(payload["blockers"],[]); self.assertTrue(payload["candidate"]["trusted_for_physical_uat"]); self.assertEqual(payload["candidate"]["source_release_state"],"LOCKED_SOURCE"); self.assertEqual(payload["next_action"]["code"],"START_PHYSICAL_UAT")
 
     def test_validation_pr_bundle_cannot_start_physical_uat(self):
         self._fake_packaged_runtime(trusted=False); machine=self._eligible_machine()
