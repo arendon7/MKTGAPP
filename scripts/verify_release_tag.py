@@ -14,6 +14,7 @@ from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__  #
 
 TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+(?:[a-zA-Z0-9.-]+)?$")
 PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
+RELEASE_GATE = ROOT / "scripts" / "release_candidate_gate.py"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
@@ -36,7 +37,6 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         "notarize_release_candidate.sh": "persistent release lacks notarization execution",
         "verify_distribution_trust.py": "persistent release lacks distribution trust verification",
         "release_candidate_gate.py": "persistent release lacks release_candidate_gate.py production enforcement",
-        "prepared_release_uat_required": "production gate lacks the W92 prepared-release UAT blocker",
         "Package immutable release asset": "persistent release package step is missing",
     }
     indexes: dict[str, int] = {}
@@ -77,8 +77,14 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
     rebuild_window = text[rebuild:notarize]
     if "PHYSICAL_UAT_CANDIDATE.json" not in rebuild_window or "test ! -e" not in rebuild_window:
         raise ValueError("distribution rebuild does not prove absence of exact physical-UAT candidate identity")
-    if workflow_text is None and "--options runtime" not in (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8"):
-        raise ValueError("distribution builder lacks hardened-runtime signing")
+    if workflow_text is None:
+        builder = (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8")
+        if "--options runtime" not in builder:
+            raise ValueError("distribution builder lacks hardened-runtime signing")
+        gate_source = RELEASE_GATE.read_text(encoding="utf-8")
+        for marker in ("prepared_release_uat_required", "prepared_release_tag_mismatch", "prepared_release_source_required", "PREPARED_RELEASE"):
+            if marker not in gate_source:
+                raise ValueError(f"production release gate lacks W92 prepared-source enforcement: {marker}")
     distribution_window = text[notarize:gate]
     for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
         if marker not in distribution_window:
