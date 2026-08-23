@@ -24,12 +24,15 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
         run: python scripts/verify_combined_uat_attestation.py --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA"
+        run: python scripts/verify_prepared_release_uat.py --repo . --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA" --expected-tag "$GITHUB_REF_NAME" > release-evidence/prepared-release-uat-verification.json
         uses: actions/upload-artifact@v4
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
+          path: release-evidence/prepared-release-uat-verification.json
         uses: actions/download-artifact@v4
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
+        run: python scripts/verify_prepared_release_uat.py --repo . --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA" --expected-tag "$GITHUB_REF_NAME" > release-evidence/prepared-release-uat-verification-${{ matrix.arch }}.json
         run: scripts/build_full_mac_release_candidate.sh --distribution --arch "${{ matrix.arch }}"
         run: test -f "$APP/Contents/Resources/DISTRIBUTION_REBUILD.json" && test ! -e "$APP/Contents/Resources/PHYSICAL_UAT_CANDIDATE.json" # SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD
         run: scripts/notarize_release_candidate.sh "$APP" release-evidence/distribution-trust-${{ matrix.arch }}.json
@@ -37,6 +40,7 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         - name: Enforce production release candidate
           run: python scripts/release_candidate_gate.py --repo . --app "$APP" --uat-evidence release-evidence/combined-physical-uat-attestation.json --distribution-evidence release-evidence/distribution-trust-${{ matrix.arch }}.json --production
         - name: Package immutable release asset
+          run: cp release-evidence/prepared-release-uat-verification-${{ matrix.arch }}.json release/PREPARED-RELEASE-UAT-${{ matrix.arch }}.json
         """
 
     def test_current_persistent_release_satisfies_hardened_contract(self):
@@ -44,13 +48,16 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         verify.verify_pipeline_contract(workflow)
 
-    def test_contract_requires_uat_distribution_rebuild_trust_and_production_gate_before_packaging(self):
+    def test_contract_requires_uat_prepared_binding_distribution_rebuild_trust_and_production_gate_before_packaging(self):
         verify = _module()
         valid = self._valid_pipeline()
         verify.verify_pipeline_contract(valid)
         cases = {
             "missing_transport_secret": valid.replace("PHYSICAL_UAT_ATTESTATION_B64", "REMOVED", 2),
             "missing_uat_verifier": valid.replace("verify_combined_uat_attestation.py", "removed.py"),
+            "missing_prepared_verifier": valid.replace("verify_prepared_release_uat.py", "removed-prepared.py"),
+            "missing_prepared_sha_binding": valid.replace("--expected-git-sha", "--removed-git-sha", 1),
+            "missing_prepared_tag_binding": valid.replace("--expected-tag", "--removed-tag", 1),
             "missing_developer_id": valid.replace("APPLE_DEVELOPER_ID_P12_BASE64", "REMOVED_CERT", 2),
             "missing_notary_key": valid.replace("APPLE_NOTARY_KEY_P8_BASE64", "REMOVED_NOTARY", 2),
             "missing_distribution_mode": valid.replace("build_full_mac_release_candidate.sh --distribution", "build_full_mac_release_candidate.sh"),
