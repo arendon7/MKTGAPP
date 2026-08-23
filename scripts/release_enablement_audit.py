@@ -52,21 +52,32 @@ def audit(repo: Path) -> dict[str, Any]:
         if not ok:
             blockers.append(f"structural_gate_missing:{name}")
 
-    ready = not blockers
+    source_ready = not blockers
+    external_requirements = {
+        "physical_uat_attestation_verified_at_tag_runtime": False,
+        "apple_distribution_credentials_verified_at_tag_runtime": False,
+        "developer_id_signature_verified_at_tag_runtime": False,
+        "apple_notarization_verified_at_tag_runtime": False,
+        "distribution_rebuild_verified_at_tag_runtime": False,
+        "production_gate_passed_at_tag_runtime": False,
+    }
     return {
-        "schema": "binario.marketing.release-enablement-audit.v1",
+        "schema": "binario.marketing.release-enablement-audit.v2",
         "version": version,
         "release_ready": release_ready,
         "release_tag": release_tag,
         "runtime_wave": 76,
-        "certification_guard_wave": 89,
+        "certification_guard_wave": 90,
         "structural_gates": structural,
-        "status": "READY_TO_ENABLE_RELEASE_CONTRACT" if ready else "BLOCKED",
+        "source_status": "SOURCE_CONTRACT_READY" if source_ready else "BLOCKED",
+        "status": "BLOCKED" if not source_ready else "AWAITING_OPERATIONAL_AUTHORIZATION",
         "blocker_codes": blockers,
+        "external_runtime_requirements": external_requirements,
+        "operational_authorization": False,
         "mutations_performed": False,
         "release_authority": False,
         "production_ready": False,
-        "notes": "This audit validates source readiness only. Real physical UAT evidence, Apple credentials, signing, notarization and tag execution remain runtime gates.",
+        "notes": "Source readiness never authorizes release. Physical UAT evidence, Apple credentials, Developer ID signing, notarization, distribution rebuild verification and the production gate must all pass in the tag-triggered runtime before publication.",
     }
 
 
