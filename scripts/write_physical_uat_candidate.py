@@ -5,13 +5,20 @@ import argparse
 import hashlib
 import json
 import os
+import runpy
 import sys
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from binario_marketing.release_contract import evaluate_source_release_contract  # noqa: E402
+sys.path.pop(0)
+
 SCHEMA = "binario.marketing.physical-uat-candidate.v1"
 RUNTIME_WAVE = 76
 CERTIFICATION_GUARD_WAVE = 84
+RELEASE_CONTRACT_WAVE = 91
 RUNTIME_ENTRYPOINT = "service_wave76_app"
 MANIFEST_NAME = "PHYSICAL_UAT_CANDIDATE.json"
 SUMMARY_NAME = "PHYSICAL_UAT_CANDIDATE.md"
@@ -52,20 +59,16 @@ def _source_digest(source: Path) -> str:
 
 
 def _load_version(source: Path) -> tuple[str, bool, str | None]:
-    sys.path.insert(0, str(source / "src"))
-    try:
-        from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
-        return __version__, RELEASE_READY, RELEASE_TAG
-    finally:
-        try:
-            sys.path.remove(str(source / "src"))
-        except ValueError:
-            pass
+    path = source / "src" / "binario_marketing" / "version.py"
+    if not path.is_file():
+        raise ValueError(f"candidate version contract missing: {path}")
+    data = runpy.run_path(str(path))
+    return str(data.get("__version__") or ""), data.get("RELEASE_READY") is True, data.get("RELEASE_TAG")
 
 
 def _trusted_origin(event: str, ref: str) -> bool:
-    # Physical UAT identity is reserved for the exact canonical main build.
-    # Tag builds are distribution rebuilds and must never become exact physical-UAT candidates.
+    # W88+: exact physical-UAT identity is reserved for the canonical main build.
+    # refs/tags/v* are source-equivalent distribution rebuilds, never exact physical candidates.
     return event == "push" and ref == "refs/heads/main"
 
 
@@ -98,6 +101,11 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
     provenance = _json(provenance_path)
     readiness = _json(readiness_path)
     version, release_ready, release_tag = _load_version(source)
+    release_contract = evaluate_source_release_contract(
+        version=version,
+        release_ready=release_ready,
+        release_tag=release_tag,
+    )
     launch = launch_path.read_text(encoding="utf-8")
     origin = _validated_origin(build_origin if build_origin is not None else _environment_origin())
     trusted = origin["trusted_for_physical_uat"]
@@ -107,10 +115,14 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
         raise ValueError("candidate version/provenance mismatch")
     if f"service_wave{RUNTIME_WAVE}_app import serve" not in launch:
         raise ValueError(f"candidate runtime is not Wave {RUNTIME_WAVE}")
-    if release_ready is not False or release_tag is not None:
-        raise ValueError("physical UAT candidate must remain fail-closed for release")
     if readiness.get("production_ready") is True:
         raise ValueError("embedded readiness unexpectedly reports production-ready")
+    if readiness.get("version") not in {None, version}:
+        raise ValueError("embedded readiness version differs from candidate source")
+    if "release_ready_flag" in readiness and bool(readiness.get("release_ready_flag")) != release_contract["release_ready"]:
+        raise ValueError("embedded readiness release flag differs from candidate source")
+    if "release_tag" in readiness and readiness.get("release_tag") != release_contract["release_tag"]:
+        raise ValueError("embedded readiness release tag differs from candidate source")
     return {
         "schema": SCHEMA,
         "role": PHYSICAL_ROLE if trusted else VALIDATION_ROLE,
@@ -121,6 +133,7 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
         "runtime_wave": RUNTIME_WAVE,
         "runtime_entrypoint": RUNTIME_ENTRYPOINT,
         "certification_guard_wave": CERTIFICATION_GUARD_WAVE,
+        "release_contract_wave": RELEASE_CONTRACT_WAVE,
         "build_origin": origin,
         "candidate_source_sha256": _source_digest(source),
         "hashes": {
@@ -128,12 +141,7 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
             "embedded_readiness_sha256": _sha256(readiness_path),
             "launch_sha256": _sha256(launch_path),
         },
-        "release_boundary": {
-            "release_ready": False,
-            "release_tag": None,
-            "production_ready": False,
-            "version_is_development": ".dev" in version.lower(),
-        },
+        "release_boundary": release_contract,
         "physical_uat": {
             "required": True,
             "automatic_pass": False,
@@ -141,6 +149,7 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
             "eligible_build_origin": trusted,
             "evidence_must_match_git_sha": True,
             "evidence_must_match_candidate_source_sha256": True,
+            "prepared_release_source_may_be_tested": True,
         },
         "sandbox_boundary": {
             "functional_sandbox_is_release_evidence": False,
@@ -152,6 +161,7 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
 def _summary(manifest: dict[str, Any]) -> str:
     origin = manifest["build_origin"]
     eligible = manifest["physical_uat"]["eligible_build_origin"]
+    release = manifest["release_boundary"]
     return "\n".join([
         "# BINARIO Marketing IA · Physical UAT Candidate",
         "",
@@ -162,12 +172,18 @@ def _summary(manifest: dict[str, Any]) -> str:
         f"- Product version: `{manifest['product_version']}`",
         f"- Runtime: Wave {manifest['runtime_wave']} (`{manifest['runtime_entrypoint']}`)",
         f"- Certification guard: Wave {manifest['certification_guard_wave']}",
+        f"- Release-contract layer: Wave {manifest['release_contract_wave']}",
+        f"- Source release contract: `{release['mode']}`",
+        f"- Source RELEASE_READY: `{release['release_ready']}`",
+        f"- Source RELEASE_TAG: `{release['release_tag']}`",
         f"- Build origin: `{origin['event']}` · `{origin['ref']}`",
         f"- Eligible physical-UAT origin: **{'YES' if eligible else 'NO'}**",
-        "- Release authority: **NO**",
+        "- Operational release authority: **NO**",
+        "- Production ready: **NO**",
         "- Physical UAT required: **YES**",
         "- Automatic PASS: **NO**",
         "",
+        "A stable PREPARED_RELEASE source contract may be tested physically on main so the exact same commit can later be tagged without source mutation.",
         "Only a controlled GitHub Actions push to refs/heads/main is an eligible exact physical-UAT origin.",
         "Tag builds are source-equivalent distribution rebuilds and must not be represented as exact physical-UAT candidates.",
         "Pull-request, workflow-dispatch and local bundles are validation-only and must not record physical-UAT evidence.",
@@ -212,6 +228,7 @@ def main() -> int:
         "candidate_source_sha256": manifest["candidate_source_sha256"],
         "runtime_wave": manifest["runtime_wave"],
         "architecture": manifest["architecture"],
+        "release_contract": manifest["release_boundary"],
         "build_origin": manifest["build_origin"],
         "verified": bool(args.verify),
     }, ensure_ascii=False, indent=2))
