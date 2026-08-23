@@ -9,10 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FINALIZER_PATH = ROOT / "scripts/finalize_physical_uat.py"
+VERIFIER_PATH = ROOT / "scripts/verify_combined_uat_attestation.py"
 
 
-def _module():
-    spec = importlib.util.spec_from_file_location("wave85_finalizer", FINALIZER_PATH)
+def _module(path: Path = FINALIZER_PATH, name: str = "wave85_finalizer"):
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -38,7 +39,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "product_version": "0.9.0.dev1",
             "runtime_wave": 76,
             "certification_guard_wave": 84,
-            "source_contract_wave": 92,
+            "source_contract_wave": 94,
             "source_release_state": "LOCKED_SOURCE",
             "build_origin": origin,
             "candidate_source_sha256": "b" * 64,
@@ -133,6 +134,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             self.assertFalse(report["production_ready"])
             self.assertEqual(report["binding"]["runtime_wave"], 76)
             self.assertEqual(report["binding"]["attestation_wave"], 85)
+            self.assertEqual(report["binding"]["source_contract_wave"], 94)
             self.assertEqual(report["binding"]["source_release_state"], "LOCKED_SOURCE")
             self.assertIsNone(report["binding"]["source_release_tag"])
             self.assertEqual(report["binding"]["candidate_guard_wave"], 84)
@@ -166,6 +168,37 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lacks concrete note"):
                 module.finalize(app, phase_a, phase_b)
 
+    def test_prepared_release_verifier_rejects_non_w94_source_contract(self):
+        verifier = _module(VERIFIER_PATH, "wave94_combined_verifier")
+        payload = {
+            "schema": verifier.SCHEMA,
+            "binding": {
+                "git_sha": "a" * 40,
+                "product_version": "1.0.0",
+                "architecture": "arm64",
+                "runtime_wave": 76,
+                "candidate_guard_wave": 84,
+                "certification_guard_wave": 84,
+                "source_contract_wave": 92,
+                "source_release_state": "PREPARED_RELEASE",
+                "source_release_tag": "v1.0.0",
+                "candidate_source_sha256": "b" * 64,
+                "candidate_manifest_sha256": "c" * 64,
+            },
+            "phase_a": {"required_scenarios": 5, "passed_scenarios": 5},
+            "phase_b": {"required_gates": 12, "passed_gates": 12, "overall": "UAT_PASS"},
+            "both_phases_passed": True,
+            "release_authority": False,
+            "publication_authority": False,
+            "production_ready": False,
+        }
+        payload["attestation_sha256"] = verifier._digest(payload)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "combined.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "W94 source contract"):
+                verifier.verify(path, expected_source_release_state="PREPARED_RELEASE", expected_release_tag="v1.0.0")
+
     def test_operator_export_and_finalization_are_explicit(self):
         ui = (ROOT / "web/release-evidence.js").read_text(encoding="utf-8")
         self.assertIn("Descargar evidencia Fase A", ui)
@@ -180,6 +213,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
     def test_packager_binds_combined_finalization_helpers(self):
         source = (ROOT / "scripts/package_current_arm64_candidate.py").read_text(encoding="utf-8")
         self.assertIn("COMBINED_ATTESTATION_WAVE = 85", source)
+        self.assertIn("SOURCE_CONTRACT_WAVE = 94", source)
         self.assertIn("combined_finalizer_sha256", source)
         self.assertIn("finalize_command_sha256", source)
         self.assertIn("combined_attestation_required_before_release_transport", source)
@@ -187,13 +221,15 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         self.assertIn("FINALIZE_PHYSICAL_UAT.py", verifier)
         self.assertIn("combined attestation release-transport boundary missing", verifier)
 
-    def test_release_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
+    def test_release_stays_fail_closed_as_w94_hardens_transport(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
         self.assertIn("RELEASE_READY = False", version)
         self.assertIn("RELEASE_TAG: str | None = None", version)
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
         self.assertIn("verify_combined_uat_attestation.py", workflow)
+        self.assertIn("--expected-source-release-state PREPARED_RELEASE", workflow)
+        self.assertIn('--expected-release-tag "$GITHUB_REF_NAME"', workflow)
         self.assertIn("release_candidate_gate.py", workflow)
         gate = workflow.index("release_candidate_gate.py")
         package = workflow.index("Package immutable release asset")
