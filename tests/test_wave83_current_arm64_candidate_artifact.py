@@ -18,11 +18,13 @@ class Wave83CurrentArm64CandidateArtifactTests(unittest.TestCase):
         workflow=(ROOT/".github/workflows/full-mac-app.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/build_full_mac_current_guarded.sh --arch arm64",workflow); self.assertIn("package_current_arm64_candidate.py",workflow); self.assertIn("binario-marketing-physical-uat-candidate-arm64",workflow); self.assertIn("Binario-Marketing-IA-PHYSICAL-UAT-arm64-*.zip",workflow); self.assertNotIn("binario-marketing-wave47-arm64",workflow)
 
-    def test_external_delivery_keeps_wave83_exact_identity_with_later_guard(self):
+    def test_external_delivery_keeps_wave83_exact_identity_with_later_contract_layers(self):
         source=(ROOT/"scripts/package_current_arm64_candidate.py").read_text(encoding="utf-8")
         self.assertIn('DELIVERY_SCHEMA = "binario.marketing.full-mac-delivery.v3"',source); self.assertIn("EXPECTED_RUNTIME_WAVE = 76",source); self.assertIn("EXPECTED_GUARD_WAVE = 84",source)
-        for marker in ('"candidate_source_sha256"','"candidate_manifest_sha256"','"artifact_sha256"','"physical_uat_required":True','"automatic_uat_pass":False','"release_ready":False','"production_ready":False'):
+        for marker in ('"candidate_source_sha256"','"candidate_manifest_sha256"','"artifact_sha256"','"physical_uat_required": True','"automatic_uat_pass": False','"operational_authorization": False','"release_authority": False','"production_ready": False'):
             self.assertIn(marker,source)
+        self.assertIn("PREPARED_RELEASE_CONTRACT_WAVE = 91",source)
+        self.assertIn("source_release_contract",source)
         self.assertIn("physical_uat_eligible",source); self.assertIn("VALIDATION_BUILD_ONLY",source)
 
     @staticmethod
@@ -40,7 +42,7 @@ class Wave83CurrentArm64CandidateArtifactTests(unittest.TestCase):
         for trusted in (True,False):
             with self.subTest(trusted=trusted), tempfile.TemporaryDirectory() as tmp:
                 app=Path(tmp)/"Binario Marketing IA.app"; resources=app/"Contents/Resources"; resources.mkdir(parents=True); path=resources/"PHYSICAL_UAT_CANDIDATE.json"; path.write_text(json.dumps(self._manifest(module,expected,trusted=trusted)),encoding="utf-8")
-                manifest_path,actual,actual_trusted=module._validate_candidate(app,expected); self.assertEqual(manifest_path,path); self.assertEqual(actual["git_sha"],expected); self.assertIs(actual_trusted,trusted)
+                manifest_path,actual,actual_trusted=module._validate_candidate(app,expected); self.assertEqual(manifest_path,path); self.assertEqual(actual["git_sha"],expected); self.assertIs(actual_trusted,trusted); self.assertFalse(actual["_normalized_release_contract"]["release_authority"])
 
 
 if __name__=="__main__": unittest.main()
