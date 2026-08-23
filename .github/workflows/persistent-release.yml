@@ -294,10 +294,14 @@ jobs:
           pattern: persistent-release-*
           path: release
           merge-multiple: true
-      - name: Verify both architectures, durable evidence, and checksums
+      - name: Verify both architectures, exact evidence bytes, and checksums
         shell: bash
         run: |
           set -euo pipefail
+          test -f release/PHYSICAL-UAT-ATTESTATION.json
+          python scripts/verify_combined_uat_attestation.py \
+            --evidence release/PHYSICAL-UAT-ATTESTATION.json \
+            --expected-git-sha "$GITHUB_SHA"
           for arch in arm64 x86_64; do
             test -f "release/RELEASE-${arch}.json"
             test -f "release/RELEASE-EVIDENCE-${arch}.json"
@@ -313,20 +317,16 @@ jobs:
               --release-manifest "release/RELEASE-${arch}.json" \
               --expected-tag "$GITHUB_REF_NAME" \
               --expected-git-sha "$GITHUB_SHA"
+            python scripts/verify_release_evidence_bundle.py \
+              --evidence "release/RELEASE-EVIDENCE-${arch}.json" \
+              --asset-dir release \
+              --release-manifest "release/RELEASE-${arch}.json" \
+              --uat-evidence release/PHYSICAL-UAT-ATTESTATION.json \
+              --distribution-evidence "release/DISTRIBUTION-TRUST-${arch}.json" \
+              --production-gate-evidence "release/PRODUCTION-GATE-${arch}.json" \
+              --expected-tag "$GITHUB_REF_NAME" \
+              --expected-git-sha "$GITHUB_SHA"
           done
-          test -f release/PHYSICAL-UAT-ATTESTATION.json
-          python scripts/verify_combined_uat_attestation.py \
-            --evidence release/PHYSICAL-UAT-ATTESTATION.json \
-            --expected-git-sha "$GITHUB_SHA"
-          UAT_SHA="$(sha256sum release/PHYSICAL-UAT-ATTESTATION.json | awk '{print $1}')"
-          python - release/RELEASE-EVIDENCE-arm64.json release/RELEASE-EVIDENCE-x86_64.json "$UAT_SHA" <<'PY'
-          import json,sys
-          arm=json.load(open(sys.argv[1],encoding='utf-8'))
-          x86=json.load(open(sys.argv[2],encoding='utf-8'))
-          expected=sys.argv[3]
-          assert arm['physical_uat']['evidence_file_sha256']==expected, arm
-          assert x86['physical_uat']['evidence_file_sha256']==expected, x86
-          PY
           cd release
           for checksum in *.zip.sha256; do sha256sum -c "$checksum"; done
       - name: Build cross-architecture release authorization
