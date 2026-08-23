@@ -133,7 +133,7 @@ class Wave91ReleaseEvidenceBundleTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         bundle = workflow.find("verify_release_evidence_bundle.py")
         authorize = workflow.find("release_evidence_chain.py authorize")
-        publish = workflow.find("Publish permanent GitHub Release")
+        publish = workflow.find("publish_release_transaction.sh")
         self.assertTrue(0 <= bundle < authorize < publish, (bundle, authorize, publish))
         self.assertIn("--uat-evidence release/PHYSICAL-UAT-ATTESTATION.json", workflow)
         self.assertIn('--production-gate-evidence "release/PRODUCTION-GATE-${arch}.json"', workflow)
