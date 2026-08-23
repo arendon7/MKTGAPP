@@ -11,6 +11,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 from binario_marketing.release_contract import PREPARED_RELEASE, evaluate_source_release_contract  # noqa: E402
 from verify_combined_uat_attestation import verify as verify_combined_uat  # noqa: E402
 
