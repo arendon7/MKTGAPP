@@ -175,6 +175,10 @@ def main() -> int:
     signing_mode = notarized = git_sha = architecture = product_version = None
     source_kwargs: dict[str, Any] = {}
     distribution: dict[str, Any] | None = None
+    rebuild_path: Path | None = None
+    uat_evidence_file_sha256: str | None = None
+    distribution_evidence_file_sha256: str | None = None
+    distribution_rebuild_manifest_sha256: str | None = None
 
     if args.app:
         app = args.app.expanduser().resolve()
@@ -189,6 +193,7 @@ def main() -> int:
         rebuild_path = resources / "DISTRIBUTION_REBUILD.json"
         if rebuild_path.is_file():
             rebuild = _load_json(rebuild_path)
+            distribution_rebuild_manifest_sha256 = _sha256(rebuild_path)
         source_root = resources / "source"
         if source_root.is_dir():
             current_source_sha256 = _source_digest(source_root)
@@ -204,15 +209,17 @@ def main() -> int:
         }
 
     if args.distribution_evidence:
+        distribution_path = args.distribution_evidence.expanduser().resolve()
         try:
             distribution = verify_distribution_trust(
-                args.distribution_evidence,
+                distribution_path,
                 git_sha=git_sha,
                 architecture=architecture,
                 product_version=product_version,
             )
         except ValueError as exc:
             raise SystemExit(f"DISTRIBUTION TRUST BLOCKED: {exc}") from exc
+        distribution_evidence_file_sha256 = _sha256(distribution_path)
         signing_mode = "developer_id"
         notarized = True
 
@@ -229,6 +236,8 @@ def main() -> int:
             candidate_source_sha256=candidate_source_sha256,
             candidate_manifest_sha256=candidate_manifest_sha256,
         )
+        if args.uat_evidence is not None:
+            uat_evidence_file_sha256 = _sha256(args.uat_evidence.expanduser().resolve())
 
     report = evaluate_release_readiness(
         **source_kwargs,
@@ -324,12 +333,17 @@ def main() -> int:
     report.update({
         "app_evaluated": str(args.app.expanduser().resolve()) if args.app else None,
         "uat_evidence": str(args.uat_evidence.expanduser().resolve()) if args.uat_evidence else None,
+        "uat_evidence_file_sha256": uat_evidence_file_sha256,
+        "uat_attestation_sha256": uat.get("attestation_sha256") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else None,
         "distribution_evidence": str(args.distribution_evidence.expanduser().resolve()) if args.distribution_evidence else None,
+        "distribution_evidence_file_sha256": distribution_evidence_file_sha256,
         "distribution_trust_schema": distribution.get("schema") if distribution else None,
+        "distribution_trust_evidence_sha256": distribution.get("evidence_sha256") if distribution else None,
         "distribution_trust_verified": distribution is not None,
         "distribution_notary_submission_id": distribution.get("notary_submission_id") if distribution else None,
         "distribution_rebuild_schema": rebuild.get("schema") if rebuild else None,
         "distribution_rebuild_purpose": rebuild.get("purpose") if rebuild else None,
+        "distribution_rebuild_manifest_sha256": distribution_rebuild_manifest_sha256,
         "distribution_rebuild_consistent": rebuild_consistent,
         "distribution_rebuild_origin": rebuild_origin,
         "provenance_schema": provenance.get("schema") if provenance else None,
