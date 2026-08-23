@@ -16,7 +16,7 @@ EXPECTED_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_CANDIDATE_GUARD_WAVE = 84
 ATTESTATION_WAVE = 85
-SOURCE_CONTRACT_WAVE = 92
+SOURCE_CONTRACT_WAVE = 94
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
 REQUIRED_PHASE_B_IDS = {
@@ -96,6 +96,7 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], st
     _require(candidate.get("architecture") == "arm64", "physical candidate must be arm64")
     _require(candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "candidate runtime wave drift")
     _require(candidate.get("certification_guard_wave") == EXPECTED_CANDIDATE_GUARD_WAVE, "candidate guard wave drift")
+    _require(candidate.get("source_contract_wave") in {None, SOURCE_CONTRACT_WAVE}, "candidate source contract wave drift")
     _require(candidate.get("git_sha") == provenance.get("git_sha"), "candidate/provenance git SHA mismatch")
     _require(candidate.get("product_version") == provenance.get("product_version"), "candidate/provenance version mismatch")
     physical = candidate.get("physical_uat") or {}
@@ -214,6 +215,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Git SHA: `{b['git_sha']}`", f"- Version: `{b['product_version']}`",
         f"- Source release state: `{b['source_release_state']}`", f"- Prepared release tag: `{b['source_release_tag']}`",
         f"- Architecture: `{b['architecture']}`", f"- Runtime: `Wave {b['runtime_wave']}`",
+        f"- Source contract: `Wave {b['source_contract_wave']}`",
         f"- Candidate source SHA-256: `{b['candidate_source_sha256']}`",
         f"- Candidate manifest SHA-256: `{b['candidate_manifest_sha256']}`",
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
@@ -240,7 +242,7 @@ def main() -> int:
     json_path = out / "combined-physical-uat-attestation.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (out / "combined-physical-uat-attestation.md").write_text(render_markdown(report), encoding="utf-8")
-    print(json.dumps({"both_phases_passed": True, "git_sha": report["binding"]["git_sha"], "source_release_state": report["binding"]["source_release_state"], "source_release_tag": report["binding"]["source_release_tag"], "attestation_sha256": report["attestation_sha256"], "output": str(json_path), "release_authority": False}, ensure_ascii=False, indent=2))
+    print(json.dumps({"both_phases_passed": True, "git_sha": report["binding"]["git_sha"], "source_release_state": report["binding"]["source_release_state"], "source_release_tag": report["binding"]["source_release_tag"], "source_contract_wave": report["binding"]["source_contract_wave"], "attestation_sha256": report["attestation_sha256"], "output": str(json_path), "release_authority": False}, ensure_ascii=False, indent=2))
     return 0
 
 
