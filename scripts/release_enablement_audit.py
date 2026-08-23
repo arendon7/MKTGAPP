@@ -41,6 +41,8 @@ def audit(repo: Path) -> dict[str, Any]:
     roundtrip_index = workflow.find("Verify W92 packaged artifact round-trip trust")
     w92_authorize_index = workflow.find("release_artifact_authorization.py authorize")
     w92_verify_index = workflow.find("release_artifact_authorization.py verify-authorization")
+    w91_cross_arch_before_publish = 0 <= w91_authorize_index < publish_index
+    w91_verify_before_publish = 0 <= w91_verify_index < publish_index
     structural = {
         "physical_uat_attestation_transport": "verify_combined_uat_attestation.py" in workflow and "PHYSICAL_UAT_ATTESTATION_B64" in workflow,
         "developer_id_credentials_gate": "APPLE_DEVELOPER_ID_P12_BASE64" in workflow and "BINARIO_CODESIGN_IDENTITY" in workflow,
@@ -52,8 +54,10 @@ def audit(repo: Path) -> dict[str, Any]:
         "release_evidence_chain": "binario.marketing.release-evidence-chain.v1" in evidence_chain and "release_evidence_chain.py write-asset" in workflow,
         "production_gate_evidence_persisted": "production-gate-${{ matrix.arch }}.json" in workflow and "| tee" in workflow,
         "exact_published_evidence_bytes_verified": "release-evidence-bundle-verification.v1" in bundle_verifier and 0 <= exact_bundle_index < w91_authorize_index,
-        "w91_cross_arch_release_authorization_before_publish": 0 <= w91_authorize_index < publish_index,
-        "w91_final_authorization_verification_before_publish": 0 <= w91_verify_index < publish_index,
+        "cross_arch_release_authorization_before_publish": w91_cross_arch_before_publish,
+        "final_authorization_verification_before_publish": w91_verify_before_publish,
+        "w91_cross_arch_release_authorization_before_publish": w91_cross_arch_before_publish,
+        "w91_final_authorization_verification_before_publish": w91_verify_before_publish,
         "w91_release_authorization_manifest_present": "RELEASE-AUTHORIZATION.json" in workflow and "binario.marketing.release-authorization.v1" in evidence_chain,
         "per_arch_release_manifests_are_non_authoritative": 'release_authority": False' in evidence_chain and 'publication_authority": False' in evidence_chain,
         "exact_evidence_digest_binding": "exact_evidence_digest_binding_verified" in evidence_chain and "distribution_rebuild_manifest_sha256" in gate,
@@ -92,6 +96,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "production_gate_passed_at_tag_runtime": False,
         "exact_evidence_digests_verified_at_tag_runtime": False,
         "exact_published_evidence_bytes_verified_at_tag_runtime": False,
+        "cross_arch_release_authorization_verified_at_tag_runtime": False,
         "w91_cross_arch_release_authorization_verified_at_tag_runtime": False,
         "post_package_roundtrip_trust_verified_for_arm64_at_tag_runtime": False,
         "post_package_roundtrip_trust_verified_for_x86_64_at_tag_runtime": False,
@@ -114,7 +119,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "release_authority": False,
         "publication_authority": False,
         "production_ready": False,
-        "notes": "Source readiness never authorizes publication. W91 release evidence and cross-architecture authorization remain required, but W92 additionally requires each exact native ZIP to survive macOS round-trip extraction with source/rebuild identity, Developer ID signature, stapled notarization ticket and Gatekeeper verification intact. Only the final W92 artifact authorization may unlock publication at tag runtime.",
+        "notes": "Source readiness never authorizes publication. Physical UAT evidence and Apple credentials remain external runtime facts. W91 release evidence and cross-architecture authorization remain required, but W92 additionally requires each exact native ZIP to survive macOS round-trip extraction with source/rebuild identity, Developer ID signature, stapled notarization ticket and Gatekeeper verification intact. Only the final W92 artifact authorization may unlock publication at tag runtime.",
     }
 
 
