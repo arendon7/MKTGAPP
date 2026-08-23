@@ -53,7 +53,13 @@ def _source_contract(binding: dict[str, Any]) -> tuple[str, str | None]:
     return str(state), str(tag) if tag is not None else None
 
 
-def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]:
+def verify(
+    path: Path,
+    *,
+    expected_git_sha: str | None = None,
+    expected_source_release_state: str | None = None,
+    expected_release_tag: str | None = None,
+) -> dict[str, Any]:
     path = path.expanduser().resolve()
     _require(path.is_file(), f"combined UAT attestation missing: {path}")
     data = _load(path)
@@ -74,6 +80,10 @@ def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]
     guard = certification_guard if certification_guard is not None else candidate_guard
     _require(guard == EXPECTED_GUARD_WAVE, "combined UAT certification guard drift")
     source_state, source_tag = _source_contract(binding)
+    if expected_source_release_state is not None:
+        _require(source_state == expected_source_release_state, f"combined UAT source release state mismatch: {source_state} != {expected_source_release_state}")
+    if expected_release_tag is not None:
+        _require(source_tag == expected_release_tag, f"combined UAT release tag mismatch: {source_tag} != {expected_release_tag}")
     source_sha = str(binding.get("candidate_source_sha256") or "")
     manifest_sha = str(binding.get("candidate_manifest_sha256") or "")
     _require(len(source_sha) == 64, "combined UAT candidate source SHA-256 missing or malformed")
@@ -128,9 +138,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify a sanitized W85/W92 combined physical-UAT attestation.")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
+    parser.add_argument("--expected-source-release-state", choices=(LOCKED_SOURCE, PREPARED_RELEASE))
+    parser.add_argument("--expected-release-tag")
     args = parser.parse_args()
     try:
-        report = verify(args.evidence, expected_git_sha=args.expected_git_sha)
+        report = verify(
+            args.evidence,
+            expected_git_sha=args.expected_git_sha,
+            expected_source_release_state=args.expected_source_release_state,
+            expected_release_tag=args.expected_release_tag,
+        )
     except ValueError as exc:
         raise SystemExit(f"COMBINED UAT ATTESTATION BLOCKED: {exc}") from exc
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
