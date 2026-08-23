@@ -14,7 +14,7 @@ on:
       - ".github/workflows/persistent-release.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   certify-current-runtime-x86:
@@ -109,6 +109,11 @@ jobs:
 
   build-native:
     needs: release-preflight
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -238,6 +243,7 @@ jobs:
             --distribution-evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
             --production | tee "release-evidence/production-gate-${{ matrix.arch }}.json"
       - name: Package immutable release asset
+        id: package
         shell: bash
         run: |
           set -euo pipefail
@@ -252,6 +258,7 @@ jobs:
           if [[ "${{ matrix.arch }}" == "arm64" ]]; then
             /bin/cp "release-evidence/combined-physical-uat-attestation.json" "release/PHYSICAL-UAT-ATTESTATION.json"
           fi
+          echo "zip_path=$ZIP" >> "$GITHUB_OUTPUT"
       - name: Verify W92 packaged artifact round-trip trust
         shell: bash
         run: |
@@ -273,6 +280,20 @@ jobs:
             --expected-tag "$GITHUB_REF_NAME" \
             --expected-git-sha "$GITHUB_SHA" \
             --expected-architecture "${{ matrix.arch }}"
+      - name: Attest exact release ZIP with GitHub OIDC provenance
+        id: attest
+        uses: actions/attest@v4.2.1
+        with:
+          subject-path: ${{ steps.package.outputs.zip_path }}
+          show-summary: false
+      - name: Persist exact Sigstore provenance bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="${{ steps.attest.outputs.bundle-path }}"
+          test -n "$BUNDLE"
+          test -f "$BUNDLE"
+          /bin/cp "$BUNDLE" "release/CI-PROVENANCE-${{ matrix.arch }}.sigstore.json"
       - name: Build and verify W91 per-architecture release evidence
         shell: bash
         run: |
@@ -304,6 +325,8 @@ jobs:
 
   publish-release:
     needs: build-native
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -332,6 +355,7 @@ jobs:
             test -f "release/DISTRIBUTION-TRUST-${arch}.json"
             test -f "release/PRODUCTION-GATE-${arch}.json"
             test -f "release/POST-PACKAGE-TRUST-${arch}.json"
+            test -f "release/CI-PROVENANCE-${arch}.sigstore.json"
             python scripts/verify_distribution_trust.py \
               --evidence "release/DISTRIBUTION-TRUST-${arch}.json" \
               --git-sha "$GITHUB_SHA" \
@@ -423,13 +447,63 @@ jobs:
             --x86-distribution-evidence release/DISTRIBUTION-TRUST-x86_64.json \
             --expected-tag "$GITHUB_REF_NAME" \
             --expected-git-sha "$GITHUB_SHA"
+      - name: Build W93 CI provenance publication authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_ci_provenance_authorization.py authorize \
+            --w92-authorization release/RELEASE-ARTIFACT-AUTHORIZATION.json \
+            --w91-authorization release/RELEASE-AUTHORIZATION.json \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --arm64-post-package release/POST-PACKAGE-TRUST-arm64.json \
+            --x86-post-package release/POST-PACKAGE-TRUST-x86_64.json \
+            --arm64-distribution-evidence release/DISTRIBUTION-TRUST-arm64.json \
+            --x86-distribution-evidence release/DISTRIBUTION-TRUST-x86_64.json \
+            --arm64-bundle release/CI-PROVENANCE-arm64.sigstore.json \
+            --x86-bundle release/CI-PROVENANCE-x86_64.sigstore.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/persistent-release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output release/RELEASE-CI-PROVENANCE-AUTHORIZATION.json
+      - name: Verify final W93 CI provenance authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_ci_provenance_authorization.py verify-authorization \
+            --authorization release/RELEASE-CI-PROVENANCE-AUTHORIZATION.json \
+            --w92-authorization release/RELEASE-ARTIFACT-AUTHORIZATION.json \
+            --w91-authorization release/RELEASE-AUTHORIZATION.json \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --arm64-post-package release/POST-PACKAGE-TRUST-arm64.json \
+            --x86-post-package release/POST-PACKAGE-TRUST-x86_64.json \
+            --arm64-distribution-evidence release/DISTRIBUTION-TRUST-arm64.json \
+            --x86-distribution-evidence release/DISTRIBUTION-TRUST-x86_64.json \
+            --arm64-bundle release/CI-PROVENANCE-arm64.sigstore.json \
+            --x86-bundle release/CI-PROVENANCE-x86_64.sigstore.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/persistent-release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA"
       - name: Publish permanent GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          test -f release/RELEASE-ARTIFACT-AUTHORIZATION.json
+          test -f release/RELEASE-CI-PROVENANCE-AUTHORIZATION.json
           gh release create "$GITHUB_REF_NAME" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
