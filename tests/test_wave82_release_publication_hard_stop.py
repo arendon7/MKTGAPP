@@ -23,7 +23,7 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
           APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-        run: python scripts/verify_combined_uat_attestation.py --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA"
+        run: python scripts/verify_combined_uat_attestation.py --evidence release-evidence/combined-physical-uat-attestation.json --expected-git-sha "$GITHUB_SHA" --expected-source-release-state PREPARED_RELEASE --expected-release-tag "$GITHUB_REF_NAME"
         uses: actions/upload-artifact@v4
         with:
           name: verified-physical-uat-attestation-${{ github.sha }}
@@ -51,6 +51,8 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         cases = {
             "missing_transport_secret": valid.replace("PHYSICAL_UAT_ATTESTATION_B64", "REMOVED", 2),
             "missing_uat_verifier": valid.replace("verify_combined_uat_attestation.py", "removed.py"),
+            "missing_prepared_state": valid.replace("--expected-source-release-state PREPARED_RELEASE", "--expected-source-release-state LOCKED_SOURCE"),
+            "missing_prepared_tag_binding": valid.replace('--expected-release-tag "$GITHUB_REF_NAME"', '--expected-release-tag "v0.0.0"'),
             "missing_developer_id": valid.replace("APPLE_DEVELOPER_ID_P12_BASE64", "REMOVED_CERT", 2),
             "missing_notary_key": valid.replace("APPLE_NOTARY_KEY_P8_BASE64", "REMOVED_NOTARY", 2),
             "missing_distribution_mode": valid.replace("build_full_mac_release_candidate.sh --distribution", "build_full_mac_release_candidate.sh"),
@@ -76,6 +78,7 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         self.assertIn("verify_pipeline_contract()", body)
         self.assertLess(body.index("if not RELEASE_READY"), body.index("verify_pipeline_contract()"))
         self.assertLess(body.index("if tag != RELEASE_TAG"), body.index("verify_pipeline_contract()"))
+        self.assertIn("PREPARED_RELEASE", body)
 
     def test_release_remains_fail_closed_today(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
