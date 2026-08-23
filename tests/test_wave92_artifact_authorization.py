@@ -18,6 +18,9 @@ def _module():
 
 def _pair(architecture: str, *, asset_sha: str, notary: str):
     identity = "Developer ID Application: Example Corp (TEAM123456)"
+    provenance_sha = ("3" if architecture == "arm64" else "4") * 64
+    readiness_sha = ("1" if architecture == "arm64" else "2") * 64
+    rebuild_sha = ("7" if architecture == "arm64" else "8") * 64
     native = {
         "tag": "v1.0.0",
         "git_sha": "a" * 40,
@@ -35,8 +38,11 @@ def _pair(architecture: str, *, asset_sha: str, notary: str):
             "evidence_sha256": ("e" if architecture == "arm64" else "f") * 64,
             "notary_submission_id": notary,
         },
-        "distribution_rebuild": {"manifest_sha256": ("1" if architecture == "arm64" else "2") * 64},
-        "build_inputs": {"build_provenance_sha256": ("3" if architecture == "arm64" else "4") * 64},
+        "distribution_rebuild": {"manifest_sha256": rebuild_sha},
+        "build_inputs": {
+            "build_provenance_sha256": provenance_sha,
+            "embedded_readiness_sha256": readiness_sha,
+        },
         "evidence_sha256": ("5" if architecture == "arm64" else "6") * 64,
     }
     post = {
@@ -48,8 +54,9 @@ def _pair(architecture: str, *, asset_sha: str, notary: str):
         "source_sha256": native["source_sha256"],
         "asset": dict(native["asset"]),
         "extracted_app": {
-            "build_provenance_sha256": native["build_inputs"]["build_provenance_sha256"],
-            "distribution_rebuild_manifest_sha256": native["distribution_rebuild"]["manifest_sha256"],
+            "build_provenance_sha256": provenance_sha,
+            "release_readiness_sha256": readiness_sha,
+            "distribution_rebuild_manifest_sha256": rebuild_sha,
         },
         "pre_package_distribution_trust": {
             "evidence_file_sha256": native["distribution_trust"]["evidence_file_sha256"],
@@ -64,7 +71,7 @@ def _pair(architecture: str, *, asset_sha: str, notary: str):
             "gatekeeper_assessed": True,
         },
         "asset_roundtrip_verified": True,
-        "evidence_sha256": ("7" if architecture == "arm64" else "8") * 64,
+        "evidence_sha256": ("9" if architecture == "arm64" else "0") * 64,
     }
     return native, post
 
@@ -82,13 +89,7 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
             "authorization_sha256": "b" * 64,
         }
         with self.assertRaisesRegex(ValueError, "W91 release authority missing"):
-            module.build_authorization(
-                w91=blocked_w91,
-                arm_native=arm,
-                x86_native=x86,
-                arm_post=arm_post,
-                x86_post=x86_post,
-            )
+            module.build_authorization(w91=blocked_w91, arm_native=arm, x86_native=x86, arm_post=arm_post, x86_post=x86_post)
 
     def test_w91_must_be_production_ready_and_prepublication(self):
         module = _module()
@@ -108,13 +109,7 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
             }
             w91[field] = value
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, message):
-                module.build_authorization(
-                    w91=w91,
-                    arm_native=arm,
-                    x86_native=x86,
-                    arm_post=arm_post,
-                    x86_post=x86_post,
-                )
+                module.build_authorization(w91=w91, arm_native=arm, x86_native=x86, arm_post=arm_post, x86_post=x86_post)
 
     def test_valid_w92_authorization_is_sealed_and_only_final_layer_has_publication_authority(self):
         module = _module()
@@ -127,13 +122,7 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
             "publication_performed": False,
             "authorization_sha256": "b" * 64,
         }
-        authorization = module.build_authorization(
-            w91=w91,
-            arm_native=arm,
-            x86_native=x86,
-            arm_post=arm_post,
-            x86_post=x86_post,
-        )
+        authorization = module.build_authorization(w91=w91, arm_native=arm, x86_native=x86, arm_post=arm_post, x86_post=x86_post)
         module._verify_seal(authorization)
         self.assertEqual(authorization["schema"], module.SCHEMA)
         self.assertEqual(authorization["certification_guard_wave"], 92)
@@ -142,6 +131,8 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
         self.assertTrue(authorization["production_ready"])
         self.assertFalse(authorization["publication_performed"])
         self.assertFalse(authorization["mutations_performed"])
+        self.assertEqual(authorization["native_assets"]["arm64"]["release_readiness_sha256"], "1" * 64)
+        self.assertEqual(authorization["native_assets"]["x86_64"]["release_readiness_sha256"], "2" * 64)
 
     def test_final_authorization_tampering_breaks_seal(self):
         module = _module()
@@ -154,13 +145,7 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
             "publication_performed": False,
             "authorization_sha256": "b" * 64,
         }
-        authorization = module.build_authorization(
-            w91=w91,
-            arm_native=arm,
-            x86_native=x86,
-            arm_post=arm_post,
-            x86_post=x86_post,
-        )
+        authorization = module.build_authorization(w91=w91, arm_native=arm, x86_native=x86, arm_post=arm_post, x86_post=x86_post)
         authorization["publication_authority"] = False
         with self.assertRaisesRegex(ValueError, "authorization digest mismatch"):
             module._verify_seal(authorization)
@@ -178,13 +163,7 @@ class Wave92ArtifactAuthorizationTests(unittest.TestCase):
             "authorization_sha256": "b" * 64,
         }
         with self.assertRaisesRegex(ValueError, "x86_64 native/post-package git_sha mismatch|cross-architecture git_sha mismatch"):
-            module.build_authorization(
-                w91=w91,
-                arm_native=arm,
-                x86_native=x86,
-                arm_post=arm_post,
-                x86_post=x86_post,
-            )
+            module.build_authorization(w91=w91, arm_native=arm, x86_native=x86, arm_post=arm_post, x86_post=x86_post)
 
 
 if __name__ == "__main__":
