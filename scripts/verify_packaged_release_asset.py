@@ -107,10 +107,7 @@ def _validate_archive_inventory(asset: Path) -> dict[str, Any]:
         if root == "__MACOSX":
             _require(len(parts) >= 2, "release ZIP contains bare __MACOSX entry")
             second = parts[1]
-            _require(
-                second in {APP_NAME, f"._{APP_NAME}"},
-                f"release ZIP contains metadata outside canonical app root: {name}",
-            )
+            _require(second in {APP_NAME, f"._{APP_NAME}"}, f"release ZIP contains metadata outside canonical app root: {name}")
             continue
         raise ValueError(f"release ZIP contains unexpected top-level content: {name}")
     _require(real_app_entries > 0, f"release ZIP does not contain {APP_NAME}")
@@ -126,10 +123,7 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(command, check=True, text=True, capture_output=True)
     except (OSError, subprocess.CalledProcessError) as exc:
-        if isinstance(exc, subprocess.CalledProcessError):
-            detail = (exc.stderr or exc.stdout or "").strip()
-        else:
-            detail = str(exc)
+        detail = (exc.stderr or exc.stdout or "").strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
         raise ValueError(f"command failed: {' '.join(command)}: {detail}") from exc
 
 
@@ -232,11 +226,7 @@ def build_roundtrip_evidence(
             "runtime_wave": RUNTIME_WAVE,
             "certification_guard_wave": CERTIFICATION_GUARD_WAVE,
             "source_sha256": source_sha256,
-            "asset": {
-                "name": asset.name,
-                "sha256": _sha256_file(asset),
-                "size_bytes": asset.stat().st_size,
-            },
+            "asset": {"name": asset.name, "sha256": _sha256_file(asset), "size_bytes": asset.stat().st_size},
             "archive": archive,
             "extracted_app": {
                 "bundle_name": APP_NAME,
@@ -299,15 +289,17 @@ def verify_evidence(
     _require(_sha256_file(asset) == asset_row.get("sha256"), "post-package trust asset digest mismatch")
     _require(asset.stat().st_size == asset_row.get("size_bytes"), "post-package trust asset size mismatch")
 
-    raw_trust = _load_json(distribution_evidence)
+    trust_report, raw_trust = _verify_distribution_trust(
+        distribution_evidence,
+        git_sha=str(data.get("git_sha") or ""),
+        architecture=str(data.get("architecture") or ""),
+        product_version=str(data.get("product_version") or ""),
+    )
     pre = data.get("pre_package_distribution_trust") or {}
     _require(_sha256_file(distribution_evidence) == pre.get("evidence_file_sha256"), "post-package trust distribution evidence bytes mismatch")
-    _require(raw_trust.get("evidence_sha256") == pre.get("evidence_sha256"), "post-package trust distribution evidence digest mismatch")
+    _require(trust_report.get("evidence_sha256") == pre.get("evidence_sha256"), "post-package trust distribution evidence digest mismatch")
     _require(raw_trust.get("developer_id_identity") == pre.get("developer_id_identity"), "post-package trust Developer ID identity mismatch")
-    _require(raw_trust.get("notary_submission_id") == pre.get("notary_submission_id"), "post-package trust notary submission mismatch")
-    _require(raw_trust.get("git_sha") == data.get("git_sha"), "post-package trust distribution git SHA mismatch")
-    _require(raw_trust.get("architecture") == data.get("architecture"), "post-package trust distribution architecture mismatch")
-    _require(raw_trust.get("product_version") == data.get("product_version"), "post-package trust distribution version mismatch")
+    _require(trust_report.get("notary_submission_id") == pre.get("notary_submission_id"), "post-package trust notary submission mismatch")
 
     archive = data.get("archive") or {}
     roundtrip = data.get("roundtrip_trust") or {}
@@ -330,7 +322,6 @@ def verify_evidence(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify the exact packaged BINARIO macOS ZIP by round-trip extraction and Apple trust checks.")
     sub = parser.add_subparsers(dest="command", required=True)
-
     roundtrip = sub.add_parser("roundtrip")
     roundtrip.add_argument("--asset", type=Path, required=True)
     roundtrip.add_argument("--distribution-evidence", type=Path, required=True)
@@ -338,7 +329,6 @@ def main() -> int:
     roundtrip.add_argument("--architecture", choices=sorted(EXPECTED_ARCHITECTURES), required=True)
     roundtrip.add_argument("--expected-git-sha", required=True)
     roundtrip.add_argument("--output", type=Path, required=True)
-
     verify = sub.add_parser("verify-evidence")
     verify.add_argument("--evidence", type=Path, required=True)
     verify.add_argument("--asset", type=Path, required=True)
@@ -346,7 +336,6 @@ def main() -> int:
     verify.add_argument("--expected-tag")
     verify.add_argument("--expected-git-sha")
     verify.add_argument("--expected-architecture", choices=sorted(EXPECTED_ARCHITECTURES))
-
     args = parser.parse_args()
     try:
         if args.command == "roundtrip":
