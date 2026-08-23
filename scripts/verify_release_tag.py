@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_state  # noqa: E402
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__  # noqa: E402
 
 TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+(?:[a-zA-Z0-9.-]+)?$")
@@ -16,11 +17,13 @@ PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
-    """Require UAT transport, explicit distribution rebuild, Developer ID/notarization, and production gating."""
+    """Require prepared physical UAT transport, distribution trust, and production gating."""
     text = PERSISTENT_RELEASE.read_text(encoding="utf-8") if workflow_text is None else workflow_text
     markers = {
         "PHYSICAL_UAT_ATTESTATION_B64": "persistent release lacks the physical-UAT attestation transport secret",
         "verify_combined_uat_attestation.py": "persistent release lacks combined UAT attestation verification",
+        "--expected-source-release-state PREPARED_RELEASE": "persistent release does not require PREPARED_RELEASE physical UAT",
+        '--expected-release-tag "$GITHUB_REF_NAME"': "persistent release does not bind physical UAT to the triggering release tag",
         "verified-physical-uat-attestation": "persistent release lacks a verified UAT attestation artifact",
         "actions/upload-artifact@v4": "persistent release does not upload verified UAT evidence",
         "actions/download-artifact@v4": "persistent release does not download verified UAT evidence for native builds",
@@ -33,6 +36,7 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         "notarize_release_candidate.sh": "persistent release lacks notarization execution",
         "verify_distribution_trust.py": "persistent release lacks distribution trust verification",
         "release_candidate_gate.py": "persistent release lacks release_candidate_gate.py production enforcement",
+        "prepared_release_uat_required": "production gate lacks the W92 prepared-release UAT blocker",
         "Package immutable release asset": "persistent release package step is missing",
     }
     indexes: dict[str, int] = {}
@@ -67,12 +71,13 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         raise ValueError("production release gate must execute before immutable packaging")
 
     uat_window = text[uat_verifier:gate]
-    if "--expected-git-sha" not in uat_window or "GITHUB_SHA" not in uat_window:
-        raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
+    for marker in ("--expected-git-sha", "GITHUB_SHA", "--expected-source-release-state PREPARED_RELEASE", '--expected-release-tag "$GITHUB_REF_NAME"'):
+        if marker not in uat_window:
+            raise ValueError(f"combined UAT transport is not bound to prepared release identity: missing {marker}")
     rebuild_window = text[rebuild:notarize]
     if "PHYSICAL_UAT_CANDIDATE.json" not in rebuild_window or "test ! -e" not in rebuild_window:
         raise ValueError("distribution rebuild does not prove absence of exact physical-UAT candidate identity")
-    if "--options runtime" not in (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8") if workflow_text is None else False:
+    if workflow_text is None and "--options runtime" not in (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8"):
         raise ValueError("distribution builder lacks hardened-runtime signing")
     distribution_window = text[notarize:gate]
     for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
@@ -94,6 +99,9 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
 def verify(tag: str) -> None:
     if not TAG_RE.fullmatch(tag):
         raise ValueError(f"invalid release tag format: {tag}")
+    state = source_release_state(version=__version__, release_ready=RELEASE_READY, release_tag=RELEASE_TAG)
+    if state != PREPARED_RELEASE:
+        raise ValueError(f"release tag requires PREPARED_RELEASE source state; got {state}")
     if not RELEASE_READY:
         raise ValueError("release publishing is disabled by the canonical version contract")
     if not RELEASE_TAG:
