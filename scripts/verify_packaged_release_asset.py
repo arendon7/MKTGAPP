@@ -289,6 +289,10 @@ def verify_evidence(
     _require(_sha256_file(asset) == asset_row.get("sha256"), "post-package trust asset digest mismatch")
     _require(asset.stat().st_size == asset_row.get("size_bytes"), "post-package trust asset size mismatch")
 
+    recorded_archive = data.get("archive") or {}
+    actual_archive = _validate_archive_inventory(asset)
+    _require(actual_archive == recorded_archive, "post-package archive inventory drift")
+
     trust_report, raw_trust = _verify_distribution_trust(
         distribution_evidence,
         git_sha=str(data.get("git_sha") or ""),
@@ -301,10 +305,9 @@ def verify_evidence(
     _require(raw_trust.get("developer_id_identity") == pre.get("developer_id_identity"), "post-package trust Developer ID identity mismatch")
     _require(trust_report.get("notary_submission_id") == pre.get("notary_submission_id"), "post-package trust notary submission mismatch")
 
-    archive = data.get("archive") or {}
     roundtrip = data.get("roundtrip_trust") or {}
-    _require(archive.get("path_safety_verified") is True, "post-package archive path safety is not verified")
-    _require(archive.get("single_product_root_verified") is True, "post-package archive root is not verified")
+    _require(recorded_archive.get("path_safety_verified") is True, "post-package archive path safety is not verified")
+    _require(recorded_archive.get("single_product_root_verified") is True, "post-package archive root is not verified")
     _require(roundtrip.get("codesign_verified") is True, "round-trip codesign verification missing")
     _require(str(roundtrip.get("developer_id_identity") or "").startswith("Developer ID Application:"), "round-trip Developer ID identity missing")
     _require(roundtrip.get("developer_id_identity") == pre.get("developer_id_identity"), "round-trip Developer ID identity drift")
