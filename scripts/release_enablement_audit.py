@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,8 @@ def audit(repo: Path) -> dict[str, Any]:
     blockers: list[str] = []
     if source_contract_error:
         blockers.append("source_release_contract_invalid")
+    if ".dev" in version.lower() or re.search(r"(?:rc|alpha|beta)", version, re.I):
+        blockers.append("development_version")
     if source_state != PREPARED_RELEASE:
         blockers.append("source_not_prepared_release")
     if release_ready is not True:
@@ -119,7 +122,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "release_authority": False,
         "publication_authority": False,
         "production_ready": False,
-        "notes": "PREPARED_RELEASE freezes stable version/tag intent before physical UAT but never authorizes release. The same main commit SHA/source/tag/version must pass both physical UAT layers before the tag may trigger Developer ID signing, notarization, source-equivalent distribution rebuild verification, exact evidence-file binding, both production gates and final cross-architecture authorization.",
+        "notes": "Source readiness never authorizes release. Physical UAT evidence must come from the same PREPARED_RELEASE main commit SHA/source/tag/version. Apple credentials, Developer ID signing, notarization, source-equivalent distribution rebuild verification, exact evidence-file digest binding, exact publication-byte verification, both per-architecture production gates and the final cross-architecture authorization must still pass at tag runtime before publication.",
     }
 
 
