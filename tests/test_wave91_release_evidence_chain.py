@@ -55,65 +55,13 @@ class Wave91ReleaseEvidenceChainTests(unittest.TestCase):
             "certification_guard_wave": module.CERTIFICATION_GUARD_WAVE,
             "source_sha256": source_sha,
             "evidence_file_name": evidence_path.name,
-            "asset": {
-                "name": asset.name,
-                "sha256": _sha256(asset),
-                "size_bytes": asset.stat().st_size,
-            },
-            "physical_uat": {
-                "schema": module.COMBINED_UAT_SCHEMA,
-                "attestation_sha256": attestation_sha,
-                "evidence_file_sha256": attestation_file_sha,
-                "candidate_source_sha256": source_sha,
-                "candidate_manifest_sha256": candidate_manifest_sha,
-                "physical_architecture": "arm64",
-            },
-            "distribution_rebuild": {
-                "schema": module.DISTRIBUTION_REBUILD_SCHEMA,
-                "purpose": module.DISTRIBUTION_REBUILD_PURPOSE,
-                "manifest_sha256": rebuild_sha,
-                "source_sha256": source_sha,
-                "build_origin": {
-                    "event": "push",
-                    "ref": "refs/tags/v1.0.0",
-                    "eligible_distribution_origin": True,
-                },
-            },
-            "distribution_trust": {
-                "schema": "binario.marketing.distribution-trust.v1",
-                "evidence_sha256": trust_digest,
-                "evidence_file_sha256": trust_file_sha,
-                "notary_submission_id": f"notary-{architecture}",
-            },
-            "production_gate": {
-                "schema": module.PRODUCTION_GATE_SCHEMA,
-                "evidence_file_sha256": "3" * 64,
-                "stage": "PRODUCTION_READY",
-                "uat_binding_mode": "source_equivalent_arm64_rebuild" if architecture == "arm64" else "source_equivalent_cross_arch_distribution",
-                "uat_evidence_file_sha256": attestation_file_sha,
-                "uat_attestation_sha256": attestation_sha,
-                "distribution_evidence_file_sha256": trust_file_sha,
-                "distribution_trust_evidence_sha256": trust_digest,
-                "distribution_rebuild_manifest_sha256": rebuild_sha,
-            },
-            "build_inputs": {
-                "build_provenance_sha256": "4" * 64,
-                "embedded_readiness_sha256": "5" * 64,
-            },
-            "authorization_gates": {
-                "canonical_release_contract": True,
-                "exact_git_sha_binding": True,
-                "tag_version_binding": True,
-                "physical_uat_attestation_verified": True,
-                "source_equivalence_verified": True,
-                "distribution_rebuild_verified": True,
-                "developer_id_signature_verified": True,
-                "apple_notarization_verified": True,
-                "gatekeeper_verified": True,
-                "production_gate_passed": True,
-                "exact_evidence_digest_binding_verified": True,
-                "immutable_asset_hashed": True,
-            },
+            "asset": {"name": asset.name, "sha256": _sha256(asset), "size_bytes": asset.stat().st_size},
+            "physical_uat": {"schema": module.COMBINED_UAT_SCHEMA, "attestation_sha256": attestation_sha, "evidence_file_sha256": attestation_file_sha, "candidate_source_sha256": source_sha, "candidate_manifest_sha256": candidate_manifest_sha, "physical_architecture": "arm64"},
+            "distribution_rebuild": {"schema": module.DISTRIBUTION_REBUILD_SCHEMA, "purpose": module.DISTRIBUTION_REBUILD_PURPOSE, "manifest_sha256": rebuild_sha, "source_sha256": source_sha, "build_origin": {"event": "push", "ref": "refs/tags/v1.0.0", "eligible_distribution_origin": True}},
+            "distribution_trust": {"schema": "binario.marketing.distribution-trust.v1", "evidence_sha256": trust_digest, "evidence_file_sha256": trust_file_sha, "notary_submission_id": f"notary-{architecture}"},
+            "production_gate": {"schema": module.PRODUCTION_GATE_SCHEMA, "evidence_file_sha256": "3" * 64, "stage": "PRODUCTION_READY", "uat_binding_mode": "source_equivalent_arm64_rebuild" if architecture == "arm64" else "source_equivalent_cross_arch_distribution", "uat_evidence_file_sha256": attestation_file_sha, "uat_attestation_sha256": attestation_sha, "distribution_evidence_file_sha256": trust_file_sha, "distribution_trust_evidence_sha256": trust_digest, "distribution_rebuild_manifest_sha256": rebuild_sha},
+            "build_inputs": {"build_provenance_sha256": "4" * 64, "embedded_readiness_sha256": "5" * 64},
+            "authorization_gates": {"canonical_release_contract": True, "exact_git_sha_binding": True, "tag_version_binding": True, "physical_uat_attestation_verified": True, "source_equivalence_verified": True, "distribution_rebuild_verified": True, "developer_id_signature_verified": True, "apple_notarization_verified": True, "gatekeeper_verified": True, "production_gate_passed": True, "exact_evidence_digest_binding_verified": True, "immutable_asset_hashed": True},
             "asset_authorized": True,
             "operational_authorization": False,
             "release_authority": False,
@@ -216,67 +164,19 @@ class Wave91ReleaseEvidenceChainTests(unittest.TestCase):
             authorization["publication_authority"] = False
             authorization_path.write_text(json.dumps(authorization), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "authorization manifest drift"):
-                module.verify_release_authorization(
-                    authorization_path,
-                    arm64_evidence=arm_evidence,
-                    x86_evidence=x86_evidence,
-                    asset_dir=root,
-                    arm64_release_manifest=arm_manifest,
-                    x86_release_manifest=x86_manifest,
-                    expected_tag="v1.0.0",
-                    expected_git_sha="a" * 40,
-                )
+                module.verify_release_authorization(authorization_path, arm64_evidence=arm_evidence, x86_evidence=x86_evidence, asset_dir=root, arm64_release_manifest=arm_manifest, x86_release_manifest=x86_manifest, expected_tag="v1.0.0", expected_git_sha="a" * 40)
 
     def test_production_gate_must_be_actual_pass_not_merely_present(self):
         module = _module()
-        gate = {
-            "schema": module.PRODUCTION_GATE_SCHEMA,
-            "git_sha": "a" * 40,
-            "architecture": "arm64",
-            "version": "1.0.0",
-            "stage": "RELEASE_CANDIDATE_BLOCKED",
-            "production_ready": False,
-            "blocker_codes": ["physical_uat_missing"],
-            "distribution_trust_verified": True,
-            "distribution_rebuild_consistent": True,
-            "uat_binding_mode": "source_equivalent_arm64_rebuild",
-            "source_equivalent_authorization": True,
-        }
+        gate = {"schema": module.PRODUCTION_GATE_SCHEMA, "git_sha": "a" * 40, "architecture": "arm64", "version": "1.0.0", "stage": "RELEASE_CANDIDATE_BLOCKED", "production_ready": False, "blocker_codes": ["physical_uat_missing"], "distribution_trust_verified": True, "distribution_rebuild_consistent": True, "uat_binding_mode": "source_equivalent_arm64_rebuild", "source_equivalent_authorization": True}
         with self.assertRaises(ValueError):
             module._validate_production_gate(gate, git_sha="a" * 40, architecture="arm64", product_version="1.0.0")
 
     def test_production_gate_exact_evidence_inputs_are_fail_closed(self):
         module = _module()
-        gate = {
-            "schema": module.PRODUCTION_GATE_SCHEMA,
-            "git_sha": "a" * 40,
-            "architecture": "arm64",
-            "version": "1.0.0",
-            "stage": "PRODUCTION_READY",
-            "production_ready": True,
-            "blocker_codes": [],
-            "distribution_trust_verified": True,
-            "distribution_rebuild_consistent": True,
-            "uat_binding_mode": "source_equivalent_arm64_rebuild",
-            "source_equivalent_authorization": True,
-            "uat_evidence_file_sha256": "1" * 64,
-            "uat_attestation_sha256": "2" * 64,
-            "distribution_evidence_file_sha256": "3" * 64,
-            "distribution_trust_evidence_sha256": "4" * 64,
-            "distribution_rebuild_manifest_sha256": "5" * 64,
-        }
+        gate = {"schema": module.PRODUCTION_GATE_SCHEMA, "git_sha": "a" * 40, "architecture": "arm64", "version": "1.0.0", "stage": "PRODUCTION_READY", "production_ready": True, "blocker_codes": [], "distribution_trust_verified": True, "distribution_rebuild_consistent": True, "uat_binding_mode": "source_equivalent_arm64_rebuild", "source_equivalent_authorization": True, "uat_evidence_file_sha256": "1" * 64, "uat_attestation_sha256": "2" * 64, "distribution_evidence_file_sha256": "3" * 64, "distribution_trust_evidence_sha256": "4" * 64, "distribution_rebuild_manifest_sha256": "5" * 64}
         with self.assertRaisesRegex(ValueError, "uat_evidence_file_sha256"):
-            module._validate_production_gate(
-                gate,
-                git_sha="a" * 40,
-                architecture="arm64",
-                product_version="1.0.0",
-                uat_evidence_file_sha256="9" * 64,
-                uat_attestation_sha256="2" * 64,
-                distribution_evidence_file_sha256="3" * 64,
-                distribution_trust_evidence_sha256="4" * 64,
-                distribution_rebuild_manifest_sha256="5" * 64,
-            )
+            module._validate_production_gate(gate, git_sha="a" * 40, architecture="arm64", product_version="1.0.0", uat_evidence_file_sha256="9" * 64, uat_attestation_sha256="2" * 64, distribution_evidence_file_sha256="3" * 64, distribution_trust_evidence_sha256="4" * 64, distribution_rebuild_manifest_sha256="5" * 64)
 
     def test_release_manifest_is_v2_and_guarded_by_w91(self):
         module = _module()
@@ -296,7 +196,7 @@ class Wave91ReleaseEvidenceChainTests(unittest.TestCase):
         asset_chain = workflow.find("release_evidence_chain.py write-asset")
         cross_arch = workflow.find("release_evidence_chain.py authorize")
         verify_auth = workflow.find("release_evidence_chain.py verify-authorization")
-        publish = workflow.find('gh release create "$GITHUB_REF_NAME"')
+        publish = workflow.find("publish_release_transaction.sh")
         self.assertTrue(0 <= gate < asset_chain < cross_arch < verify_auth < publish, (gate, asset_chain, cross_arch, verify_auth, publish))
         self.assertIn("RELEASE-AUTHORIZATION.json", workflow)
 
