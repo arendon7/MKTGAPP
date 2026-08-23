@@ -20,7 +20,7 @@ EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 EXPECTED_HANDOFF_WAVE = 84
 COMBINED_ATTESTATION_WAVE = 85
-SOURCE_CONTRACT_WAVE = 92
+SOURCE_CONTRACT_WAVE = 94
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
 
@@ -184,8 +184,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a W84/W85/W92 UAT delivery; physical start additionally requires trusted main origin and real arm64 host.")
-    parser.add_argument("--delivery-dir", type=Path, required=True); parser.add_argument("--app", type=Path, required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Verify a W84/W85/W94 UAT delivery; physical start additionally requires trusted main origin and real arm64 host."); parser.add_argument("--delivery-dir", type=Path, required=True); parser.add_argument("--app", type=Path, required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host", action="store_true"); args = parser.parse_args()
     try:
         report = verify(args.delivery_dir, args.app, expected_git_sha=args.expected_git_sha, require_physical_host=args.require_physical_host)
     except ValueError as exc:
