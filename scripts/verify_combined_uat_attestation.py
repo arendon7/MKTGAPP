@@ -10,6 +10,7 @@ from typing import Any
 SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
+EXPECTED_SOURCE_CONTRACT_WAVE = 94
 EXPECTED_ARCHITECTURE = "arm64"
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
@@ -35,22 +36,25 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def _source_contract(binding: dict[str, Any]) -> tuple[str, str | None]:
+def _source_contract(binding: dict[str, Any]) -> tuple[str, str | None, int | None]:
     version = str(binding.get("product_version") or "")
     state = binding.get("source_release_state")
     tag = binding.get("source_release_tag")
-    # Pre-W92 sanitized attestations are treated as LOCKED_SOURCE. This preserves
-    # diagnostic compatibility but they can never satisfy the W92 production gate.
+    wave = binding.get("source_contract_wave")
+    # Pre-W94 sanitized attestations remain diagnosable as LOCKED_SOURCE only.
+    # They can never satisfy a PREPARED_RELEASE production gate.
     if state is None and tag is None:
         state = LOCKED_SOURCE
     if state == LOCKED_SOURCE:
         _require(tag is None, "LOCKED_SOURCE combined UAT cannot carry a release tag")
+        _require(wave in {None, EXPECTED_SOURCE_CONTRACT_WAVE}, "LOCKED_SOURCE combined UAT source contract wave drift")
     elif state == PREPARED_RELEASE:
+        _require(wave == EXPECTED_SOURCE_CONTRACT_WAVE, "PREPARED_RELEASE combined UAT must carry the W94 source contract")
         _require(tag == f"v{version}", "PREPARED_RELEASE combined UAT tag/version mismatch")
         _require(".dev" not in version.lower() and "rc" not in version.lower(), "PREPARED_RELEASE combined UAT version is not stable")
     else:
         raise ValueError("combined UAT source release state is missing or invalid")
-    return str(state), str(tag) if tag is not None else None
+    return str(state), str(tag) if tag is not None else None, int(wave) if wave is not None else None
 
 
 def verify(
@@ -79,11 +83,13 @@ def verify(
         _require(certification_guard == candidate_guard, "combined UAT guard aliases diverge")
     guard = certification_guard if certification_guard is not None else candidate_guard
     _require(guard == EXPECTED_GUARD_WAVE, "combined UAT certification guard drift")
-    source_state, source_tag = _source_contract(binding)
+    source_state, source_tag, source_contract_wave = _source_contract(binding)
     if expected_source_release_state is not None:
         _require(source_state == expected_source_release_state, f"combined UAT source release state mismatch: {source_state} != {expected_source_release_state}")
     if expected_release_tag is not None:
         _require(source_tag == expected_release_tag, f"combined UAT release tag mismatch: {source_tag} != {expected_release_tag}")
+    if expected_source_release_state == PREPARED_RELEASE:
+        _require(source_contract_wave == EXPECTED_SOURCE_CONTRACT_WAVE, "production-bound UAT is not W94 PREPARED_RELEASE evidence")
     source_sha = str(binding.get("candidate_source_sha256") or "")
     manifest_sha = str(binding.get("candidate_manifest_sha256") or "")
     _require(len(source_sha) == 64, "combined UAT candidate source SHA-256 missing or malformed")
@@ -118,6 +124,7 @@ def verify(
         "architecture": EXPECTED_ARCHITECTURE,
         "runtime_wave": EXPECTED_RUNTIME_WAVE,
         "certification_guard_wave": EXPECTED_GUARD_WAVE,
+        "source_contract_wave": source_contract_wave,
         "source_release_state": source_state,
         "source_release_tag": source_tag,
         "candidate_source_sha256": source_sha,
@@ -135,7 +142,7 @@ def verify(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W92 combined physical-UAT attestation.")
+    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W94 combined physical-UAT attestation.")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
     parser.add_argument("--expected-source-release-state", choices=(LOCKED_SOURCE, PREPARED_RELEASE))
