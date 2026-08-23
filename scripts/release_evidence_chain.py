@@ -92,6 +92,11 @@ def _validate_production_gate(
     git_sha: str,
     architecture: str,
     product_version: str,
+    uat_evidence_file_sha256: str | None = None,
+    uat_attestation_sha256: str | None = None,
+    distribution_evidence_file_sha256: str | None = None,
+    distribution_trust_evidence_sha256: str | None = None,
+    distribution_rebuild_manifest_sha256: str | None = None,
 ) -> None:
     _require(data.get("schema") == PRODUCTION_GATE_SCHEMA, "unexpected production gate schema")
     _require(data.get("git_sha") == git_sha, "production gate git SHA mismatch")
@@ -107,6 +112,16 @@ def _validate_production_gate(
         "production gate UAT binding mode is not source-equivalent",
     )
     _require(data.get("source_equivalent_authorization") is True, "production gate lacks source-equivalent authorization")
+    exact_bindings = {
+        "uat_evidence_file_sha256": uat_evidence_file_sha256,
+        "uat_attestation_sha256": uat_attestation_sha256,
+        "distribution_evidence_file_sha256": distribution_evidence_file_sha256,
+        "distribution_trust_evidence_sha256": distribution_trust_evidence_sha256,
+        "distribution_rebuild_manifest_sha256": distribution_rebuild_manifest_sha256,
+    }
+    for key, expected in exact_bindings.items():
+        if expected is not None:
+            _require(data.get(key) == expected, f"production gate exact evidence binding mismatch: {key}")
 
 
 def _validate_release_manifest(
@@ -212,11 +227,19 @@ def build_asset_evidence(
     _require(uat.get("release_authority") is False and uat.get("production_ready") is False, "UAT attestation improperly carries release authority")
     _require(distribution.get("release_authority") is False, "distribution trust improperly carries release authority")
 
+    uat_file_sha256 = _sha256_file(uat_evidence)
+    distribution_file_sha256 = _sha256_file(distribution_evidence)
+    rebuild_manifest_sha256 = _sha256_file(rebuild_path)
     _validate_production_gate(
         production_gate,
         git_sha=git_sha,
         architecture=architecture,
         product_version=product_version,
+        uat_evidence_file_sha256=uat_file_sha256,
+        uat_attestation_sha256=str(uat.get("attestation_sha256") or ""),
+        distribution_evidence_file_sha256=distribution_file_sha256,
+        distribution_trust_evidence_sha256=str(distribution.get("evidence_sha256") or ""),
+        distribution_rebuild_manifest_sha256=rebuild_manifest_sha256,
     )
     _require(production_gate.get("current_source_sha256") == source_sha256, "production gate source digest mismatch")
     _require(production_gate.get("distribution_architecture") == architecture, "production gate distribution architecture mismatch")
@@ -233,6 +256,7 @@ def build_asset_evidence(
         "apple_notarization_verified": True,
         "gatekeeper_verified": True,
         "production_gate_passed": True,
+        "exact_evidence_digest_binding_verified": True,
         "immutable_asset_hashed": True,
     }
     payload = {
@@ -253,7 +277,7 @@ def build_asset_evidence(
         "physical_uat": {
             "schema": uat.get("schema"),
             "attestation_sha256": uat.get("attestation_sha256"),
-            "evidence_file_sha256": _sha256_file(uat_evidence),
+            "evidence_file_sha256": uat_file_sha256,
             "candidate_source_sha256": uat.get("candidate_source_sha256"),
             "candidate_manifest_sha256": uat.get("candidate_manifest_sha256"),
             "physical_architecture": uat.get("architecture"),
@@ -261,14 +285,14 @@ def build_asset_evidence(
         "distribution_rebuild": {
             "schema": rebuild.get("schema"),
             "purpose": rebuild.get("purpose"),
-            "manifest_sha256": _sha256_file(rebuild_path),
+            "manifest_sha256": rebuild_manifest_sha256,
             "source_sha256": rebuild.get("source_sha256"),
             "build_origin": origin,
         },
         "distribution_trust": {
             "schema": distribution.get("schema"),
             "evidence_sha256": distribution.get("evidence_sha256"),
-            "evidence_file_sha256": _sha256_file(distribution_evidence),
+            "evidence_file_sha256": distribution_file_sha256,
             "notary_submission_id": distribution.get("notary_submission_id"),
         },
         "production_gate": {
@@ -276,6 +300,11 @@ def build_asset_evidence(
             "evidence_file_sha256": _sha256_file(production_gate_evidence),
             "stage": production_gate.get("stage"),
             "uat_binding_mode": production_gate.get("uat_binding_mode"),
+            "uat_evidence_file_sha256": production_gate.get("uat_evidence_file_sha256"),
+            "uat_attestation_sha256": production_gate.get("uat_attestation_sha256"),
+            "distribution_evidence_file_sha256": production_gate.get("distribution_evidence_file_sha256"),
+            "distribution_trust_evidence_sha256": production_gate.get("distribution_trust_evidence_sha256"),
+            "distribution_rebuild_manifest_sha256": production_gate.get("distribution_rebuild_manifest_sha256"),
         },
         "build_inputs": {
             "build_provenance_sha256": _sha256_file(provenance_path),
@@ -314,10 +343,20 @@ def verify_asset_evidence(
     if expected_git_sha is not None:
         _require(data.get("git_sha") == expected_git_sha, "release evidence git SHA mismatch")
     _require(data.get("tag") == f"v{data.get('product_version')}", "release evidence tag/version mismatch")
-    _require(data.get("source_sha256") == (data.get("physical_uat") or {}).get("candidate_source_sha256"), "release evidence UAT/source mismatch")
-    _require(data.get("source_sha256") == (data.get("distribution_rebuild") or {}).get("source_sha256"), "release evidence rebuild/source mismatch")
+    physical_uat = data.get("physical_uat") or {}
+    rebuild = data.get("distribution_rebuild") or {}
+    distribution = data.get("distribution_trust") or {}
+    production_gate = data.get("production_gate") or {}
+    _require(data.get("source_sha256") == physical_uat.get("candidate_source_sha256"), "release evidence UAT/source mismatch")
+    _require(data.get("source_sha256") == rebuild.get("source_sha256"), "release evidence rebuild/source mismatch")
+    _require(production_gate.get("uat_evidence_file_sha256") == physical_uat.get("evidence_file_sha256"), "production gate/UAT file digest mismatch")
+    _require(production_gate.get("uat_attestation_sha256") == physical_uat.get("attestation_sha256"), "production gate/UAT attestation digest mismatch")
+    _require(production_gate.get("distribution_evidence_file_sha256") == distribution.get("evidence_file_sha256"), "production gate/distribution evidence digest mismatch")
+    _require(production_gate.get("distribution_trust_evidence_sha256") == distribution.get("evidence_sha256"), "production gate/distribution trust digest mismatch")
+    _require(production_gate.get("distribution_rebuild_manifest_sha256") == rebuild.get("manifest_sha256"), "production gate/rebuild manifest digest mismatch")
     gates = data.get("authorization_gates") or {}
     _require(isinstance(gates, dict) and bool(gates) and all(value is True for value in gates.values()), "release evidence authorization gates are incomplete")
+    _require(gates.get("exact_evidence_digest_binding_verified") is True, "exact evidence digest gate is missing")
     _require(data.get("asset_authorized") is True, "release asset is not authorized")
     _require(data.get("operational_authorization") is False, "per-architecture evidence must not carry operational authorization")
     _require(data.get("release_authority") is False, "per-architecture evidence must not carry release authority")
@@ -406,6 +445,7 @@ def build_release_authorization(arm64: dict[str, Any], x86_64: dict[str, Any]) -
             "arm64_asset_authorized": True,
             "x86_64_asset_authorized": True,
             "distinct_native_assets": True,
+            "each_native_chain_has_exact_evidence_binding": True,
         },
         "operational_authorization": True,
         "release_authority": True,
