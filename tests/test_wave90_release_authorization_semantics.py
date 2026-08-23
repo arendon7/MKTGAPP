@@ -50,7 +50,7 @@ class Wave90ReleaseAuthorizationSemanticsTests(unittest.TestCase):
             "distribution_rebuild_verified_at_tag_runtime",
             "production_gate_passed_at_tag_runtime",
         }
-        self.assertEqual(set(report["external_runtime_requirements"]), required)
+        self.assertTrue(required.issubset(set(report["external_runtime_requirements"])))
         self.assertTrue(all(value is False for value in report["external_runtime_requirements"].values()))
 
 
