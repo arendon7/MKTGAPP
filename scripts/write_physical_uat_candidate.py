@@ -12,7 +12,7 @@ from typing import Any
 SCHEMA = "binario.marketing.physical-uat-candidate.v1"
 RUNTIME_WAVE = 76
 CERTIFICATION_GUARD_WAVE = 84
-SOURCE_CONTRACT_WAVE = 92
+SOURCE_CONTRACT_WAVE = 94
 RUNTIME_ENTRYPOINT = "service_wave76_app"
 MANIFEST_NAME = "PHYSICAL_UAT_CANDIDATE.json"
 SUMMARY_NAME = "PHYSICAL_UAT_CANDIDATE.md"
@@ -75,7 +75,7 @@ def _load_version(source: Path) -> tuple[str, bool, str | None, str]:
 
     The candidate writer deliberately owns a tiny duplicate classifier instead of importing
     release_readiness from the embedded source. This keeps the manifest writer independent
-    of packaging order while still enforcing the same two-state W92 contract.
+    of packaging order while still enforcing the same two-state W94 contract.
     """
     sys.path.insert(0, str(source / "src"))
     try:
