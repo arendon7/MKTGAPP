@@ -20,6 +20,9 @@ EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 EXPECTED_HANDOFF_WAVE = 84
 COMBINED_ATTESTATION_WAVE = 85
+SOURCE_CONTRACT_WAVE = 92
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -47,8 +50,29 @@ def _require(condition: bool, message: str) -> None:
 
 def _trusted_origin(payload: dict[str, Any]) -> bool:
     origin = payload.get("build_origin") if isinstance(payload.get("build_origin"), dict) else {}
-    ref = str(origin.get("ref") or "")
-    return bool(origin.get("event") == "push" and (ref == "refs/heads/main" or ref.startswith("refs/tags/v")) and origin.get("trusted_for_physical_uat") is True)
+    return bool(origin.get("event") == "push" and origin.get("ref") == "refs/heads/main" and origin.get("trusted_for_physical_uat") is True)
+
+
+def _candidate_source_contract(payload: dict[str, Any]) -> tuple[str, str | None]:
+    boundary = payload.get("release_boundary") if isinstance(payload.get("release_boundary"), dict) else {}
+    version = str(payload.get("product_version") or "")
+    state = payload.get("source_release_state") or boundary.get("source_release_state")
+    ready = boundary.get("release_ready")
+    tag = boundary.get("release_tag")
+    if state is None and ready is False and tag is None:
+        state = LOCKED_SOURCE
+    _require(boundary.get("operational_authorization") in {None, False}, "candidate unexpectedly carries operational authority")
+    _require(boundary.get("release_authority") in {None, False}, "candidate unexpectedly carries release authority")
+    _require(boundary.get("publication_authority") in {None, False}, "candidate unexpectedly carries publication authority")
+    _require(boundary.get("production_ready") is False, "candidate unexpectedly reports production-ready")
+    if state == LOCKED_SOURCE:
+        _require(ready is False and tag is None, "LOCKED_SOURCE candidate boundary drift")
+    elif state == PREPARED_RELEASE:
+        _require(ready is True and tag == f"v{version}", "PREPARED_RELEASE candidate tag/version mismatch")
+        _require(".dev" not in version.lower() and "rc" not in version.lower(), "PREPARED_RELEASE candidate version is not stable")
+    else:
+        raise ValueError("candidate source release state is missing or invalid")
+    return str(state), str(tag) if tag is not None else None
 
 
 def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None, require_physical_host: bool = False) -> dict[str, Any]:
@@ -71,15 +95,24 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     trusted = _trusted_origin(delivery); role = PHYSICAL_ROLE if trusted else VALIDATION_ROLE
     _require(delivery.get("role") == role, "delivery role/build-origin mismatch")
     _require(delivery.get("physical_uat_eligible") is trusted, "delivery physical-UAT eligibility mismatch")
+    source_contracts: list[tuple[str, str | None]] = []
     for label, payload in (("external candidate", external), ("embedded candidate", internal)):
         _require(payload.get("role") == role, f"{label} role mismatch")
         _require(_trusted_origin(payload) is trusted, f"{label} build-origin trust mismatch")
         _require((payload.get("physical_uat") or {}).get("eligible_build_origin") is trusted, f"{label} origin eligibility mismatch")
         _require(payload.get("build_origin") == delivery.get("build_origin"), f"{label} build origin differs from delivery")
+        source_contracts.append(_candidate_source_contract(payload))
+    _require(source_contracts[0] == source_contracts[1], "external/embedded candidate source contract mismatch")
+    source_state, source_tag = source_contracts[0]
+    _require(delivery.get("source_release_state") in {None, source_state}, "delivery source release state mismatch")
+    _require(delivery.get("source_release_tag") == source_tag, "delivery source release tag mismatch")
+    _require(readiness.get("source_release_state") in {None, source_state}, "embedded readiness source release state mismatch")
+    _require(readiness.get("release_tag") == source_tag, "embedded readiness release tag mismatch")
 
     git_sha = str(delivery.get("git_sha") or "")
     _require(len(git_sha) == 40, "delivery git SHA is missing or malformed")
-    if expected_git_sha is not None: _require(git_sha == expected_git_sha, f"delivery git SHA mismatch: {git_sha} != {expected_git_sha}")
+    if expected_git_sha is not None:
+        _require(git_sha == expected_git_sha, f"delivery git SHA mismatch: {git_sha} != {expected_git_sha}")
     for label, value in (("external candidate", external.get("git_sha")), ("embedded candidate", internal.get("git_sha")), ("build provenance", provenance.get("git_sha")), ("embedded readiness", readiness.get("git_sha"))):
         _require(value == git_sha, f"{label} git SHA does not match delivery")
 
@@ -91,6 +124,8 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     for label, payload in (("delivery", delivery), ("external candidate", external), ("embedded candidate", internal)):
         _require(payload.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, f"{label} certification guard drift")
     _require(delivery.get("operator_handoff_wave") == EXPECTED_HANDOFF_WAVE, "operator handoff wave drift")
+    if delivery.get("source_contract_wave") is not None:
+        _require(delivery.get("source_contract_wave") == SOURCE_CONTRACT_WAVE, "source contract wave drift")
 
     source_sha = str(delivery.get("candidate_source_sha256") or "")
     _require(len(source_sha) == 64, "delivery candidate source SHA-256 malformed")
@@ -119,25 +154,44 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
     _require(delivery.get("physical_product_uat_required") is True, "in-app physical product UAT requirement missing")
     _require(delivery.get("release_operational_uat_required") is True, "release operational UAT requirement missing")
-    _require(delivery.get("release_ready") is False, "delivery unexpectedly release-ready")
-    _require(delivery.get("release_tag") is None, "delivery unexpectedly has release tag")
+    _require(delivery.get("release_ready") is False, "handoff delivery must not itself be release-ready")
+    _require(delivery.get("release_tag") is None, "handoff delivery must not itself carry a release tag")
+    _require(delivery.get("operational_authorization") in {None, False}, "handoff delivery unexpectedly has operational authority")
+    _require(delivery.get("release_authority") in {None, False}, "handoff delivery unexpectedly has release authority")
+    _require(delivery.get("publication_authority") in {None, False}, "handoff delivery unexpectedly has publication authority")
     _require(delivery.get("production_ready") is False, "delivery unexpectedly production-ready")
     _require(delivery.get("automatic_uat_pass") is False, "delivery unexpectedly allows automatic UAT pass")
 
     system = platform.system(); machine = platform.machine().lower(); is_ci = str(os.environ.get("GITHUB_ACTIONS") or "").lower() == "true" or str(os.environ.get("CI") or "").lower() == "true"; physical_host = system == "Darwin" and machine == "arm64" and not is_ci
     if require_physical_host:
         _require(physical_host, f"physical UAT requires real non-CI Darwin arm64 host; got {system}/{machine}/CI={is_ci}")
-        _require(trusted, "physical UAT requires a trusted push build from main or a version tag; validation artifacts are forbidden")
+        _require(trusted, "physical UAT requires a trusted push build from canonical main; validation artifacts are forbidden")
         _require(role == PHYSICAL_ROLE, "physical UAT requires PHYSICAL_UAT_CANDIDATE_ONLY role")
 
-    return {"schema":"binario.marketing.physical-uat-handoff-verification.v2","git_sha":git_sha,"role":role,"build_origin":delivery.get("build_origin"),"physical_uat_eligible":trusted,"architecture":EXPECTED_ARCH,"runtime_wave":EXPECTED_RUNTIME_WAVE,"certification_guard_wave":EXPECTED_GUARD_WAVE,"operator_handoff_wave":EXPECTED_HANDOFF_WAVE,"combined_attestation_wave":combined_wave,"candidate_source_sha256":source_sha,"candidate_manifest_sha256":expected_manifest_sha,"artifact":artifact_name,"artifact_sha256":artifact_sha,"operator_helpers":helper_hashes,"host":{"system":system,"machine":machine,"is_ci":is_ci,"physical_gate_eligible":physical_host},"physical_product_uat_required":True,"release_operational_uat_required":True,"ready_for_operator_uat":physical_host and trusted,"automatic_uat_pass":False,"release_authority":False,"production_ready":False}
+    return {
+        "schema": "binario.marketing.physical-uat-handoff-verification.v2", "git_sha": git_sha, "role": role,
+        "build_origin": delivery.get("build_origin"), "physical_uat_eligible": trusted, "architecture": EXPECTED_ARCH,
+        "runtime_wave": EXPECTED_RUNTIME_WAVE, "certification_guard_wave": EXPECTED_GUARD_WAVE,
+        "operator_handoff_wave": EXPECTED_HANDOFF_WAVE, "combined_attestation_wave": combined_wave,
+        "source_contract_wave": delivery.get("source_contract_wave"), "source_release_state": source_state, "source_release_tag": source_tag,
+        "candidate_source_sha256": source_sha, "candidate_manifest_sha256": expected_manifest_sha,
+        "artifact": artifact_name, "artifact_sha256": artifact_sha, "operator_helpers": helper_hashes,
+        "host": {"system": system, "machine": machine, "is_ci": is_ci, "physical_gate_eligible": physical_host},
+        "physical_product_uat_required": True, "release_operational_uat_required": True,
+        "ready_for_operator_uat": physical_host and trusted, "automatic_uat_pass": False,
+        "operational_authorization": False, "release_authority": False, "publication_authority": False, "production_ready": False,
+    }
 
 
 def main() -> int:
-    parser=argparse.ArgumentParser(description="Verify a W84/W85 UAT delivery; physical start additionally requires trusted origin and real arm64 host."); parser.add_argument("--delivery-dir",type=Path,required=True); parser.add_argument("--app",type=Path,required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host",action="store_true"); args=parser.parse_args()
-    try: report=verify(args.delivery_dir,args.app,expected_git_sha=args.expected_git_sha,require_physical_host=args.require_physical_host)
-    except ValueError as exc: raise SystemExit(f"PHYSICAL UAT HANDOFF BLOCKED: {exc}") from exc
-    print(json.dumps(report,ensure_ascii=False,indent=2,sort_keys=True)); return 0
+    parser = argparse.ArgumentParser(description="Verify a W84/W85/W92 UAT delivery; physical start additionally requires trusted main origin and real arm64 host.")
+    parser.add_argument("--delivery-dir", type=Path, required=True); parser.add_argument("--app", type=Path, required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host", action="store_true"); args = parser.parse_args()
+    try:
+        report = verify(args.delivery_dir, args.app, expected_git_sha=args.expected_git_sha, require_physical_host=args.require_physical_host)
+    except ValueError as exc:
+        raise SystemExit(f"PHYSICAL UAT HANDOFF BLOCKED: {exc}") from exc
+    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)); return 0
 
 
-if __name__=="__main__": raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())

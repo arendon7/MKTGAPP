@@ -38,9 +38,19 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "product_version": "0.9.0.dev1",
             "runtime_wave": 76,
             "certification_guard_wave": 84,
+            "source_contract_wave": 92,
+            "source_release_state": "LOCKED_SOURCE",
             "build_origin": origin,
             "candidate_source_sha256": "b" * 64,
-            "release_boundary": {"release_ready": False, "release_tag": None, "production_ready": False},
+            "release_boundary": {
+                "source_release_state": "LOCKED_SOURCE",
+                "release_ready": False,
+                "release_tag": None,
+                "operational_authorization": False,
+                "release_authority": False,
+                "publication_authority": False,
+                "production_ready": False,
+            },
             "physical_uat": {"required": True, "automatic_pass": False, "eligible_build_origin": trusted},
         }
         candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
@@ -94,6 +104,8 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "git_sha": git_sha,
             "architecture": "arm64",
             "version": "0.9.0.dev1",
+            "source_release_state": "LOCKED_SOURCE",
+            "source_release_tag": None,
             "runtime_wave": 76,
             "candidate_source_sha256": "b" * 64,
             "candidate_manifest_sha256": module._sha256_file(candidate_path),
@@ -101,6 +113,9 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "manual_steps": manual,
             "uat_passed": True,
             "overall": "UAT_PASS",
+            "release_authority": False,
+            "publication_authority": False,
+            "production_ready": False,
             "updated_at": "2026-08-22T00:20:00+00:00",
         }
         phase_b_path = tmp / "phase-b.json"
@@ -114,9 +129,14 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             report = module.finalize(app, phase_a, phase_b)
             self.assertTrue(report["both_phases_passed"])
             self.assertFalse(report["release_authority"])
+            self.assertFalse(report["publication_authority"])
             self.assertFalse(report["production_ready"])
             self.assertEqual(report["binding"]["runtime_wave"], 76)
             self.assertEqual(report["binding"]["attestation_wave"], 85)
+            self.assertEqual(report["binding"]["source_release_state"], "LOCKED_SOURCE")
+            self.assertIsNone(report["binding"]["source_release_tag"])
+            self.assertEqual(report["binding"]["candidate_guard_wave"], 84)
+            self.assertEqual(report["binding"]["certification_guard_wave"], 84)
             self.assertEqual(report["phase_a"]["passed_scenarios"], 5)
             self.assertEqual(report["phase_b"]["passed_gates"], 12)
             encoded = json.dumps(report, ensure_ascii=False)

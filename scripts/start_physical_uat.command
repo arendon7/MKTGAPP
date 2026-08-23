@@ -56,11 +56,13 @@ checks={
     'runtime_wave': evidence.get('runtime_wave') == 76,
     'source_digest': evidence.get('candidate_source_sha256') == delivery.get('candidate_source_sha256'),
     'manifest_digest': evidence.get('candidate_manifest_sha256') == delivery.get('candidate_manifest_sha256'),
+    'source_release_state': evidence.get('source_release_state') == delivery.get('source_release_state'),
+    'source_release_tag': evidence.get('source_release_tag') == delivery.get('source_release_tag'),
 }
 failed=[name for name,ok in checks.items() if not ok]
 if failed:
-    raise SystemExit('existing UAT evidence belongs to another candidate: '+', '.join(failed))
-print('Existing release UAT evidence is bound to this exact candidate; preserving recorded manual gates.')
+    raise SystemExit('existing UAT evidence belongs to another candidate/source state: '+', '.join(failed))
+print('Existing release UAT evidence is bound to this exact candidate and source release state; preserving recorded manual gates.')
 PY
 fi
 
@@ -89,7 +91,12 @@ FASE B · UAT operativa de release
 - Cada gate exige PASS/FAIL y una nota concreta.
 - No marque PASS por inferencia: ejecute la acción observada.
 
-NINGUNA de estas acciones cambia RELEASE_READY, crea tags, firma con Developer ID ni notariza la app.
+WAVE 92 · SOURCE STATE
+- LOCKED_SOURCE puede probar el producto pero nunca autoriza un release futuro.
+- PREPARED_RELEASE congela versión/tag antes de UAT; sigue sin ser autoridad ni build de distribución.
+- La evidencia se preserva únicamente si SHA, fuente, manifiesto, source state y prepared tag coinciden exactamente.
+
+NINGUNA de estas acciones crea tags, firma con Developer ID, notariza o publica la app.
 TXT
 
 printf '\nEvidence folder: %s\n' "$EVIDENCE_DIR"
