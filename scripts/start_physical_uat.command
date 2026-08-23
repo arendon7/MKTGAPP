@@ -54,6 +54,7 @@ checks={
     'git_sha': evidence.get('git_sha') == delivery.get('git_sha'),
     'architecture': evidence.get('architecture') == 'arm64',
     'runtime_wave': evidence.get('runtime_wave') == 76,
+    'source_contract_wave': evidence.get('source_contract_wave') == delivery.get('source_contract_wave') == 94,
     'source_digest': evidence.get('candidate_source_sha256') == delivery.get('candidate_source_sha256'),
     'manifest_digest': evidence.get('candidate_manifest_sha256') == delivery.get('candidate_manifest_sha256'),
     'source_release_state': evidence.get('source_release_state') == delivery.get('source_release_state'),
@@ -62,7 +63,7 @@ checks={
 failed=[name for name,ok in checks.items() if not ok]
 if failed:
     raise SystemExit('existing UAT evidence belongs to another candidate/source state: '+', '.join(failed))
-print('Existing release UAT evidence is bound to this exact candidate and source release state; preserving recorded manual gates.')
+print('Existing release UAT evidence is bound to this exact W94 candidate and source release state; preserving recorded manual gates.')
 PY
 fi
 
@@ -91,10 +92,10 @@ FASE B · UAT operativa de release
 - Cada gate exige PASS/FAIL y una nota concreta.
 - No marque PASS por inferencia: ejecute la acción observada.
 
-WAVE 92 · SOURCE STATE
+WAVE 94 · SOURCE STATE
 - LOCKED_SOURCE puede probar el producto pero nunca autoriza un release futuro.
 - PREPARED_RELEASE congela versión/tag antes de UAT; sigue sin ser autoridad ni build de distribución.
-- La evidencia se preserva únicamente si SHA, fuente, manifiesto, source state y prepared tag coinciden exactamente.
+- La evidencia se preserva únicamente si wave 94, SHA, fuente, manifiesto, source state y prepared tag coinciden exactamente.
 
 NINGUNA de estas acciones crea tags, firma con Developer ID, notariza o publica la app.
 TXT
