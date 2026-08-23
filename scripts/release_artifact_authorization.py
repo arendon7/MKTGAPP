@@ -129,10 +129,11 @@ def _bind_native_chain(native: dict[str, Any], post: dict[str, Any], *, architec
     _require(native_trust.get("notary_submission_id") == post_trust.get("notary_submission_id"), f"{architecture} notary submission mismatch")
 
     native_rebuild = native.get("distribution_rebuild") or {}
+    native_inputs = native.get("build_inputs") or {}
     extracted = post.get("extracted_app") or {}
     _require(native_rebuild.get("manifest_sha256") == extracted.get("distribution_rebuild_manifest_sha256"), f"{architecture} extracted rebuild manifest mismatch")
-    native_inputs = native.get("build_inputs") or {}
     _require(native_inputs.get("build_provenance_sha256") == extracted.get("build_provenance_sha256"), f"{architecture} extracted build provenance mismatch")
+    _require(native_inputs.get("embedded_readiness_sha256") == extracted.get("release_readiness_sha256"), f"{architecture} extracted release readiness mismatch")
     _require(post.get("asset_roundtrip_verified") is True, f"{architecture} asset round-trip verification missing")
     trust = post.get("roundtrip_trust") or {}
     for key in ("codesign_verified", "stapler_validated", "gatekeeper_assessed"):
@@ -143,6 +144,9 @@ def _bind_native_chain(native: dict[str, Any], post: dict[str, Any], *, architec
         "asset_sha256": native_asset.get("sha256"),
         "release_evidence_sha256": native.get("evidence_sha256"),
         "post_package_evidence_sha256": post.get("evidence_sha256"),
+        "build_provenance_sha256": extracted.get("build_provenance_sha256"),
+        "release_readiness_sha256": extracted.get("release_readiness_sha256"),
+        "distribution_rebuild_manifest_sha256": extracted.get("distribution_rebuild_manifest_sha256"),
         "developer_id_identity": trust.get("developer_id_identity"),
         "notary_submission_id": post_trust.get("notary_submission_id"),
         "codesign_verified_after_roundtrip": True,
@@ -178,10 +182,7 @@ def build_authorization(
         "certification_guard_wave": CERTIFICATION_GUARD_WAVE,
         "source_sha256": arm_native["source_sha256"],
         "w91_release_authorization_sha256": w91.get("authorization_sha256"),
-        "native_assets": {
-            "arm64": arm,
-            "x86_64": x86,
-        },
+        "native_assets": {"arm64": arm, "x86_64": x86},
         "roundtrip_publication_gates": {
             "w91_release_authorization_verified": True,
             "both_native_assets_hash_bound": True,
@@ -201,18 +202,9 @@ def build_authorization(
     return _seal(payload)
 
 
-def verify_authorization(
-    authorization_path: Path,
-    **kwargs: Any,
-) -> dict[str, Any]:
+def verify_authorization(authorization_path: Path, **kwargs: Any) -> dict[str, Any]:
     w91, arm_native, x86_native, arm_post, x86_post = _load_verified_inputs(**kwargs)
-    expected = build_authorization(
-        w91=w91,
-        arm_native=arm_native,
-        x86_native=x86_native,
-        arm_post=arm_post,
-        x86_post=x86_post,
-    )
+    expected = build_authorization(w91=w91, arm_native=arm_native, x86_native=x86_native, arm_post=arm_post, x86_post=x86_post)
     actual = _load(authorization_path.expanduser().resolve())
     _require(actual == expected, "W92 artifact publication authorization drift")
     _verify_seal(actual)
@@ -266,13 +258,7 @@ def main() -> int:
     try:
         if args.command == "authorize":
             w91, arm_native, x86_native, arm_post, x86_post = _load_verified_inputs(**kwargs)
-            report = build_authorization(
-                w91=w91,
-                arm_native=arm_native,
-                x86_native=x86_native,
-                arm_post=arm_post,
-                x86_post=x86_post,
-            )
+            report = build_authorization(w91=w91, arm_native=arm_native, x86_native=x86_native, arm_post=arm_post, x86_post=x86_post)
             output = args.output.expanduser().resolve()
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
