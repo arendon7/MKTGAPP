@@ -252,6 +252,27 @@ jobs:
           if [[ "${{ matrix.arch }}" == "arm64" ]]; then
             /bin/cp "release-evidence/combined-physical-uat-attestation.json" "release/PHYSICAL-UAT-ATTESTATION.json"
           fi
+      - name: Verify W92 packaged artifact round-trip trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          SAFE_TAG="${GITHUB_REF_NAME//\//-}"
+          ZIP="release/Binario-Marketing-IA-${SAFE_TAG}-${{ matrix.arch }}.zip"
+          POST="release/POST-PACKAGE-TRUST-${{ matrix.arch }}.json"
+          python scripts/verify_packaged_release_asset.py roundtrip \
+            --asset "$ZIP" \
+            --distribution-evidence "release/DISTRIBUTION-TRUST-${{ matrix.arch }}.json" \
+            --tag "$GITHUB_REF_NAME" \
+            --architecture "${{ matrix.arch }}" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output "$POST"
+          python scripts/verify_packaged_release_asset.py verify-evidence \
+            --evidence "$POST" \
+            --asset "$ZIP" \
+            --distribution-evidence "release/DISTRIBUTION-TRUST-${{ matrix.arch }}.json" \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-architecture "${{ matrix.arch }}"
       - name: Build and verify W91 per-architecture release evidence
         shell: bash
         run: |
@@ -294,7 +315,7 @@ jobs:
           pattern: persistent-release-*
           path: release
           merge-multiple: true
-      - name: Verify both architectures, exact evidence bytes, and checksums
+      - name: Verify both architectures, exact evidence bytes, round-trip trust, and checksums
         shell: bash
         run: |
           set -euo pipefail
@@ -302,15 +323,26 @@ jobs:
           python scripts/verify_combined_uat_attestation.py \
             --evidence release/PHYSICAL-UAT-ATTESTATION.json \
             --expected-git-sha "$GITHUB_SHA"
+          SAFE_TAG="${GITHUB_REF_NAME//\//-}"
           for arch in arm64 x86_64; do
+            ZIP="release/Binario-Marketing-IA-${SAFE_TAG}-${arch}.zip"
+            test -f "$ZIP"
             test -f "release/RELEASE-${arch}.json"
             test -f "release/RELEASE-EVIDENCE-${arch}.json"
             test -f "release/DISTRIBUTION-TRUST-${arch}.json"
             test -f "release/PRODUCTION-GATE-${arch}.json"
+            test -f "release/POST-PACKAGE-TRUST-${arch}.json"
             python scripts/verify_distribution_trust.py \
               --evidence "release/DISTRIBUTION-TRUST-${arch}.json" \
               --git-sha "$GITHUB_SHA" \
               --architecture "$arch"
+            python scripts/verify_packaged_release_asset.py verify-evidence \
+              --evidence "release/POST-PACKAGE-TRUST-${arch}.json" \
+              --asset "$ZIP" \
+              --distribution-evidence "release/DISTRIBUTION-TRUST-${arch}.json" \
+              --expected-tag "$GITHUB_REF_NAME" \
+              --expected-git-sha "$GITHUB_SHA" \
+              --expected-architecture "$arch"
             python scripts/release_evidence_chain.py verify-asset \
               --evidence "release/RELEASE-EVIDENCE-${arch}.json" \
               --asset-dir release \
@@ -342,7 +374,7 @@ jobs:
             --expected-tag "$GITHUB_REF_NAME" \
             --expected-git-sha "$GITHUB_SHA" \
             --output release/RELEASE-AUTHORIZATION.json
-      - name: Verify final release authorization before publication
+      - name: Verify final W91 release authorization
         shell: bash
         run: |
           set -euo pipefail
@@ -355,12 +387,49 @@ jobs:
             --x86-release-manifest release/RELEASE-x86_64.json \
             --expected-tag "$GITHUB_REF_NAME" \
             --expected-git-sha "$GITHUB_SHA"
+      - name: Build W92 artifact publication authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_artifact_authorization.py authorize \
+            --w91-authorization release/RELEASE-AUTHORIZATION.json \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --arm64-post-package release/POST-PACKAGE-TRUST-arm64.json \
+            --x86-post-package release/POST-PACKAGE-TRUST-x86_64.json \
+            --arm64-distribution-evidence release/DISTRIBUTION-TRUST-arm64.json \
+            --x86-distribution-evidence release/DISTRIBUTION-TRUST-x86_64.json \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output release/RELEASE-ARTIFACT-AUTHORIZATION.json
+      - name: Verify W92 final publication authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_artifact_authorization.py verify-authorization \
+            --authorization release/RELEASE-ARTIFACT-AUTHORIZATION.json \
+            --w91-authorization release/RELEASE-AUTHORIZATION.json \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --arm64-post-package release/POST-PACKAGE-TRUST-arm64.json \
+            --x86-post-package release/POST-PACKAGE-TRUST-x86_64.json \
+            --arm64-distribution-evidence release/DISTRIBUTION-TRUST-arm64.json \
+            --x86-distribution-evidence release/DISTRIBUTION-TRUST-x86_64.json \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA"
       - name: Publish permanent GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          test -f release/RELEASE-ARTIFACT-AUTHORIZATION.json
           gh release create "$GITHUB_REF_NAME" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
