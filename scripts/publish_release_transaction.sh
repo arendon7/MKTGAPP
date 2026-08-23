@@ -36,23 +36,23 @@ gh release download "$GITHUB_REF_NAME" \
   --repo "$GITHUB_REPOSITORY" \
   --dir github-release-roundtrip
 
-python scripts/verify_published_release_roundtrip.py compare \
+python scripts/verify_published_release_roundtrip.py \
   --expected-dir release \
   --downloaded-dir github-release-roundtrip \
   --tag "$GITHUB_REF_NAME" \
   --git-sha "$GITHUB_SHA" \
   --output release/GITHUB-RELEASE-ROUNDTRIP.json
 
-python scripts/verify_published_release_roundtrip.py verify-evidence \
-  --evidence release/GITHUB-RELEASE-ROUNDTRIP.json \
-  --expected-dir release \
-  --downloaded-dir github-release-roundtrip \
-  --tag "$GITHUB_REF_NAME" \
-  --git-sha "$GITHUB_SHA"
-
 gh release upload "$GITHUB_REF_NAME" release/GITHUB-RELEASE-ROUNDTRIP.json \
   --repo "$GITHUB_REPOSITORY" \
   --clobber
+
+python scripts/verify_published_release_roundtrip.py \
+  --expected-dir release \
+  --downloaded-dir github-release-roundtrip \
+  --tag "$GITHUB_REF_NAME" \
+  --git-sha "$GITHUB_SHA" \
+  --output release/GITHUB-RELEASE-ROUNDTRIP.json
 
 gh release edit "$GITHUB_REF_NAME" \
   --repo "$GITHUB_REPOSITORY" \
