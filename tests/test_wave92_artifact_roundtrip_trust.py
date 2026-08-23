@@ -107,6 +107,29 @@ def _post_package_fixture(module, root: Path, *, architecture: str = "arm64"):
     return evidence_path, asset, trust_path, evidence
 
 
+def _native_from_post(post: dict, *, rebuild_sha: str = "e" * 64, readiness_sha: str = "d" * 64) -> dict:
+    return {
+        "tag": "v1.0.0",
+        "git_sha": "a" * 40,
+        "architecture": "arm64",
+        "product_version": "1.0.0",
+        "runtime_wave": 76,
+        "source_sha256": "b" * 64,
+        "asset": dict(post["asset"]),
+        "distribution_trust": {
+            "evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"],
+            "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"],
+            "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"],
+        },
+        "distribution_rebuild": {"manifest_sha256": rebuild_sha},
+        "build_inputs": {
+            "build_provenance_sha256": "c" * 64,
+            "embedded_readiness_sha256": readiness_sha,
+        },
+        "evidence_sha256": "f" * 64,
+    }
+
+
 class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
     def test_archive_inventory_accepts_only_canonical_app_and_macos_metadata(self):
         module = _module(ROUNDTRIP, "w92_roundtrip_inventory")
@@ -141,7 +164,7 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unexpected top-level content"):
                 module._validate_archive_inventory(asset)
 
-    def test_portable_post_package_evidence_binds_exact_asset_and_distribution_bytes(self):
+    def test_portable_post_package_evidence_binds_exact_asset_distribution_and_archive(self):
         module = _module(ROUNDTRIP, "w92_roundtrip_verify")
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -175,7 +198,7 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
             trust = json.loads(trust_path.read_text(encoding="utf-8"))
             trust["notary_submission_id"] = "different-submission"
             trust_path.write_text(json.dumps(trust), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "distribution evidence bytes mismatch"):
+            with self.assertRaisesRegex(ValueError, "distribution trust digest mismatch|distribution evidence bytes mismatch"):
                 module.verify_evidence(evidence_path, asset=asset, distribution_evidence=trust_path)
 
     def test_roundtrip_script_is_fail_closed_to_macos_and_executes_apple_trust_chain(self):
@@ -193,27 +216,12 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             _, _, _, post = _post_package_fixture(roundtrip, root)
-            native = {
-                "tag": "v1.0.0",
-                "git_sha": "a" * 40,
-                "architecture": "arm64",
-                "product_version": "1.0.0",
-                "runtime_wave": 76,
-                "source_sha256": "b" * 64,
-                "asset": dict(post["asset"]),
-                "distribution_trust": {
-                    "evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"],
-                    "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"],
-                    "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"],
-                },
-                "distribution_rebuild": {"manifest_sha256": "e" * 64},
-                "build_inputs": {"build_provenance_sha256": "c" * 64},
-                "evidence_sha256": "f" * 64,
-            }
+            native = _native_from_post(post)
             bound = auth._bind_native_chain(native, post, architecture="arm64")
             self.assertTrue(bound["codesign_verified_after_roundtrip"])
             self.assertTrue(bound["stapler_validated_after_roundtrip"])
             self.assertTrue(bound["gatekeeper_assessed_after_roundtrip"])
+            self.assertEqual(bound["release_readiness_sha256"], "d" * 64)
 
     def test_w92_authorization_blocks_extracted_rebuild_drift(self):
         auth = _module(AUTH, "w92_auth_rebuild_drift")
@@ -221,24 +229,18 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             _, _, _, post = _post_package_fixture(roundtrip, root)
-            native = {
-                "tag": "v1.0.0",
-                "git_sha": "a" * 40,
-                "architecture": "arm64",
-                "product_version": "1.0.0",
-                "runtime_wave": 76,
-                "source_sha256": "b" * 64,
-                "asset": dict(post["asset"]),
-                "distribution_trust": {
-                    "evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"],
-                    "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"],
-                    "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"],
-                },
-                "distribution_rebuild": {"manifest_sha256": "9" * 64},
-                "build_inputs": {"build_provenance_sha256": "c" * 64},
-                "evidence_sha256": "f" * 64,
-            }
+            native = _native_from_post(post, rebuild_sha="9" * 64)
             with self.assertRaisesRegex(ValueError, "extracted rebuild manifest mismatch"):
+                auth._bind_native_chain(native, post, architecture="arm64")
+
+    def test_w92_authorization_blocks_extracted_release_readiness_drift(self):
+        auth = _module(AUTH, "w92_auth_readiness_drift")
+        roundtrip = _module(ROUNDTRIP, "w92_auth_readiness_fixture")
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            _, _, _, post = _post_package_fixture(roundtrip, root)
+            native = _native_from_post(post, readiness_sha="9" * 64)
+            with self.assertRaisesRegex(ValueError, "extracted release readiness mismatch"):
                 auth._bind_native_chain(native, post, architecture="arm64")
 
     def test_w92_authorization_blocks_failed_roundtrip_gate(self):
@@ -248,23 +250,7 @@ class Wave92ArtifactRoundtripTrustTests(unittest.TestCase):
             root = Path(raw)
             _, _, _, post = _post_package_fixture(roundtrip, root)
             post["roundtrip_trust"]["gatekeeper_assessed"] = False
-            native = {
-                "tag": "v1.0.0",
-                "git_sha": "a" * 40,
-                "architecture": "arm64",
-                "product_version": "1.0.0",
-                "runtime_wave": 76,
-                "source_sha256": "b" * 64,
-                "asset": dict(post["asset"]),
-                "distribution_trust": {
-                    "evidence_file_sha256": post["pre_package_distribution_trust"]["evidence_file_sha256"],
-                    "evidence_sha256": post["pre_package_distribution_trust"]["evidence_sha256"],
-                    "notary_submission_id": post["pre_package_distribution_trust"]["notary_submission_id"],
-                },
-                "distribution_rebuild": {"manifest_sha256": "e" * 64},
-                "build_inputs": {"build_provenance_sha256": "c" * 64},
-                "evidence_sha256": "f" * 64,
-            }
+            native = _native_from_post(post)
             with self.assertRaisesRegex(ValueError, "round-trip trust gate missing: gatekeeper_assessed"):
                 auth._bind_native_chain(native, post, architecture="arm64")
 
