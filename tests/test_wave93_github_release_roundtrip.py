@@ -59,34 +59,51 @@ class Wave93GithubReleaseRoundtripTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         transaction = TRANSACTION.read_text(encoding="utf-8")
         self.assertIn("bash scripts/publish_release_transaction.sh", workflow)
-        self.assertNotIn("Publish permanent GitHub Release", workflow)
         for token in (
             "gh release create",
             "--draft",
+            "gh release upload",
             "gh release download",
             "verify_published_release_roundtrip.py",
             "GITHUB-RELEASE-ROUNDTRIP.json",
-            "gh release upload",
+            "GITHUB-RELEASE-FINAL-VERIFY.json",
             "gh release edit",
             "--draft=false",
             "gh release delete",
         ):
             self.assertIn(token, transaction)
         create_at = transaction.index("gh release create")
-        download_at = transaction.index("gh release download")
-        verify_at = transaction.index("verify_published_release_roundtrip.py")
+        first_upload_at = transaction.index('gh release upload "$GITHUB_REF_NAME" release/*')
+        first_download_at = transaction.index("gh release download")
+        first_verify_at = transaction.index("verify_published_release_roundtrip.py")
+        evidence_upload_at = transaction.index('gh release upload "$GITHUB_REF_NAME" .release-transaction/GITHUB-RELEASE-ROUNDTRIP.json')
+        final_download_at = transaction.index("gh release download", first_download_at + 1)
+        final_verify_at = transaction.index("verify_published_release_roundtrip.py", first_verify_at + 1)
         publish_at = transaction.index("gh release edit")
-        self.assertLess(create_at, download_at)
-        self.assertLess(download_at, verify_at)
-        self.assertLess(verify_at, publish_at)
+        self.assertTrue(
+            create_at < first_upload_at < first_download_at < first_verify_at < evidence_upload_at < final_download_at < final_verify_at < publish_at
+        )
 
-    def test_failure_cleanup_deletes_only_a_draft(self):
+    def test_partial_upload_failure_is_cleanup_eligible(self):
         transaction = TRANSACTION.read_text(encoding="utf-8")
-        self.assertIn("if [[ $status -ne 0 && \"$DRAFT_CREATED\" == \"1\" ]]", transaction)
+        preflight = transaction.index('gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1')
+        attempted = transaction.index("CREATE_ATTEMPTED=1")
+        create = transaction.index("gh release create")
+        upload = transaction.index('gh release upload "$GITHUB_REF_NAME" release/*')
+        self.assertTrue(preflight < attempted < create < upload)
+        self.assertIn('"$CREATE_ATTEMPTED" == "1"', transaction)
+        self.assertIn('"$TRANSACTION_COMPLETE" != "1"', transaction)
         self.assertIn("--json isDraft", transaction)
-        self.assertIn("if [[ \"$is_draft\" == \"true\" ]]", transaction)
+        self.assertIn('if [[ "$is_draft" == "true" ]]', transaction)
         self.assertIn("gh release delete", transaction)
-        self.assertIn("DRAFT_CREATED=0", transaction)
+        self.assertIn("TRANSACTION_COMPLETE=1", transaction)
+
+    def test_final_public_inventory_includes_roundtrip_evidence(self):
+        transaction = TRANSACTION.read_text(encoding="utf-8")
+        self.assertIn("cp release/* github-release-expected/", transaction)
+        self.assertIn("cp .release-transaction/GITHUB-RELEASE-ROUNDTRIP.json github-release-expected/", transaction)
+        self.assertIn("--expected-dir github-release-expected", transaction)
+        self.assertIn("--downloaded-dir github-release-final", transaction)
 
 
 if __name__ == "__main__":
