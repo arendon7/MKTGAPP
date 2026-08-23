@@ -1,0 +1,14 @@
+{
+  "schema": "binario.marketing.final-release-checklist.v1",
+  "git_sha": "",
+  "version": "",
+  "source_digest": "",
+  "uat_digest": "",
+  "authorization_digest": "",
+  "distribution_digest": "",
+  "physical_uat": false,
+  "distribution_trust": false,
+  "human_authorization": false,
+  "dry_run_status": "PENDING",
+  "production_release": false
+}
