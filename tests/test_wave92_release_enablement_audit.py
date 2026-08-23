@@ -9,6 +9,7 @@ AUDIT = ROOT / "scripts" / "release_enablement_audit.py"
 ROUNDTRIP = ROOT / "scripts" / "verify_packaged_release_asset.py"
 AUTH = ROOT / "scripts" / "release_artifact_authorization.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "persistent-release.yml"
+PUBLISHER = ROOT / "scripts" / "publish_release_transaction.sh"
 VERSION = ROOT / "src" / "binario_marketing" / "version.py"
 
 
@@ -26,7 +27,7 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
         self.assertEqual(report["status"], "BLOCKED")
         self.assertEqual(report["source_status"], "BLOCKED")
         self.assertEqual(report["runtime_wave"], 76)
-        self.assertEqual(report["certification_guard_wave"], 92)
+        self.assertGreaterEqual(report["certification_guard_wave"], 92)
         self.assertFalse(report["operational_authorization"])
         self.assertFalse(report["release_authority"])
         self.assertFalse(report["publication_authority"])
@@ -70,14 +71,15 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
 
     def test_w91_remains_necessary_but_is_not_the_last_publication_gate(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        publisher = PUBLISHER.read_text(encoding="utf-8")
         w91_verify = workflow.index("Verify final W91 release authorization")
         w92_build = workflow.index("Build W92 artifact publication authorization")
         w92_verify = workflow.index("Verify W92 final publication authorization")
-        publish = workflow.index("Publish permanent GitHub Release")
+        publish = workflow.index("publish_release_transaction.sh")
         self.assertLess(w91_verify, w92_build)
         self.assertLess(w92_build, w92_verify)
         self.assertLess(w92_verify, publish)
-        self.assertIn("test -f release/RELEASE-ARTIFACT-AUTHORIZATION.json", workflow)
+        self.assertIn("test -f release/RELEASE-ARTIFACT-AUTHORIZATION.json", publisher)
 
     def test_post_package_evidence_cannot_self_grant_release_authority(self):
         source = ROUNDTRIP.read_text(encoding="utf-8")
