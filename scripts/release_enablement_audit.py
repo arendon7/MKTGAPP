@@ -29,10 +29,12 @@ def audit(repo: Path) -> dict[str, Any]:
     tag_verifier = (repo / "scripts/verify_release_tag.py").read_text(encoding="utf-8")
     distribution_writer = (repo / "scripts/write_distribution_rebuild_manifest.py").read_text(encoding="utf-8")
     evidence_chain = (repo / "scripts/release_evidence_chain.py").read_text(encoding="utf-8")
+    bundle_verifier = (repo / "scripts/verify_release_evidence_bundle.py").read_text(encoding="utf-8")
 
     publish_index = workflow.find("Publish permanent GitHub Release")
     authorize_index = workflow.find("release_evidence_chain.py authorize")
     verify_authorization_index = workflow.find("release_evidence_chain.py verify-authorization")
+    exact_bundle_index = workflow.find("verify_release_evidence_bundle.py")
     structural = {
         "physical_uat_attestation_transport": "verify_combined_uat_attestation.py" in workflow and "PHYSICAL_UAT_ATTESTATION_B64" in workflow,
         "developer_id_credentials_gate": "APPLE_DEVELOPER_ID_P12_BASE64" in workflow and "BINARIO_CODESIGN_IDENTITY" in workflow,
@@ -43,6 +45,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "runtime_wave_76_preserved": "RUNTIME_WAVE = 76" in evidence_chain,
         "release_evidence_chain": "binario.marketing.release-evidence-chain.v1" in evidence_chain and "release_evidence_chain.py write-asset" in workflow,
         "production_gate_evidence_persisted": "production-gate-${{ matrix.arch }}.json" in workflow and "| tee" in workflow,
+        "exact_published_evidence_bytes_verified": "release-evidence-bundle-verification.v1" in bundle_verifier and 0 <= exact_bundle_index < authorize_index,
         "cross_arch_release_authorization_before_publish": 0 <= authorize_index < publish_index,
         "final_authorization_verification_before_publish": 0 <= verify_authorization_index < publish_index,
         "release_authorization_manifest_uploaded": "RELEASE-AUTHORIZATION.json" in workflow and "binario.marketing.release-authorization.v1" in evidence_chain,
@@ -72,6 +75,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "distribution_rebuild_verified_at_tag_runtime": False,
         "production_gate_passed_at_tag_runtime": False,
         "exact_evidence_digests_verified_at_tag_runtime": False,
+        "exact_published_evidence_bytes_verified_at_tag_runtime": False,
         "cross_arch_release_authorization_verified_at_tag_runtime": False,
     }
     return {
@@ -90,7 +94,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "mutations_performed": False,
         "release_authority": False,
         "production_ready": False,
-        "notes": "Source readiness never authorizes release. Physical UAT evidence, Apple credentials, Developer ID signing, notarization, source-equivalent distribution rebuild verification, exact evidence-file digest binding, the per-architecture production gates and the final cross-architecture authorization must all pass in the tag-triggered runtime before publication.",
+        "notes": "Source readiness never authorizes release. Physical UAT evidence, Apple credentials, Developer ID signing, notarization, source-equivalent distribution rebuild verification, exact evidence-file digest binding, exact publication-byte verification, the per-architecture production gates and the final cross-architecture authorization must all pass in the tag-triggered runtime before publication.",
     }
 
 
