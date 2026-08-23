@@ -39,7 +39,7 @@ def audit(repo: Path) -> dict[str, Any]:
     # W93 remains the final mutation boundary. W94 only proves provenance and
     # emits a mutation-free handoff that W93 must validate before any provider
     # call. Source structure can prove ordering, never external runtime truth.
-    publish_index = workflow.find("publish_release_transaction.sh")
+    publish_index = workflow.find("run: bash scripts/publish_release_transaction.sh")
     w91_authorize_index = workflow.find("release_evidence_chain.py authorize")
     w91_verify_index = workflow.find("release_evidence_chain.py verify-authorization")
     exact_bundle_index = workflow.find("verify_release_evidence_bundle.py")
