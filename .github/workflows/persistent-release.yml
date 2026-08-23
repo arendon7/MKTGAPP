@@ -55,11 +55,13 @@ jobs:
           APP="dist/Binario Marketing IA.app"
           LOG="$RUNNER_TEMP/x86-parity-smoke.log"
           /usr/bin/grep -q 'service_wave76_app import serve' "$APP/Contents/Resources/launch.py"
-          python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
+          python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" "$GITHUB_WORKSPACE/src" <<'PY'
           import json,sys
+          sys.path.insert(0,sys.argv[2])
+          from binario_marketing.version import __version__
           row=json.load(open(sys.argv[1],encoding='utf-8'))
           assert row['architecture']=='x86_64', row
-          assert row['product_version']=='0.9.0.dev1', row
+          assert row['product_version']==__version__, (row,__version__)
           PY
           BINARIO_IA_HOME="$RUNNER_TEMP/x86-parity-data" BINARIO_NO_BROWSER=1 BINARIO_PORT=18767 \
             "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
@@ -98,7 +100,9 @@ jobs:
           printf '%s' "$PHYSICAL_UAT_ATTESTATION_B64" | base64 --decode > release-evidence/combined-physical-uat-attestation.json
           python scripts/verify_combined_uat_attestation.py \
             --evidence release-evidence/combined-physical-uat-attestation.json \
-            --expected-git-sha "$GITHUB_SHA"
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-source-release-state PREPARED_RELEASE \
+            --expected-release-tag "$GITHUB_REF_NAME"
       - name: Preserve verified physical UAT attestation for native builds
         uses: actions/upload-artifact@v4
         with:
@@ -322,7 +326,9 @@ jobs:
           test -f release/PHYSICAL-UAT-ATTESTATION.json
           python scripts/verify_combined_uat_attestation.py \
             --evidence release/PHYSICAL-UAT-ATTESTATION.json \
-            --expected-git-sha "$GITHUB_SHA"
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-source-release-state PREPARED_RELEASE \
+            --expected-release-tag "$GITHUB_REF_NAME"
           SAFE_TAG="${GITHUB_REF_NAME//\//-}"
           for arch in arm64 x86_64; do
             ZIP="release/Binario-Marketing-IA-${SAFE_TAG}-${arch}.zip"
