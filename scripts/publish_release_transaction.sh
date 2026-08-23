@@ -7,6 +7,16 @@ set -euo pipefail
 : "${GH_TOKEN:?GH_TOKEN is required}"
 
 test -f release/RELEASE-ARTIFACT-AUTHORIZATION.json
+test -f release/RELEASE-CI-PROVENANCE-AUTHORIZATION.json
+
+# W94_STAGE_PROVENANCE_HANDOFF
+# This must run before any GitHub Release mutation. It verifies the W94 seal,
+# exact release tag/commit and the SHA-256 of this transaction script itself.
+python scripts/release_ci_provenance_authorization.py verify-transaction-handoff \
+  --authorization release/RELEASE-CI-PROVENANCE-AUTHORIZATION.json \
+  --transaction-script scripts/publish_release_transaction.sh \
+  --expected-tag "$GITHUB_REF_NAME" \
+  --expected-git-sha "$GITHUB_SHA"
 
 # W93_STAGE_PREEXISTING_RELEASE_CHECK
 # A pre-existing release for this tag is never owned by this transaction and
@@ -44,8 +54,9 @@ gh release create "$GITHUB_REF_NAME" \
   --title "BINARIO Marketing $GITHUB_REF_NAME" \
   --generate-notes
 
-# Upload the exact W92-authorized local release set only after cleanup authority
-# is active. Partial upload failure leaves a draft that the trap deletes.
+# Upload the exact W92-authorized + W94-provenance-bound local release set only
+# after cleanup authority is active. Partial upload failure leaves a draft that
+# the trap deletes.
 # W93_STAGE_AUTHORIZED_UPLOAD
 gh release upload "$GITHUB_REF_NAME" release/* \
   --repo "$GITHUB_REPOSITORY"
@@ -58,7 +69,7 @@ gh release download "$GITHUB_REF_NAME" \
   --repo "$GITHUB_REPOSITORY" \
   --dir github-release-roundtrip
 
-# First proof: every W92-authorized local byte survived GitHub storage exactly.
+# First proof: every authorized local byte survived GitHub storage exactly.
 # W93_STAGE_AUTHORIZED_VERIFY
 python scripts/verify_published_release_roundtrip.py \
   --expected-dir release \
