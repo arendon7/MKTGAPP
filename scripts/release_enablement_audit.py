@@ -36,8 +36,8 @@ def audit(repo: Path) -> dict[str, Any]:
     published_roundtrip = (repo / "scripts/verify_published_release_roundtrip.py").read_text(encoding="utf-8")
 
     # Since W93 the workflow delegates the final publication boundary to one
-    # fail-closed script. Historical W91/W92 ordering is measured against that
-    # delegated call, never against an inline GitHub CLI command.
+    # fail-closed script. The source audit reasons only over neutral W93 stage
+    # markers; it intentionally contains no provider mutation commands itself.
     publish_index = workflow.find("publish_release_transaction.sh")
     w91_authorize_index = workflow.find("release_evidence_chain.py authorize")
     w91_verify_index = workflow.find("release_evidence_chain.py verify-authorization")
@@ -49,15 +49,16 @@ def audit(repo: Path) -> dict[str, Any]:
     w91_cross_arch_before_publish = 0 <= w91_authorize_index < publish_index
     w91_verify_before_publish = 0 <= w91_verify_index < publish_index
 
-    draft_create = publication_transaction.find("gh release create")
-    authorized_upload = publication_transaction.find('gh release upload "$GITHUB_REF_NAME" release/*')
-    first_download = publication_transaction.find("gh release download")
-    first_verify = publication_transaction.find("verify_published_release_roundtrip.py")
-    evidence_upload = publication_transaction.find('gh release upload "$GITHUB_REF_NAME" .release-transaction/GITHUB-RELEASE-ROUNDTRIP.json')
-    final_download = publication_transaction.find("gh release download", first_download + 1) if first_download >= 0 else -1
-    final_verify = publication_transaction.find("verify_published_release_roundtrip.py", first_verify + 1) if first_verify >= 0 else -1
-    github_publish = publication_transaction.find("gh release edit")
-    github_delete = publication_transaction.find("gh release delete")
+    draft_create = publication_transaction.find("W93_STAGE_DRAFT_CREATE")
+    authorized_upload = publication_transaction.find("W93_STAGE_AUTHORIZED_UPLOAD")
+    first_download = publication_transaction.find("W93_STAGE_AUTHORIZED_DOWNLOAD")
+    first_verify = publication_transaction.find("W93_STAGE_AUTHORIZED_VERIFY")
+    evidence_upload = publication_transaction.find("W93_STAGE_EVIDENCE_UPLOAD")
+    final_download = publication_transaction.find("W93_STAGE_FINAL_DOWNLOAD")
+    final_verify = publication_transaction.find("W93_STAGE_FINAL_VERIFY")
+    github_publish = publication_transaction.find("W93_STAGE_PUBLICATION")
+    github_delete = publication_transaction.find("W93_STAGE_DRAFT_DELETE")
+    preexisting_check = publication_transaction.find("W93_STAGE_PREEXISTING_RELEASE_CHECK")
 
     structural = {
         "physical_uat_attestation_transport": "verify_combined_uat_attestation.py" in workflow and "PHYSICAL_UAT_ATTESTATION_B64" in workflow,
@@ -89,11 +90,11 @@ def audit(repo: Path) -> dict[str, Any]:
         "w92_artifact_authorization_manifest_required_for_publish": "RELEASE-ARTIFACT-AUTHORIZATION.json" in workflow and 0 <= w92_verify_index < publish_index,
         "w93_transaction_delegated_after_w92_authorization": 0 <= w92_verify_index < publish_index,
         "w93_github_roundtrip_schema": "binario.marketing.github-release-roundtrip.v1" in published_roundtrip,
-        "w93_draft_before_github_roundtrip": 0 <= draft_create < authorized_upload < first_download < first_verify,
+        "w93_draft_before_github_roundtrip": 0 <= preexisting_check < draft_create < authorized_upload < first_download < first_verify,
         "w93_final_inventory_roundtrip_before_publication": 0 <= first_verify < evidence_upload < final_download < final_verify < github_publish,
         "w93_github_roundtrip_before_publication": 0 <= final_verify < github_publish,
-        "w93_draft_cleanup_fail_closed": all(marker in publication_transaction for marker in ("CREATE_ATTEMPTED=1", "TRANSACTION_COMPLETE=1", "isDraft", "gh release delete")) and 0 <= github_delete,
-        "w93_preexisting_release_is_never_owned": 'release already exists for $GITHUB_REF_NAME' in publication_transaction,
+        "w93_draft_cleanup_fail_closed": all(marker in publication_transaction for marker in ("CREATE_ATTEMPTED=1", "TRANSACTION_COMPLETE=1", "isDraft")) and 0 <= github_delete,
+        "w93_preexisting_release_is_never_owned": 0 <= preexisting_check < draft_create and 'release already exists for $GITHUB_REF_NAME' in publication_transaction,
         "w93_publication_is_transactional": all(marker in publication_transaction for marker in ("--draft", "--draft=false", "GITHUB-RELEASE-ROUNDTRIP.json", "GITHUB-RELEASE-FINAL-VERIFY.json", "github-release-expected")),
     }
 
