@@ -27,7 +27,7 @@ class Wave84PhysicalUATOperatorHandoffTests(unittest.TestCase):
     def test_packager_and_verifier_are_origin_aware(self):
         package=(ROOT/"scripts/package_current_arm64_candidate.py").read_text(encoding="utf-8"); verify=(ROOT/"scripts/verify_physical_uat_handoff.py").read_text(encoding="utf-8")
         self.assertIn('DELIVERY_SCHEMA = "binario.marketing.full-mac-delivery.v3"',package); self.assertIn("EXPECTED_GUARD_WAVE = 84",package); self.assertIn("VALIDATION_BUILD_ONLY",package); self.assertIn("physical_uat_eligible",package)
-        self.assertIn("VALIDATION_ROLE",verify); self.assertIn("physical UAT requires a trusted push build",verify); self.assertIn("refs/heads/main",verify); self.assertIn("refs/tags/v",verify)
+        self.assertIn("VALIDATION_ROLE",verify); self.assertIn("physical UAT requires a trusted push build",verify); self.assertIn("refs/heads/main",verify); self.assertNotIn("refs/tags/v",verify)
 
     def _fixture(self,module,tmp:Path,git_sha:str,*,trusted:bool)->tuple[Path,Path]:
         delivery_dir=tmp/"delivery"; delivery_dir.mkdir(); app=tmp/"Binario Marketing IA.app"; resources=app/"Contents/Resources"; resources.mkdir(parents=True)
@@ -46,7 +46,7 @@ class Wave84PhysicalUATOperatorHandoffTests(unittest.TestCase):
         module=_load_verifier(); git_sha="b"*40
         for trusted in (False,True):
             with self.subTest(trusted=trusted), tempfile.TemporaryDirectory() as tmpdir:
-                delivery_dir,app=self._fixture(module,Path(tmpdir),git_sha,trusted=trusted); report=module.verify(delivery_dir,app,expected_git_sha=git_sha); self.assertIs(report["physical_uat_eligible"],trusted); self.assertEqual(report["role"],module.PHYSICAL_ROLE if trusted else module.VALIDATION_ROLE); self.assertFalse(report["automatic_uat_pass"])
+                delivery_dir,app=self._fixture(module,Path(tmpdir),git_sha,trusted=trusted); report=module.verify(delivery_dir,app,expected_git_sha=git_sha); self.assertIs(report["physical_uat_eligible"],trusted); self.assertEqual(report["role"],module.PHYSICAL_ROLE if trusted else module.VALIDATION_ROLE); self.assertEqual(report["source_release_state"],"LOCKED_SOURCE"); self.assertFalse(report["automatic_uat_pass"])
 
     def test_physical_start_rejects_validation_even_on_real_arm64_shape(self):
         module=_load_verifier(); git_sha="c"*40
