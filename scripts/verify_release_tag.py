@@ -84,7 +84,7 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         gate_source = RELEASE_GATE.read_text(encoding="utf-8")
         for marker in ("prepared_release_uat_required", "prepared_release_tag_mismatch", "prepared_release_source_required", "PREPARED_RELEASE"):
             if marker not in gate_source:
-                raise ValueError(f"production release gate lacks W92 prepared-source enforcement: {marker}")
+                raise ValueError(f"production release gate lacks W94 prepared-source enforcement: {marker}")
     distribution_window = text[notarize:gate]
     for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
         if marker not in distribution_window:
