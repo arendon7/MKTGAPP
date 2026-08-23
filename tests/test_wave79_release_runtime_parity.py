@@ -4,18 +4,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EVIDENCE_CHAIN = ROOT / "scripts/release_evidence_chain.py"
 
 
 class Wave79ReleaseRuntimeParityTests(unittest.TestCase):
     def test_persistent_release_never_calls_historical_base_builder_directly(self):
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
+        evidence_chain = EVIDENCE_CHAIN.read_text(encoding="utf-8")
         self.assertIn('build_full_mac_release_candidate.sh --arch', workflow)
         self.assertNotIn('scripts/build_full_mac_app.sh --arch', workflow)
         self.assertIn('service_wave76_app import serve', workflow)
-        self.assertIn('"runtime_wave":76', workflow)
-        guards = [int(value) for value in re.findall(r'"certification_guard_wave":(\d+)', workflow)]
-        self.assertTrue(guards, workflow)
-        self.assertGreaterEqual(max(guards), 80)
+        self.assertIn("RUNTIME_WAVE = 76", evidence_chain)
+        match = re.search(r"CERTIFICATION_GUARD_WAVE\s*=\s*(\d+)", evidence_chain)
+        self.assertIsNotNone(match, evidence_chain)
+        self.assertGreaterEqual(int(match.group(1)), 80)
 
     def test_release_candidate_routes_both_architectures_to_current_runtime_builders(self):
         builder = (ROOT / "scripts/build_full_mac_release_candidate.sh").read_text(encoding="utf-8")

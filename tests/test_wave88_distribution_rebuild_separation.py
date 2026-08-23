@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ PHYSICAL = ROOT / "scripts/write_physical_uat_candidate.py"
 REBUILD = ROOT / "scripts/write_distribution_rebuild_manifest.py"
 RELEASE_BUILDER = ROOT / "scripts/build_full_mac_release_candidate.sh"
 GATE = ROOT / "scripts/release_candidate_gate.py"
+EVIDENCE_CHAIN = ROOT / "scripts/release_evidence_chain.py"
 WORKFLOW = ROOT / ".github/workflows/persistent-release.yml"
 
 
@@ -93,11 +95,14 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
 
     def test_tag_workflow_builds_distribution_rebuild_not_exact_physical_candidate(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        evidence_chain = EVIDENCE_CHAIN.read_text(encoding="utf-8")
         self.assertIn('build_full_mac_release_candidate.sh --distribution --arch', workflow)
         self.assertIn("DISTRIBUTION_REBUILD.json", workflow)
         self.assertIn("SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD", workflow)
         self.assertIn('test ! -e "$APP/Contents/Resources/PHYSICAL_UAT_CANDIDATE.json"', workflow)
-        self.assertIn('"certification_guard_wave":88', workflow)
+        match = re.search(r"CERTIFICATION_GUARD_WAVE\s*=\s*(\d+)", evidence_chain)
+        self.assertIsNotNone(match, evidence_chain)
+        self.assertGreaterEqual(int(match.group(1)), 88)
         self.assertLess(workflow.index("DISTRIBUTION_REBUILD.json"), workflow.index("notarize_release_candidate.sh"))
 
     def test_production_gate_requires_rebuild_manifest_and_combined_source_equivalent_uat(self):
