@@ -227,7 +227,7 @@ jobs:
             --evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
             --git-sha "$GITHUB_SHA" \
             --architecture "${{ matrix.arch }}"
-      - name: Enforce production release candidate
+      - name: Enforce and persist production release candidate gate
         shell: bash
         run: |
           set -euo pipefail
@@ -236,7 +236,7 @@ jobs:
             --app "dist/Binario Marketing IA.app" \
             --uat-evidence "release-evidence/combined-physical-uat-attestation.json" \
             --distribution-evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
-            --production
+            --production | tee "release-evidence/production-gate-${{ matrix.arch }}.json"
       - name: Package immutable release asset
         shell: bash
         run: |
@@ -248,7 +248,33 @@ jobs:
           SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
           printf '%s  %s\n' "$SHA" "$(basename "$ZIP")" > "${ZIP}.sha256"
           /bin/cp "release-evidence/distribution-trust-${{ matrix.arch }}.json" "release/DISTRIBUTION-TRUST-${{ matrix.arch }}.json"
-          printf '{"schema":"binario.marketing.release.v1","tag":"%s","git_sha":"%s","architecture":"%s","asset":"%s","sha256":"%s","runtime_wave":76,"certification_guard_wave":88}\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "${{ matrix.arch }}" "$(basename "$ZIP")" "$SHA" > "release/RELEASE-${{ matrix.arch }}.json"
+          /bin/cp "release-evidence/production-gate-${{ matrix.arch }}.json" "release/PRODUCTION-GATE-${{ matrix.arch }}.json"
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            /bin/cp "release-evidence/combined-physical-uat-attestation.json" "release/PHYSICAL-UAT-ATTESTATION.json"
+          fi
+      - name: Build and verify W91 per-architecture release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          SAFE_TAG="${GITHUB_REF_NAME//\//-}"
+          ZIP="release/Binario-Marketing-IA-${SAFE_TAG}-${{ matrix.arch }}.zip"
+          python scripts/release_evidence_chain.py write-asset \
+            --repo . \
+            --app "dist/Binario Marketing IA.app" \
+            --uat-evidence "release-evidence/combined-physical-uat-attestation.json" \
+            --distribution-evidence "release-evidence/distribution-trust-${{ matrix.arch }}.json" \
+            --production-gate-evidence "release-evidence/production-gate-${{ matrix.arch }}.json" \
+            --asset "$ZIP" \
+            --tag "$GITHUB_REF_NAME" \
+            --architecture "${{ matrix.arch }}" \
+            --output "release/RELEASE-EVIDENCE-${{ matrix.arch }}.json" \
+            --release-manifest "release/RELEASE-${{ matrix.arch }}.json"
+          python scripts/release_evidence_chain.py verify-asset \
+            --evidence "release/RELEASE-EVIDENCE-${{ matrix.arch }}.json" \
+            --asset-dir release \
+            --release-manifest "release/RELEASE-${{ matrix.arch }}.json" \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: persistent-release-${{ matrix.arch }}
@@ -268,18 +294,67 @@ jobs:
           pattern: persistent-release-*
           path: release
           merge-multiple: true
-      - name: Verify both architectures, checksums, and distribution evidence
+      - name: Verify both architectures, durable evidence, and checksums
         shell: bash
         run: |
           set -euo pipefail
-          test -f release/RELEASE-arm64.json
-          test -f release/RELEASE-x86_64.json
-          test -f release/DISTRIBUTION-TRUST-arm64.json
-          test -f release/DISTRIBUTION-TRUST-x86_64.json
-          python scripts/verify_distribution_trust.py --evidence release/DISTRIBUTION-TRUST-arm64.json --git-sha "$GITHUB_SHA" --architecture arm64
-          python scripts/verify_distribution_trust.py --evidence release/DISTRIBUTION-TRUST-x86_64.json --git-sha "$GITHUB_SHA" --architecture x86_64
+          for arch in arm64 x86_64; do
+            test -f "release/RELEASE-${arch}.json"
+            test -f "release/RELEASE-EVIDENCE-${arch}.json"
+            test -f "release/DISTRIBUTION-TRUST-${arch}.json"
+            test -f "release/PRODUCTION-GATE-${arch}.json"
+            python scripts/verify_distribution_trust.py \
+              --evidence "release/DISTRIBUTION-TRUST-${arch}.json" \
+              --git-sha "$GITHUB_SHA" \
+              --architecture "$arch"
+            python scripts/release_evidence_chain.py verify-asset \
+              --evidence "release/RELEASE-EVIDENCE-${arch}.json" \
+              --asset-dir release \
+              --release-manifest "release/RELEASE-${arch}.json" \
+              --expected-tag "$GITHUB_REF_NAME" \
+              --expected-git-sha "$GITHUB_SHA"
+          done
+          test -f release/PHYSICAL-UAT-ATTESTATION.json
+          python scripts/verify_combined_uat_attestation.py \
+            --evidence release/PHYSICAL-UAT-ATTESTATION.json \
+            --expected-git-sha "$GITHUB_SHA"
+          UAT_SHA="$(sha256sum release/PHYSICAL-UAT-ATTESTATION.json | awk '{print $1}')"
+          python - release/RELEASE-EVIDENCE-arm64.json release/RELEASE-EVIDENCE-x86_64.json "$UAT_SHA" <<'PY'
+          import json,sys
+          arm=json.load(open(sys.argv[1],encoding='utf-8'))
+          x86=json.load(open(sys.argv[2],encoding='utf-8'))
+          expected=sys.argv[3]
+          assert arm['physical_uat']['evidence_file_sha256']==expected, arm
+          assert x86['physical_uat']['evidence_file_sha256']==expected, x86
+          PY
           cd release
           for checksum in *.zip.sha256; do sha256sum -c "$checksum"; done
+      - name: Build cross-architecture release authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_evidence_chain.py authorize \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output release/RELEASE-AUTHORIZATION.json
+      - name: Verify final release authorization before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_evidence_chain.py verify-authorization \
+            --authorization release/RELEASE-AUTHORIZATION.json \
+            --arm64-evidence release/RELEASE-EVIDENCE-arm64.json \
+            --x86-evidence release/RELEASE-EVIDENCE-x86_64.json \
+            --asset-dir release \
+            --arm64-release-manifest release/RELEASE-arm64.json \
+            --x86-release-manifest release/RELEASE-x86_64.json \
+            --expected-tag "$GITHUB_REF_NAME" \
+            --expected-git-sha "$GITHUB_SHA"
       - name: Publish permanent GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
