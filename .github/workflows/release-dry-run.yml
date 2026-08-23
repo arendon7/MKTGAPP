@@ -1,0 +1,31 @@
+name: Release Dry Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate dry run evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/dry-run-evidence.json <<'JSON'
+          {
+            "git_sha":"${GITHUB_SHA}",
+            "version":"dry-run",
+            "source_digest":"placeholder",
+            "uat_digest":"placeholder",
+            "authorization_digest":"placeholder",
+            "distribution_digest":"placeholder",
+            "validation":"PASS",
+            "publication_attempted":false
+          }
+          JSON
+          python scripts/verify_release_dry_run.py --evidence /tmp/dry-run-evidence.json
