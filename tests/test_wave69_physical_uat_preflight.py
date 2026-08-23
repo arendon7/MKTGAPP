@@ -33,7 +33,7 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
             "schema":"binario.marketing.physical-uat-candidate.v1",
             "role":"PHYSICAL_UAT_CANDIDATE_ONLY" if trusted else "VALIDATION_BUILD_ONLY",
             "git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1",
-            "runtime_wave":76,"certification_guard_wave":84,"source_contract_wave":92,
+            "runtime_wave":76,"certification_guard_wave":84,"source_contract_wave":94,
             "source_release_state":"LOCKED_SOURCE","candidate_source_sha256":"b"*64,
             "build_origin":{"event":"push" if trusted else "pull_request","ref":"refs/heads/main" if trusted else "refs/pull/97/merge","trusted_for_physical_uat":trusted},
             "release_boundary":{"source_release_state":"LOCKED_SOURCE","release_ready":False,"release_tag":None,"operational_authorization":False,"release_authority":False,"publication_authority":False,"production_ready":False},
