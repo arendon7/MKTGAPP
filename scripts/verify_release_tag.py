@@ -16,11 +16,13 @@ PERSISTENT_RELEASE = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
 def verify_pipeline_contract(workflow_text: str | None = None) -> None:
-    """Require UAT transport, explicit distribution rebuild, Developer ID/notarization, and production gating."""
+    """Require exact prepared-UAT binding, distribution rebuild trust, and production gating."""
     text = PERSISTENT_RELEASE.read_text(encoding="utf-8") if workflow_text is None else workflow_text
     markers = {
         "PHYSICAL_UAT_ATTESTATION_B64": "persistent release lacks the physical-UAT attestation transport secret",
         "verify_combined_uat_attestation.py": "persistent release lacks combined UAT attestation verification",
+        "verify_prepared_release_uat.py": "persistent release lacks same-commit prepared-release physical-UAT verification",
+        "prepared-release-uat-verification": "persistent release does not preserve prepared-release UAT verification",
         "verified-physical-uat-attestation": "persistent release lacks a verified UAT attestation artifact",
         "actions/upload-artifact@v4": "persistent release does not upload verified UAT evidence",
         "actions/download-artifact@v4": "persistent release does not download verified UAT evidence for native builds",
@@ -34,6 +36,7 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         "verify_distribution_trust.py": "persistent release lacks distribution trust verification",
         "release_candidate_gate.py": "persistent release lacks release_candidate_gate.py production enforcement",
         "Package immutable release asset": "persistent release package step is missing",
+        "PREPARED-RELEASE-UAT-${{ matrix.arch }}.json": "persistent release package lacks prepared-release UAT verification evidence",
     }
     indexes: dict[str, int] = {}
     for marker, message in markers.items():
@@ -43,18 +46,31 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         indexes[marker] = index
 
     uat_verifier = indexes["verify_combined_uat_attestation.py"]
+    prepared_verifier = indexes["verify_prepared_release_uat.py"]
+    upload = indexes["actions/upload-artifact@v4"]
+    download = indexes["actions/download-artifact@v4"]
     rebuild = indexes["build_full_mac_release_candidate.sh --distribution"]
     rebuild_manifest = indexes["DISTRIBUTION_REBUILD.json"]
     notarize = indexes["notarize_release_candidate.sh"]
     dist_verify = indexes["verify_distribution_trust.py"]
     gate = indexes["release_candidate_gate.py"]
     package = indexes["Package immutable release asset"]
-    if uat_verifier > gate:
-        raise ValueError("combined UAT attestation must be verified before the production release gate")
-    if indexes["actions/upload-artifact@v4"] > gate:
-        raise ValueError("verified UAT evidence must be uploaded before native production gating")
-    if indexes["actions/download-artifact@v4"] > gate:
+    prepared_asset = indexes["PREPARED-RELEASE-UAT-${{ matrix.arch }}.json"]
+
+    if uat_verifier > prepared_verifier:
+        raise ValueError("combined UAT attestation must be verified before prepared-release binding")
+    if prepared_verifier > upload:
+        raise ValueError("prepared-release UAT binding must pass before evidence upload")
+    if upload > download:
+        raise ValueError("verified UAT evidence must be uploaded before native jobs download it")
+    if download > gate:
         raise ValueError("native build must download verified UAT evidence before production gating")
+    # W91 intentionally invokes verify_prepared_release_uat.py again in each native job.
+    if text.find("verify_prepared_release_uat.py", prepared_verifier + 1) < 0:
+        raise ValueError("native release jobs do not re-verify prepared-release UAT binding")
+    second_prepared = text.find("verify_prepared_release_uat.py", prepared_verifier + 1)
+    if second_prepared < download or second_prepared > rebuild:
+        raise ValueError("native prepared-release UAT re-verification must occur after download and before distribution build")
     if rebuild > rebuild_manifest:
         raise ValueError("distribution rebuild must execute before its manifest is verified")
     if rebuild_manifest > notarize:
@@ -65,15 +81,27 @@ def verify_pipeline_contract(workflow_text: str | None = None) -> None:
         raise ValueError("distribution trust must be verified before the production release gate")
     if gate > package:
         raise ValueError("production release gate must execute before immutable packaging")
+    if prepared_asset < package:
+        raise ValueError("prepared-release UAT evidence asset must be emitted only by immutable packaging")
 
-    uat_window = text[uat_verifier:gate]
+    uat_window = text[uat_verifier:prepared_verifier]
     if "--expected-git-sha" not in uat_window or "GITHUB_SHA" not in uat_window:
         raise ValueError("combined UAT transport is not bound to the exact release commit SHA")
+    prepared_window = text[prepared_verifier:upload]
+    for marker in ("--expected-git-sha", "--expected-tag", "GITHUB_SHA", "GITHUB_REF_NAME", "combined-physical-uat-attestation.json"):
+        if marker not in prepared_window:
+            raise ValueError(f"prepared-release UAT preflight missing {marker}")
+    native_prepared_window = text[second_prepared:rebuild]
+    for marker in ("--expected-git-sha", "--expected-tag", "GITHUB_SHA", "GITHUB_REF_NAME"):
+        if marker not in native_prepared_window:
+            raise ValueError(f"native prepared-release UAT re-verification missing {marker}")
     rebuild_window = text[rebuild:notarize]
     if "PHYSICAL_UAT_CANDIDATE.json" not in rebuild_window or "test ! -e" not in rebuild_window:
         raise ValueError("distribution rebuild does not prove absence of exact physical-UAT candidate identity")
-    if "--options runtime" not in (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8") if workflow_text is None else False:
-        raise ValueError("distribution builder lacks hardened-runtime signing")
+    if workflow_text is None:
+        builder = (ROOT / "scripts" / "build_full_mac_release_candidate.sh").read_text(encoding="utf-8")
+        if "--options runtime" not in builder:
+            raise ValueError("distribution builder lacks hardened-runtime signing")
     distribution_window = text[notarize:gate]
     for marker in ("--git-sha", "--architecture", "GITHUB_SHA", "matrix.arch"):
         if marker not in distribution_window:
