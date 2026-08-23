@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "verify_published_release_roundtrip.py"
+TRANSACTION = ROOT / "scripts" / "publish_release_transaction.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "persistent-release.yml"
 
 
@@ -55,24 +55,38 @@ class Wave93GithubReleaseRoundtripTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inventory mismatch"):
                 _module().verify(expected, downloaded, tag="v1.0.0", git_sha="a" * 40)
 
-    def test_workflow_uses_draft_verify_then_publish_transaction(self):
-        source = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("gh release create", source)
-        self.assertIn("--draft", source)
-        self.assertIn("gh release download", source)
-        self.assertIn("verify_published_release_roundtrip.py", source)
-        self.assertIn("GITHUB-RELEASE-ROUNDTRIP.json", source)
-        self.assertIn("gh release upload", source)
-        self.assertIn("gh release edit", source)
-        self.assertIn("--draft=false", source)
-        self.assertIn("gh release delete", source)
-        create_at = source.index("gh release create")
-        download_at = source.index("gh release download")
-        verify_at = source.index("verify_published_release_roundtrip.py")
-        publish_at = source.index("gh release edit")
+    def test_workflow_uses_delegated_draft_verify_then_publish_transaction(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        transaction = TRANSACTION.read_text(encoding="utf-8")
+        self.assertIn("bash scripts/publish_release_transaction.sh", workflow)
+        self.assertNotIn("Publish permanent GitHub Release", workflow)
+        for token in (
+            "gh release create",
+            "--draft",
+            "gh release download",
+            "verify_published_release_roundtrip.py",
+            "GITHUB-RELEASE-ROUNDTRIP.json",
+            "gh release upload",
+            "gh release edit",
+            "--draft=false",
+            "gh release delete",
+        ):
+            self.assertIn(token, transaction)
+        create_at = transaction.index("gh release create")
+        download_at = transaction.index("gh release download")
+        verify_at = transaction.index("verify_published_release_roundtrip.py")
+        publish_at = transaction.index("gh release edit")
         self.assertLess(create_at, download_at)
         self.assertLess(download_at, verify_at)
         self.assertLess(verify_at, publish_at)
+
+    def test_failure_cleanup_deletes_only_a_draft(self):
+        transaction = TRANSACTION.read_text(encoding="utf-8")
+        self.assertIn("if [[ $status -ne 0 && \"$DRAFT_CREATED\" == \"1\" ]]", transaction)
+        self.assertIn("--json isDraft", transaction)
+        self.assertIn("if [[ \"$is_draft\" == \"true\" ]]", transaction)
+        self.assertIn("gh release delete", transaction)
+        self.assertIn("DRAFT_CREATED=0", transaction)
 
 
 if __name__ == "__main__":
