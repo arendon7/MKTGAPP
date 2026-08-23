@@ -55,11 +55,12 @@ jobs:
           APP="dist/Binario Marketing IA.app"
           LOG="$RUNNER_TEMP/x86-parity-smoke.log"
           /usr/bin/grep -q 'service_wave76_app import serve' "$APP/Contents/Resources/launch.py"
-          python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
+          PYTHONPATH=src python - "$APP/Contents/Resources/BUILD_PROVENANCE.json" <<'PY'
           import json,sys
+          from binario_marketing.version import __version__
           row=json.load(open(sys.argv[1],encoding='utf-8'))
           assert row['architecture']=='x86_64', row
-          assert row['product_version']=='0.9.0.dev1', row
+          assert row['product_version']==__version__, (row,__version__)
           PY
           BINARIO_IA_HOME="$RUNNER_TEMP/x86-parity-data" BINARIO_NO_BROWSER=1 BINARIO_PORT=18767 \
             "$APP/Contents/MacOS/Binario Marketing IA" >"$LOG" 2>&1 &
@@ -87,7 +88,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: python scripts/verify_release_tag.py --tag "$GITHUB_REF_NAME"
-      - name: Decode and verify exact physical UAT attestation
+      - name: Decode and verify exact prepared physical UAT attestation
         env:
           PHYSICAL_UAT_ATTESTATION_B64: ${{ secrets.PHYSICAL_UAT_ATTESTATION_B64 }}
         shell: bash
@@ -98,7 +99,9 @@ jobs:
           printf '%s' "$PHYSICAL_UAT_ATTESTATION_B64" | base64 --decode > release-evidence/combined-physical-uat-attestation.json
           python scripts/verify_combined_uat_attestation.py \
             --evidence release-evidence/combined-physical-uat-attestation.json \
-            --expected-git-sha "$GITHUB_SHA"
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-source-release-state PREPARED_RELEASE \
+            --expected-release-tag "$GITHUB_REF_NAME"
       - name: Preserve verified physical UAT attestation for native builds
         uses: actions/upload-artifact@v4
         with:
@@ -294,14 +297,16 @@ jobs:
           pattern: persistent-release-*
           path: release
           merge-multiple: true
-      - name: Verify both architectures, exact evidence bytes, and checksums
+      - name: Verify both architectures, prepared UAT identity, exact evidence bytes, and checksums
         shell: bash
         run: |
           set -euo pipefail
           test -f release/PHYSICAL-UAT-ATTESTATION.json
           python scripts/verify_combined_uat_attestation.py \
             --evidence release/PHYSICAL-UAT-ATTESTATION.json \
-            --expected-git-sha "$GITHUB_SHA"
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-source-release-state PREPARED_RELEASE \
+            --expected-release-tag "$GITHUB_REF_NAME"
           for arch in arm64 x86_64; do
             test -f "release/RELEASE-${arch}.json"
             test -f "release/RELEASE-EVIDENCE-${arch}.json"
