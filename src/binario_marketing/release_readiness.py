@@ -28,13 +28,7 @@ def source_release_state(
     release_ready: bool = RELEASE_READY,
     release_tag: str | None = RELEASE_TAG,
 ) -> str:
-    """Classify the canonical source contract without granting runtime release authority.
-
-    LOCKED_SOURCE is the ordinary fail-closed development/engineering state.
-    PREPARED_RELEASE is a stable, tag-bound source state that may be physically UAT-tested
-    before the tag exists. It is not distribution trust, production readiness, or authority.
-    Any mixed state is rejected instead of being guessed into one of those two states.
-    """
+    """Classify source intent without granting operational or publication authority."""
     version_value = str(version or "").strip()
     tag_value = str(release_tag or "").strip() or None
     if not release_ready and tag_value is None:
@@ -80,12 +74,17 @@ def evaluate_release_readiness(
     if uat_passed is not None and uat_passed is not True:
         blockers.append(ReleaseBlocker("physical_uat_missing", "uat", "No existe evidencia PASS de UAT física para este candidato."))
 
+    operational_inputs_complete = signing_mode is not None and notarized is not None and uat_passed is not None
     codes = [row.code for row in blockers]
     source_blocked = any(row.scope == "source" for row in blockers)
     distribution_blocked = any(row.scope == "distribution" for row in blockers)
     uat_blocked = any(row.scope == "uat" for row in blockers)
+    source_ready = source_state == PREPARED_RELEASE and not source_blocked
+    production_ready = bool(source_ready and operational_inputs_complete and not blockers)
     if source_blocked:
         stage = "DEVELOPMENT"
+    elif not operational_inputs_complete:
+        stage = "SOURCE_CONTRACT_READY"
     elif distribution_blocked or uat_blocked:
         stage = "RELEASE_CANDIDATE_BLOCKED"
     else:
@@ -96,6 +95,7 @@ def evaluate_release_readiness(
         "product": "BINARIO Marketing IA",
         "version": version,
         "source_release_state": source_state,
+        "source_ready": source_ready,
         "release_ready_flag": bool(release_ready),
         "release_tag": release_tag,
         "git_sha": git_sha,
@@ -103,8 +103,9 @@ def evaluate_release_readiness(
         "signing_mode": signing_mode,
         "notarized": notarized,
         "uat_passed": uat_passed,
+        "operational_inputs_complete": operational_inputs_complete,
         "stage": stage,
-        "production_ready": not blockers,
+        "production_ready": production_ready,
         "blocker_codes": codes,
         "blockers": [asdict(row) for row in blockers],
     }
