@@ -10,6 +10,7 @@ from typing import Any
 
 SCHEMA = "binario.marketing.release-uat-evidence.v1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SOURCE_CONTRACT_WAVE = 94
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
 
@@ -22,6 +23,8 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def _validate_source_contract(data: dict[str, Any]) -> None:
+    if data.get("source_contract_wave") != SOURCE_CONTRACT_WAVE:
+        raise SystemExit("UAT evidence is not bound to the W94 source contract")
     state = data.get("source_release_state")
     tag = data.get("source_release_tag")
     version = str(data.get("version") or "")
@@ -95,7 +98,7 @@ def main() -> int:
     target["recorded_at"] = datetime.now(timezone.utc).isoformat()
     _recompute(data)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"step": args.step, "status": args.status, "overall": data["overall"], "uat_passed": data["uat_passed"], "git_sha": data["git_sha"], "candidate_source_sha256": source_digest, "source_release_state": data.get("source_release_state"), "source_release_tag": data.get("source_release_tag"), "architecture": data["architecture"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"step": args.step, "status": args.status, "overall": data["overall"], "uat_passed": data["uat_passed"], "git_sha": data["git_sha"], "candidate_source_sha256": source_digest, "source_contract_wave": data.get("source_contract_wave"), "source_release_state": data.get("source_release_state"), "source_release_tag": data.get("source_release_tag"), "architecture": data["architecture"]}, ensure_ascii=False, indent=2))
     return 2 if data["overall"] in {"AUTOMATIC_FAIL", "UAT_FAIL"} else 0
 
 
