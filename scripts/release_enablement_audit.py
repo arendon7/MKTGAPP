@@ -10,6 +10,7 @@ from typing import Any
 
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
+INVALID_SOURCE_CONTRACT = "INVALID_SOURCE_CONTRACT"
 
 
 def _load_version(repo: Path) -> tuple[str, bool, str | None, str]:
@@ -20,7 +21,7 @@ def _load_version(repo: Path) -> tuple[str, bool, str | None, str]:
         try:
             state = source_release_state(version=__version__, release_ready=RELEASE_READY, release_tag=RELEASE_TAG)
         except ValueError:
-            state = "INVALID_SOURCE_CONTRACT"
+            state = INVALID_SOURCE_CONTRACT
         return __version__, RELEASE_READY, RELEASE_TAG, state
     finally:
         try:
@@ -29,9 +30,40 @@ def _load_version(repo: Path) -> tuple[str, bool, str | None, str]:
             pass
 
 
+def _normalize_loaded_version(values: tuple[Any, ...]) -> tuple[str, bool, str | None, str]:
+    """Preserve the historical W89/W90 audit seam while adding W94 source state.
+
+    Older regression tests intentionally mock ``_load_version`` with the original
+    three-value contract. W94 accepts that seam and deterministically derives the
+    fourth value instead of forcing historical source-authorization tests to change.
+    """
+    if len(values) == 4:
+        version, release_ready, release_tag, state = values
+        return str(version), bool(release_ready), release_tag, str(state)
+    if len(values) != 3:
+        raise ValueError(f"unexpected release version tuple shape: {len(values)}")
+    version, release_ready, release_tag = values
+    version = str(version)
+    release_ready = bool(release_ready)
+    release_tag = str(release_tag) if release_tag is not None else None
+    is_development = bool(
+        not version.strip()
+        or ".dev" in version.lower()
+        or "-dev" in version.lower()
+        or re.search(r"(?:rc|alpha|beta)", version, re.I)
+    )
+    if release_ready is False and release_tag is None:
+        state = LOCKED_SOURCE
+    elif release_ready is True and not is_development and release_tag == f"v{version}":
+        state = PREPARED_RELEASE
+    else:
+        state = INVALID_SOURCE_CONTRACT
+    return version, release_ready, release_tag, state
+
+
 def audit(repo: Path) -> dict[str, Any]:
     repo = repo.resolve()
-    version, release_ready, release_tag, source_release_state = _load_version(repo)
+    version, release_ready, release_tag, source_release_state = _normalize_loaded_version(tuple(_load_version(repo)))
     workflow = (repo / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
     gate = (repo / "scripts/release_candidate_gate.py").read_text(encoding="utf-8")
     tag_verifier = (repo / "scripts/verify_release_tag.py").read_text(encoding="utf-8")
@@ -111,7 +143,7 @@ def audit(repo: Path) -> dict[str, Any]:
     }
 
     blockers: list[str] = []
-    if source_release_state == "INVALID_SOURCE_CONTRACT":
+    if source_release_state == INVALID_SOURCE_CONTRACT:
         blockers.append("source_release_contract_invalid")
     if ".dev" in version.lower() or re.search(r"(?:rc|alpha|beta)", version, re.I):
         blockers.append("development_version")
