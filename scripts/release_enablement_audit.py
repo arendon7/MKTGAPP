@@ -36,8 +36,8 @@ def audit(repo: Path) -> dict[str, Any]:
     published_roundtrip = (repo / "scripts/verify_published_release_roundtrip.py").read_text(encoding="utf-8")
 
     # Since W93 the workflow delegates the final publication boundary to one
-    # fail-closed script. Historical W91/W92 ordering is therefore measured
-    # against the delegated transaction call, not against an inline gh command.
+    # fail-closed script. Historical W91/W92 ordering is measured against that
+    # delegated call, never against an inline GitHub CLI command.
     publish_index = workflow.find("publish_release_transaction.sh")
     w91_authorize_index = workflow.find("release_evidence_chain.py authorize")
     w91_verify_index = workflow.find("release_evidence_chain.py verify-authorization")
@@ -50,9 +50,12 @@ def audit(repo: Path) -> dict[str, Any]:
     w91_verify_before_publish = 0 <= w91_verify_index < publish_index
 
     draft_create = publication_transaction.find("gh release create")
-    github_download = publication_transaction.find("gh release download")
-    github_compare = publication_transaction.find("verify_published_release_roundtrip.py compare")
-    github_verify = publication_transaction.find("verify_published_release_roundtrip.py verify-evidence")
+    authorized_upload = publication_transaction.find('gh release upload "$GITHUB_REF_NAME" release/*')
+    first_download = publication_transaction.find("gh release download")
+    first_verify = publication_transaction.find("verify_published_release_roundtrip.py")
+    evidence_upload = publication_transaction.find('gh release upload "$GITHUB_REF_NAME" .release-transaction/GITHUB-RELEASE-ROUNDTRIP.json')
+    final_download = publication_transaction.find("gh release download", first_download + 1) if first_download >= 0 else -1
+    final_verify = publication_transaction.find("verify_published_release_roundtrip.py", first_verify + 1) if first_verify >= 0 else -1
     github_publish = publication_transaction.find("gh release edit")
     github_delete = publication_transaction.find("gh release delete")
 
@@ -86,10 +89,12 @@ def audit(repo: Path) -> dict[str, Any]:
         "w92_artifact_authorization_manifest_required_for_publish": "RELEASE-ARTIFACT-AUTHORIZATION.json" in workflow and 0 <= w92_verify_index < publish_index,
         "w93_transaction_delegated_after_w92_authorization": 0 <= w92_verify_index < publish_index,
         "w93_github_roundtrip_schema": "binario.marketing.github-release-roundtrip.v1" in published_roundtrip,
-        "w93_draft_before_github_roundtrip": 0 <= draft_create < github_download < github_compare < github_verify,
-        "w93_github_roundtrip_before_publication": 0 <= github_verify < github_publish,
-        "w93_draft_cleanup_fail_closed": "DRAFT_CREATED" in publication_transaction and "isDraft" in publication_transaction and 0 <= github_delete,
-        "w93_publication_is_transactional": "--draft" in publication_transaction and "--draft=false" in publication_transaction and "GITHUB-RELEASE-ROUNDTRIP.json" in publication_transaction,
+        "w93_draft_before_github_roundtrip": 0 <= draft_create < authorized_upload < first_download < first_verify,
+        "w93_final_inventory_roundtrip_before_publication": 0 <= first_verify < evidence_upload < final_download < final_verify < github_publish,
+        "w93_github_roundtrip_before_publication": 0 <= final_verify < github_publish,
+        "w93_draft_cleanup_fail_closed": all(marker in publication_transaction for marker in ("CREATE_ATTEMPTED=1", "TRANSACTION_COMPLETE=1", "isDraft", "gh release delete")) and 0 <= github_delete,
+        "w93_preexisting_release_is_never_owned": 'release already exists for $GITHUB_REF_NAME' in publication_transaction,
+        "w93_publication_is_transactional": all(marker in publication_transaction for marker in ("--draft", "--draft=false", "GITHUB-RELEASE-ROUNDTRIP.json", "GITHUB-RELEASE-FINAL-VERIFY.json", "github-release-expected")),
     }
 
     blockers: list[str] = []
@@ -121,6 +126,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "post_package_roundtrip_trust_verified_for_x86_64_at_tag_runtime": False,
         "w92_artifact_publication_authorization_verified_at_tag_runtime": False,
         "w93_github_release_draft_roundtrip_verified_at_tag_runtime": False,
+        "w93_github_release_final_inventory_verified_at_tag_runtime": False,
         "w93_github_release_published_after_roundtrip_at_tag_runtime": False,
     }
     return {
@@ -140,7 +146,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "release_authority": False,
         "publication_authority": False,
         "production_ready": False,
-        "notes": "Source readiness never authorizes publication. Physical UAT evidence and Apple credentials remain external runtime facts. W91 cross-architecture evidence remains mandatory; W92 requires exact native ZIP round-trip trust; W93 additionally requires GitHub Release draft upload/download byte equivalence before a release may become public. None of these external runtime facts are inferred from source.",
+        "notes": "Source readiness never authorizes publication. Physical UAT evidence and Apple credentials remain external runtime facts. W91 cross-architecture evidence remains mandatory; W92 requires exact native ZIP round-trip trust; W93 additionally requires a fail-closed GitHub Release draft transaction with exact byte verification of both the authorized assets and the final draft inventory before publication. None of these external runtime facts are inferred from source.",
     }
 
 
