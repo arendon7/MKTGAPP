@@ -54,13 +54,34 @@ def _source_digest(source: Path) -> str:
     return digest.hexdigest()
 
 
+def _is_development_version(version: str) -> bool:
+    value = str(version or "").strip().lower()
+    return not value or any(token in value for token in (".dev", "-dev", "alpha", "beta", "rc"))
+
+
+def _source_release_state(version: str, release_ready: bool, release_tag: str | None) -> str:
+    tag = str(release_tag or "").strip() or None
+    if release_ready is False and tag is None:
+        return LOCKED_SOURCE
+    if release_ready is True and not _is_development_version(version) and tag == f"v{version}":
+        return PREPARED_RELEASE
+    raise ValueError(
+        "incoherent candidate source release contract: expected LOCKED_SOURCE or PREPARED_RELEASE"
+    )
+
+
 def _load_version(source: Path) -> tuple[str, bool, str | None, str]:
+    """Read only the canonical version module so old/minimal fixtures stay diagnosable.
+
+    The candidate writer deliberately owns a tiny duplicate classifier instead of importing
+    release_readiness from the embedded source. This keeps the manifest writer independent
+    of packaging order while still enforcing the same two-state W92 contract.
+    """
     sys.path.insert(0, str(source / "src"))
     try:
-        from binario_marketing.release_readiness import source_release_state
         from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
-        state = source_release_state(version=__version__, release_ready=RELEASE_READY, release_tag=RELEASE_TAG)
-        return __version__, RELEASE_READY, RELEASE_TAG, state
+        state = _source_release_state(__version__, bool(RELEASE_READY), RELEASE_TAG)
+        return __version__, bool(RELEASE_READY), RELEASE_TAG, state
     finally:
         try:
             sys.path.remove(str(source / "src"))
@@ -118,6 +139,8 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
         raise ValueError("embedded readiness unexpectedly reports production-ready")
     if readiness.get("source_release_state") not in {None, source_state}:
         raise ValueError("embedded readiness/source release state mismatch")
+    if readiness.get("release_tag") not in {None, release_tag}:
+        raise ValueError("embedded readiness/source release tag mismatch")
     return {
         "schema": SCHEMA,
         "role": PHYSICAL_ROLE if trusted else VALIDATION_ROLE,
@@ -139,9 +162,9 @@ def build_manifest(app: Path, *, build_origin: dict[str, Any] | None = None) -> 
         },
         "release_boundary": {
             "source_release_state": source_state,
-            "release_ready": bool(release_ready),
+            "release_ready": release_ready,
             "release_tag": release_tag,
-            "version_is_development": ".dev" in version.lower(),
+            "version_is_development": _is_development_version(version),
             "operational_authorization": False,
             "release_authority": False,
             "publication_authority": False,
