@@ -16,7 +16,7 @@ EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 OPERATOR_HANDOFF_WAVE = 84
 COMBINED_ATTESTATION_WAVE = 85
-SOURCE_CONTRACT_WAVE = 92
+SOURCE_CONTRACT_WAVE = 94
 PHYSICAL_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
 VALIDATION_ROLE = "VALIDATION_BUILD_ONLY"
 LOCKED_SOURCE = "LOCKED_SOURCE"
@@ -79,6 +79,8 @@ def _validate_candidate(app: Path, expected_git_sha: str) -> tuple[Path, dict[st
         raise ValueError("candidate runtime wave drift")
     if manifest.get("certification_guard_wave") != EXPECTED_GUARD_WAVE:
         raise ValueError("candidate certification guard drift")
+    if manifest.get("source_contract_wave") not in {None, SOURCE_CONTRACT_WAVE}:
+        raise ValueError("candidate source contract wave drift")
     if manifest.get("git_sha") != expected_git_sha:
         raise ValueError(f"candidate git SHA mismatch: {manifest.get('git_sha')} != {expected_git_sha}")
     source_sha = str(manifest.get("candidate_source_sha256") or "")
@@ -105,7 +107,7 @@ def _operator_guide(*, git_sha: str, artifact: str, artifact_sha: str, handoff_a
 - Runtime: `Wave 76`
 - Candidate / handoff guard: `Wave 84`
 - Combined attestation layer: `Wave 85`
-- Source contract layer: `Wave 92`
+- Source contract layer: `Wave 94`
 - Source release state: `{source_state}`
 - Prepared release tag: `{source_tag}`
 - Candidate source SHA-256: `{source_sha}`
@@ -135,7 +137,7 @@ Use `RECORD_RELEASE_UAT.command` once per manual gate. Every result requires PAS
 
 ## Phase C · Combined attestation
 
-After Phase A and Phase B are complete, double-click `FINALIZE_PHYSICAL_UAT.command` and select the Phase A JSON. Wave 85/W92 verifies both evidence layers against this exact trusted main candidate and preserves the source release state in the sanitized combined attestation.
+After Phase A and Phase B are complete, double-click `FINALIZE_PHYSICAL_UAT.command` and select the Phase A JSON. Wave 85/W94 verifies both evidence layers against this exact trusted main candidate and preserves the source release state in the sanitized combined attestation.
 
 ## Boundary
 
