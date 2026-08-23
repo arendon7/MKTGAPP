@@ -16,6 +16,9 @@ EXPECTED_ROLE = "PHYSICAL_UAT_CANDIDATE_ONLY"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_CANDIDATE_GUARD_WAVE = 84
 ATTESTATION_WAVE = 85
+PREPARED_RELEASE_CONTRACT_WAVE = 91
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
 REQUIRED_PHASE_B_IDS = {
     "launcher_relaunch", "persistence", "company_crm", "today_complete",
     "today_reschedule", "content_library", "social_readonly", "manual_reply",
@@ -51,7 +54,41 @@ def _require(ok: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
+def _development_version(version: str) -> bool:
+    value = str(version or "").lower()
+    return not value or any(token in value for token in (".dev", "-dev", "alpha", "beta", "rc"))
+
+
+def _release_contract(candidate: dict[str, Any]) -> dict[str, Any]:
+    boundary = candidate.get("release_boundary") if isinstance(candidate.get("release_boundary"), dict) else {}
+    version = str(candidate.get("product_version") or "")
+    release_ready = boundary.get("release_ready") is True
+    release_tag = boundary.get("release_tag")
+    mode = boundary.get("mode") or (PREPARED_RELEASE if release_ready else LOCKED_SOURCE)
+    if mode == LOCKED_SOURCE:
+        _require(not release_ready and release_tag is None, "locked source release contract is inconsistent")
+    elif mode == PREPARED_RELEASE:
+        _require(release_ready, "prepared release contract must set release_ready")
+        _require(not _development_version(version), "prepared release contract cannot use development/RC version")
+        _require(release_tag == f"v{version}", "prepared release contract tag/version mismatch")
+    else:
+        raise ValueError(f"unknown source release contract mode: {mode}")
+    _require(boundary.get("production_ready") is not True, "candidate unexpectedly reports production-ready")
+    _require(boundary.get("release_authority") not in {True}, "candidate unexpectedly carries release authority")
+    _require(boundary.get("operational_authorization") not in {True}, "candidate unexpectedly carries operational authorization")
+    return {
+        "mode": mode,
+        "version": version,
+        "release_ready": release_ready,
+        "release_tag": release_tag,
+        "production_ready": False,
+        "release_authority": False,
+        "operational_authorization": False,
+        "same_commit_must_be_tagged": mode == PREPARED_RELEASE,
+    }
+
+
+def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], dict[str, Any]]:
     resources = app / "Contents" / "Resources"
     candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
     provenance_path = resources / "BUILD_PROVENANCE.json"
@@ -60,12 +97,11 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     candidate = _load(candidate_path)
     provenance = _load(provenance_path)
     origin = candidate.get("build_origin") or {}
-    ref = str(origin.get("ref") or "")
     _require(candidate.get("schema") == CANDIDATE_SCHEMA, "unexpected candidate schema")
     _require(candidate.get("role") == EXPECTED_ROLE, "candidate is not physical-UAT eligible")
     _require(origin.get("event") == "push", "physical candidate must originate from a push")
     _require(origin.get("trusted_for_physical_uat") is True, "candidate build origin is not trusted")
-    _require(ref == "refs/heads/main" or ref.startswith("refs/tags/v"), "physical candidate must originate from main or a version tag")
+    _require(origin.get("ref") == "refs/heads/main", "physical candidate must originate from refs/heads/main; tag builds are distribution rebuilds")
     _require(candidate.get("architecture") == "arm64", "physical candidate must be arm64")
     _require(candidate.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "candidate runtime wave drift")
     _require(candidate.get("certification_guard_wave") == EXPECTED_CANDIDATE_GUARD_WAVE, "candidate guard wave drift")
@@ -73,11 +109,9 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any]]:
     _require(candidate.get("product_version") == provenance.get("product_version"), "candidate/provenance version mismatch")
     physical = candidate.get("physical_uat") or {}
     _require(physical.get("eligible_build_origin") is True, "candidate is not physical-UAT origin eligible")
-    boundary = candidate.get("release_boundary") or {}
-    _require(boundary.get("release_ready") is False, "candidate unexpectedly carries release-ready authority")
-    _require(boundary.get("release_tag") is None, "candidate unexpectedly carries a release tag")
-    _require(boundary.get("production_ready") is False, "candidate unexpectedly reports production-ready")
-    return candidate, candidate_path, provenance
+    _require(physical.get("automatic_pass") is False, "candidate unexpectedly allows automatic UAT pass")
+    contract = _release_contract(candidate)
+    return candidate, candidate_path, provenance, contract
 
 
 def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
@@ -121,7 +155,7 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
     }
 
 
-def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: str) -> dict[str, Any]:
+def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: str, release_contract: dict[str, Any]) -> dict[str, Any]:
     _require(report.get("schema") == PHASE_B_SCHEMA, "invalid Phase B evidence schema")
     checks = {
         "git SHA": report.get("git_sha") == candidate.get("git_sha"),
@@ -133,6 +167,10 @@ def _phase_b(report: dict[str, Any], candidate: dict[str, Any], manifest_sha: st
     }
     failed = [name for name, ok in checks.items() if not ok]
     _require(not failed, "Phase B candidate mismatch: " + ", ".join(failed))
+    if report.get("source_release_contract") is not None:
+        phase_b_contract = report.get("source_release_contract") or {}
+        for field in ("mode", "release_ready", "release_tag"):
+            _require(phase_b_contract.get(field) == release_contract.get(field), f"Phase B source release contract mismatch: {field}")
     _require(report.get("automatic_passed") is True, "Phase B automatic checks did not pass")
     _require(report.get("uat_passed") is True and report.get("overall") == "UAT_PASS", "Phase B is not UAT_PASS")
 
@@ -152,40 +190,58 @@ def finalize(app: Path, phase_a_path: Path, phase_b_path: Path) -> dict[str, Any
     _require(app.is_dir(), f"app bundle missing: {app}")
     _require(phase_a_path.is_file(), f"Phase A evidence missing: {phase_a_path}")
     _require(phase_b_path.is_file(), f"Phase B evidence missing: {phase_b_path}")
-    candidate, candidate_path, provenance = _load_candidate(app)
+    candidate, candidate_path, provenance, release_contract = _load_candidate(app)
     manifest_sha = _sha256_file(candidate_path)
     a = _phase_a(_load(phase_a_path), candidate)
-    b = _phase_b(_load(phase_b_path), candidate, manifest_sha)
+    b = _phase_b(_load(phase_b_path), candidate, manifest_sha, release_contract)
     binding = {
-        "git_sha": candidate.get("git_sha"), "product_version": candidate.get("product_version"),
-        "architecture": "arm64", "runtime_wave": EXPECTED_RUNTIME_WAVE,
-        "candidate_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE, "attestation_wave": ATTESTATION_WAVE,
+        "git_sha": candidate.get("git_sha"),
+        "product_version": candidate.get("product_version"),
+        "architecture": "arm64",
+        "runtime_wave": EXPECTED_RUNTIME_WAVE,
+        # Keep the historical key and add the canonical W86 key. They must remain identical.
+        "candidate_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE,
+        "certification_guard_wave": EXPECTED_CANDIDATE_GUARD_WAVE,
+        "attestation_wave": ATTESTATION_WAVE,
+        "prepared_release_contract_wave": PREPARED_RELEASE_CONTRACT_WAVE,
         "candidate_source_sha256": candidate.get("candidate_source_sha256"),
-        "candidate_manifest_sha256": manifest_sha, "build_origin": candidate.get("build_origin"),
+        "candidate_manifest_sha256": manifest_sha,
+        "build_origin": candidate.get("build_origin"),
         "provenance_schema": provenance.get("schema"),
+        "release_contract": release_contract,
     }
     core = {
-        "schema": ATTESTATION_SCHEMA, "binding": binding,
+        "schema": ATTESTATION_SCHEMA,
+        "binding": binding,
         "phase_a": {**a, "report_sha256": _sha256_file(phase_a_path)},
         "phase_b": {**b, "report_sha256": _sha256_file(phase_b_path)},
-        "both_phases_passed": True, "release_authority": False, "production_ready": False,
+        "both_phases_passed": True,
+        "operational_authorization": False,
+        "release_authority": False,
+        "production_ready": False,
     }
     return {**core, "generated_at": datetime.now(timezone.utc).isoformat(), "attestation_sha256": _digest(core)}
 
 
 def render_markdown(report: dict[str, Any]) -> str:
     b, a, p = report["binding"], report["phase_a"], report["phase_b"]
+    release = b.get("release_contract") or {}
     return "\n".join([
         "# BINARIO Marketing IA · Combined Physical UAT Attestation", "",
-        f"- Git SHA: `{b['git_sha']}`", f"- Version: `{b['product_version']}`",
-        f"- Architecture: `{b['architecture']}`", f"- Runtime: `Wave {b['runtime_wave']}`",
+        f"- Git SHA: `{b['git_sha']}`",
+        f"- Version: `{b['product_version']}`",
+        f"- Architecture: `{b['architecture']}`",
+        f"- Runtime: `Wave {b['runtime_wave']}`",
+        f"- Source release contract: `{release.get('mode')}`",
+        f"- Source RELEASE_TAG: `{release.get('release_tag')}`",
         f"- Candidate source SHA-256: `{b['candidate_source_sha256']}`",
         f"- Candidate manifest SHA-256: `{b['candidate_manifest_sha256']}`",
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
         f"- Phase B: **PASS** · {p['passed_gates']}/{p['required_gates']} release gates",
         f"- Combined attestation SHA-256: `{report['attestation_sha256']}`",
-        "- Release authority: **NO**", "- Production ready: **NO**", "",
-        "This attestation proves only that both physical UAT layers passed on the same trusted exact candidate.", "",
+        "- Operational release authority: **NO**",
+        "- Production ready: **NO**", "",
+        "This attestation proves only that both physical UAT layers passed on the same trusted exact main candidate and binds the source release contract tested on that SHA.", "",
     ])
 
 
@@ -200,11 +256,20 @@ def main() -> int:
         report = finalize(args.app, args.phase_a, args.phase_b)
     except ValueError as exc:
         raise SystemExit(f"COMBINED PHYSICAL UAT BLOCKED: {exc}") from exc
-    out = args.output.expanduser().resolve(); out.mkdir(parents=True, exist_ok=True)
+    out = args.output.expanduser().resolve()
+    out.mkdir(parents=True, exist_ok=True)
     json_path = out / "combined-physical-uat-attestation.json"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (out / "combined-physical-uat-attestation.md").write_text(render_markdown(report), encoding="utf-8")
-    print(json.dumps({"both_phases_passed": True, "git_sha": report["binding"]["git_sha"], "attestation_sha256": report["attestation_sha256"], "output": str(json_path), "release_authority": False}, ensure_ascii=False, indent=2))
+    print(json.dumps({
+        "both_phases_passed": True,
+        "git_sha": report["binding"]["git_sha"],
+        "source_release_contract": report["binding"]["release_contract"],
+        "attestation_sha256": report["attestation_sha256"],
+        "output": str(json_path),
+        "operational_authorization": False,
+        "release_authority": False,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
