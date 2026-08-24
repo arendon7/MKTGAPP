@@ -43,6 +43,10 @@ VERSION="$SRC/src/binario_marketing/version.py"
 # A later PREPARED_RELEASE source is not physical-UAT evidence and is never
 # production authority by itself.
 "$PY" -I -B - "$SRC/src" <<'PY'
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(sys.argv[1]).resolve()))
 from binario_marketing.release_readiness import LOCKED_SOURCE, PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
 
