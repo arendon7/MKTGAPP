@@ -19,6 +19,10 @@ ATTESTATION_WAVE = 85
 SOURCE_CONTRACT_WAVE = 95
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
+REQUIRED_PHASE_A_IDS = {
+    "company-switch", "inbox-to-crm", "pipeline-followup",
+    "campaign-execution", "results-decision",
+}
 REQUIRED_PHASE_B_IDS = {
     "launcher_relaunch", "persistence", "company_crm", "today_complete",
     "today_reschedule", "content_library", "social_readonly", "manual_reply",
@@ -142,7 +146,11 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
 
     scenarios = session.get("scenarios") or []
     required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
-    _require(bool(required), "Phase A required scenarios missing")
+    required_ids = {str(row.get("id") or "") for row in required}
+    _require(
+        required_ids == REQUIRED_PHASE_A_IDS and len(required) == len(REQUIRED_PHASE_A_IDS),
+        "Phase A required scenario set drift",
+    )
     _require(all(row.get("status") == "PASS" for row in required), "Phase A required scenarios are not all PASS")
 
     expected_digest = str(session.get("evidence_sha256") or "")
@@ -158,6 +166,7 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
 
     summary = report.get("summary") or {}
     _require(summary.get("physical_uat_complete") is True, "Phase A summary is not complete")
+    _require(int(summary.get("required") or 0) == len(REQUIRED_PHASE_A_IDS), "Phase A summary/required count mismatch")
     _require(int(summary.get("failed") or 0) == 0, "Phase A summary contains failures")
     _require(int(summary.get("blocked") or 0) == 0, "Phase A summary contains blockers")
     _require(int(summary.get("pending") or 0) == 0, "Phase A summary contains pending required scenarios")
