@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
+W97_INTEGRITY_SCHEMA = "binario.marketing.physical-uat-final-integrity.v1"
+W97_HANDOFF_SCHEMA = "binario.marketing.physical-uat-handoff-verification.v3"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 EXPECTED_SOURCE_CONTRACT_WAVE = 95
@@ -57,6 +59,46 @@ def _source_contract(binding: dict[str, Any]) -> tuple[str, str | None, int | No
     return str(state), str(tag) if tag is not None else None, int(wave) if wave is not None else None
 
 
+def _w97_integrity(data: dict[str, Any], binding: dict[str, Any], source_state: str) -> dict[str, Any] | None:
+    integrity = data.get("w97_integrity")
+    if source_state != PREPARED_RELEASE:
+        if integrity is None:
+            return None
+        _require(isinstance(integrity, dict), "W97 final integrity must be a JSON object")
+        return integrity
+
+    _require(isinstance(integrity, dict), "PREPARED_RELEASE combined UAT requires W97 final integrity")
+    _require(integrity.get("schema") == W97_INTEGRITY_SCHEMA, "W97 final integrity schema drift")
+    handoff_sha = str(integrity.get("handoff_verification_sha256") or "")
+    _require(len(handoff_sha) == 64, "W97 final handoff verification SHA-256 missing or malformed")
+    _require(integrity.get("bundle_signature_verified") is True, "W97 final bundle signature was not reverified")
+    _require(integrity.get("source_digest_reverified") is True, "W97 final source digest was not reverified")
+    _require(integrity.get("physical_host_reverified") is True, "W97 final physical host was not reverified")
+    _require(integrity.get("codesign_requirement") == ["--deep", "--strict"], "W97 codesign requirement drift")
+
+    handoff = integrity.get("handoff_verification")
+    _require(isinstance(handoff, dict), "W97 embedded final handoff verification missing")
+    _require(handoff.get("schema") == W97_HANDOFF_SCHEMA, "W97 embedded handoff schema drift")
+    _require(handoff.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY", "W97 embedded handoff is not the physical candidate")
+    _require(handoff.get("physical_uat_eligible") is True, "W97 embedded handoff is not physically eligible")
+    _require(handoff.get("git_sha") == binding.get("git_sha"), "W97 embedded handoff git SHA mismatch")
+    _require(handoff.get("architecture") == binding.get("architecture") == EXPECTED_ARCHITECTURE, "W97 embedded handoff architecture mismatch")
+    _require(handoff.get("runtime_wave") == binding.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "W97 embedded handoff runtime wave mismatch")
+    _require(handoff.get("source_contract_wave") == binding.get("source_contract_wave") == EXPECTED_SOURCE_CONTRACT_WAVE, "W97 embedded handoff source contract mismatch")
+    _require(handoff.get("source_release_state") == binding.get("source_release_state") == PREPARED_RELEASE, "W97 embedded handoff source state mismatch")
+    _require(handoff.get("source_release_tag") == binding.get("source_release_tag"), "W97 embedded handoff release tag mismatch")
+    _require(handoff.get("candidate_source_sha256") == binding.get("candidate_source_sha256"), "W97 embedded handoff source digest mismatch")
+    _require(handoff.get("actual_candidate_source_sha256") == binding.get("candidate_source_sha256"), "W97 embedded extracted source digest mismatch")
+    _require(handoff.get("candidate_manifest_sha256") == binding.get("candidate_manifest_sha256"), "W97 embedded handoff manifest digest mismatch")
+    host = handoff.get("host") or {}
+    _require(isinstance(host, dict), "W97 embedded handoff host missing")
+    _require(host.get("system") == "Darwin", "W97 embedded handoff host is not Darwin")
+    _require(str(host.get("machine") or "").lower() == "arm64", "W97 embedded handoff host is not arm64")
+    _require(host.get("is_ci") is False, "W97 embedded handoff cannot come from CI")
+    _require(host.get("physical_gate_eligible") is True, "W97 embedded handoff host is not physical-gate eligible")
+    return integrity
+
+
 def verify(
     path: Path,
     *,
@@ -94,6 +136,7 @@ def verify(
     manifest_sha = str(binding.get("candidate_manifest_sha256") or "")
     _require(len(source_sha) == 64, "combined UAT candidate source SHA-256 missing or malformed")
     _require(len(manifest_sha) == 64, "combined UAT candidate manifest SHA-256 missing or malformed")
+    w97_integrity = _w97_integrity(data, binding, source_state)
 
     phase_a = data.get("phase_a") or {}
     phase_b = data.get("phase_b") or {}
@@ -134,6 +177,9 @@ def verify(
         "phase_b_required": required_gates,
         "phase_b_passed": passed_gates,
         "attestation_sha256": expected_sha,
+        "w97_integrity_required": source_state == PREPARED_RELEASE,
+        "w97_integrity_verified": isinstance(w97_integrity, dict) if source_state == PREPARED_RELEASE else w97_integrity is not None,
+        "w97_handoff_verification_sha256": (w97_integrity or {}).get("handoff_verification_sha256"),
         "both_phases_passed": True,
         "release_authority": False,
         "publication_authority": False,
@@ -142,7 +188,7 @@ def verify(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W95 combined physical-UAT attestation.")
+    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W95/W97 combined physical-UAT attestation.")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
     parser.add_argument("--expected-source-release-state", choices=(LOCKED_SOURCE, PREPARED_RELEASE))
