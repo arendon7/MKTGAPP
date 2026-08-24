@@ -21,13 +21,15 @@ def _module(path: Path, name: str):
 
 
 class Wave94ReleaseEnablementAuditTests(unittest.TestCase):
-    def test_source_preserves_guard_94_under_later_guards_and_remains_fail_closed(self):
+    def test_source_preserves_guard_94_under_later_guards_and_is_prepared(self):
         report = _module(AUDIT, "w94_audit").audit(ROOT)
         self.assertTrue(report["schema"].startswith("binario.marketing.release-enablement-audit.v"))
         self.assertEqual(report["runtime_wave"], 76)
         self.assertGreaterEqual(report["certification_guard_wave"], 94)
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertEqual(report["source_status"], "BLOCKED")
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["source_release_state"], "PREPARED_RELEASE")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertFalse(report["operational_authorization"])
         self.assertFalse(report["release_authority"])
         self.assertFalse(report["publication_authority"])
@@ -125,10 +127,11 @@ class Wave94ReleaseEnablementAuditTests(unittest.TestCase):
         for marker in ("physical UAT", "W91", "W92", "W93", "W94", "external runtime fact"):
             self.assertIn(marker, report["notes"])
 
-    def test_release_boundary_and_workflow_count_stay_fail_closed(self):
+    def test_release_boundary_and_workflow_count_stay_non_authoritative(self):
         version = VERSION.read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
