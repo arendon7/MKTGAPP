@@ -10,7 +10,10 @@ from typing import Any
 SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
+EXPECTED_SOURCE_CONTRACT_WAVE = 95
 EXPECTED_ARCHITECTURE = "arm64"
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -33,7 +36,34 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]:
+def _source_contract(binding: dict[str, Any]) -> tuple[str, str | None, int | None]:
+    version = str(binding.get("product_version") or "")
+    state = binding.get("source_release_state")
+    tag = binding.get("source_release_tag")
+    wave = binding.get("source_contract_wave")
+    # Pre-W95 sanitized attestations remain diagnosable as LOCKED_SOURCE only.
+    # They can never satisfy a PREPARED_RELEASE production gate.
+    if state is None and tag is None:
+        state = LOCKED_SOURCE
+    if state == LOCKED_SOURCE:
+        _require(tag is None, "LOCKED_SOURCE combined UAT cannot carry a release tag")
+        _require(wave in {None, EXPECTED_SOURCE_CONTRACT_WAVE}, "LOCKED_SOURCE combined UAT source contract wave drift")
+    elif state == PREPARED_RELEASE:
+        _require(wave == EXPECTED_SOURCE_CONTRACT_WAVE, "PREPARED_RELEASE combined UAT must carry the W95 source contract")
+        _require(tag == f"v{version}", "PREPARED_RELEASE combined UAT tag/version mismatch")
+        _require(".dev" not in version.lower() and "rc" not in version.lower(), "PREPARED_RELEASE combined UAT version is not stable")
+    else:
+        raise ValueError("combined UAT source release state is missing or invalid")
+    return str(state), str(tag) if tag is not None else None, int(wave) if wave is not None else None
+
+
+def verify(
+    path: Path,
+    *,
+    expected_git_sha: str | None = None,
+    expected_source_release_state: str | None = None,
+    expected_release_tag: str | None = None,
+) -> dict[str, Any]:
     path = path.expanduser().resolve()
     _require(path.is_file(), f"combined UAT attestation missing: {path}")
     data = _load(path)
@@ -47,7 +77,19 @@ def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]
         _require(git_sha == expected_git_sha, f"combined UAT git SHA mismatch: {git_sha} != {expected_git_sha}")
     _require(binding.get("architecture") == EXPECTED_ARCHITECTURE, "combined UAT physical architecture must be arm64")
     _require(binding.get("runtime_wave") == EXPECTED_RUNTIME_WAVE, "combined UAT runtime wave drift")
-    _require(binding.get("certification_guard_wave") == EXPECTED_GUARD_WAVE, "combined UAT certification guard drift")
+    certification_guard = binding.get("certification_guard_wave")
+    candidate_guard = binding.get("candidate_guard_wave")
+    if certification_guard is not None and candidate_guard is not None:
+        _require(certification_guard == candidate_guard, "combined UAT guard aliases diverge")
+    guard = certification_guard if certification_guard is not None else candidate_guard
+    _require(guard == EXPECTED_GUARD_WAVE, "combined UAT certification guard drift")
+    source_state, source_tag, source_contract_wave = _source_contract(binding)
+    if expected_source_release_state is not None:
+        _require(source_state == expected_source_release_state, f"combined UAT source release state mismatch: {source_state} != {expected_source_release_state}")
+    if expected_release_tag is not None:
+        _require(source_tag == expected_release_tag, f"combined UAT release tag mismatch: {source_tag} != {expected_release_tag}")
+    if expected_source_release_state == PREPARED_RELEASE:
+        _require(source_contract_wave == EXPECTED_SOURCE_CONTRACT_WAVE, "production-bound UAT is not W95 PREPARED_RELEASE evidence")
     source_sha = str(binding.get("candidate_source_sha256") or "")
     manifest_sha = str(binding.get("candidate_manifest_sha256") or "")
     _require(len(source_sha) == 64, "combined UAT candidate source SHA-256 missing or malformed")
@@ -65,6 +107,7 @@ def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]
     _require(phase_b.get("overall") == "UAT_PASS", "combined UAT Phase B overall result is not UAT_PASS")
     _require(data.get("both_phases_passed") is True, "combined UAT both_phases_passed is not true")
     _require(data.get("release_authority") is False, "combined UAT must not carry release authority")
+    _require(data.get("publication_authority") in {None, False}, "combined UAT must not carry publication authority")
     _require(data.get("production_ready") is False, "combined UAT must not claim production readiness")
 
     expected_sha = str(data.get("attestation_sha256") or "")
@@ -81,6 +124,9 @@ def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]
         "architecture": EXPECTED_ARCHITECTURE,
         "runtime_wave": EXPECTED_RUNTIME_WAVE,
         "certification_guard_wave": EXPECTED_GUARD_WAVE,
+        "source_contract_wave": source_contract_wave,
+        "source_release_state": source_state,
+        "source_release_tag": source_tag,
         "candidate_source_sha256": source_sha,
         "candidate_manifest_sha256": manifest_sha,
         "phase_a_required": required_scenarios,
@@ -90,17 +136,25 @@ def verify(path: Path, *, expected_git_sha: str | None = None) -> dict[str, Any]
         "attestation_sha256": expected_sha,
         "both_phases_passed": True,
         "release_authority": False,
+        "publication_authority": False,
         "production_ready": False,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a sanitized W85 combined physical-UAT attestation.")
+    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W95 combined physical-UAT attestation.")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
+    parser.add_argument("--expected-source-release-state", choices=(LOCKED_SOURCE, PREPARED_RELEASE))
+    parser.add_argument("--expected-release-tag")
     args = parser.parse_args()
     try:
-        report = verify(args.evidence, expected_git_sha=args.expected_git_sha)
+        report = verify(
+            args.evidence,
+            expected_git_sha=args.expected_git_sha,
+            expected_source_release_state=args.expected_source_release_state,
+            expected_release_tag=args.expected_release_tag,
+        )
     except ValueError as exc:
         raise SystemExit(f"COMBINED UAT ATTESTATION BLOCKED: {exc}") from exc
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
