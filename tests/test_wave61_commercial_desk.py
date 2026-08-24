@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave61_app import AppRuntime, create_server
 
 
@@ -57,7 +58,6 @@ class Wave61CommercialDeskTests(unittest.TestCase):
             "stage": "NEW",
             "currency": "COP",
         })
-        # W55 conversion is idempotent and can attach an explicitly requested opportunity.
         linked = self.runtime.convert_lead(company_id, lead["id"], {
             "action": "LINK_CONTACT",
             "contact_id": converted["converted_contact_id"],
@@ -142,9 +142,11 @@ class Wave61CommercialDeskTests(unittest.TestCase):
         self.assertIn("CURRENT ARM64 ITERATION BUILD PASS: Wave 61", builder)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
-        version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn("0.9.0.dev1", version)
-        self.assertIn("RELEASE_READY = False", version)
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        report = source_release_readiness()
+        self.assertTrue(report["source_ready"])
+        self.assertFalse(report["operational_inputs_complete"])
+        self.assertFalse(report["production_ready"])
 
 
 if __name__ == "__main__":
