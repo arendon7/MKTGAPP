@@ -30,6 +30,10 @@ concurrency:
 jobs:
   build-and-smoke-arm64:
     runs-on: macos-15
+    outputs:
+      artifact-id: ${{ steps.physical_uat_candidate.outputs.artifact-id }}
+      artifact-url: ${{ steps.physical_uat_candidate.outputs.artifact-url }}
+      artifact-digest: ${{ steps.physical_uat_candidate.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -293,6 +297,7 @@ jobs:
             --git-sha "$GITHUB_SHA"
 
       - name: Upload exact arm64 physical UAT candidate
+        id: physical_uat_candidate
         uses: actions/upload-artifact@v4
         with:
           name: binario-marketing-physical-uat-candidate-arm64
@@ -307,3 +312,31 @@ jobs:
             RECORD_RELEASE_UAT.command
             PHYSICAL_UAT_OPERATOR.md
           if-no-files-found: error
+
+  publish-main-candidate-receipt:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-smoke-arm64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish immutable main candidate receipt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.build-and-smoke-arm64.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ needs.build-and-smoke-arm64.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ needs.build-and-smoke-arm64.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          python scripts/publish_main_candidate_receipt.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" \
+            --event "$GITHUB_EVENT_NAME" \
+            --ref "$GITHUB_REF" \
+            --run-id "$GITHUB_RUN_ID" \
+            --artifact-id "$ARTIFACT_ID" \
+            --artifact-url "$ARTIFACT_URL" \
+            --artifact-digest "$ARTIFACT_DIGEST"
