@@ -111,11 +111,40 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
             "candidate_source_sha256": "b" * 64,
             "candidate_manifest_sha256": "c" * 64,
         }
+        handoff = {
+            "schema": verifier.W97_HANDOFF_SCHEMA,
+            "git_sha": binding["git_sha"],
+            "role": "PHYSICAL_UAT_CANDIDATE_ONLY",
+            "physical_uat_eligible": True,
+            "architecture": "arm64",
+            "runtime_wave": 76,
+            "source_contract_wave": 95,
+            "source_release_state": PREPARED_RELEASE,
+            "source_release_tag": "v1.0.0",
+            "candidate_source_sha256": binding["candidate_source_sha256"],
+            "actual_candidate_source_sha256": binding["candidate_source_sha256"],
+            "candidate_manifest_sha256": binding["candidate_manifest_sha256"],
+            "host": {
+                "system": "Darwin",
+                "machine": "arm64",
+                "is_ci": False,
+                "physical_gate_eligible": True,
+            },
+        }
         core = {
             "schema": verifier.SCHEMA,
             "binding": binding,
             "phase_a": {"required_scenarios": 5, "passed_scenarios": 5},
             "phase_b": {"required_gates": 12, "passed_gates": 12, "overall": "UAT_PASS"},
+            "w97_integrity": {
+                "schema": verifier.W97_INTEGRITY_SCHEMA,
+                "handoff_verification_sha256": "9" * 64,
+                "handoff_verification": handoff,
+                "bundle_signature_verified": True,
+                "codesign_requirement": ["--deep", "--strict"],
+                "source_digest_reverified": True,
+                "physical_host_reverified": True,
+            },
             "both_phases_passed": True,
             "release_authority": False,
             "publication_authority": False,
@@ -134,6 +163,9 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
             self.assertEqual(report["source_contract_wave"], 95)
             self.assertEqual(report["source_release_state"], PREPARED_RELEASE)
             self.assertEqual(report["source_release_tag"], "v1.0.0")
+            self.assertTrue(report["w97_integrity_required"])
+            self.assertTrue(report["w97_integrity_verified"])
+            self.assertEqual(report["w97_handoff_verification_sha256"], "9" * 64)
             self.assertFalse(report["release_authority"])
             self.assertFalse(report["publication_authority"])
             self.assertFalse(report["production_ready"])
@@ -237,7 +269,7 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
         self.assertEqual(readiness["stage"], "SOURCE_CONTRACT_READY")
         self.assertFalse(readiness["operational_inputs_complete"])
         self.assertFalse(readiness["production_ready"])
-        workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
+        workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
     def test_phase_b_handoff_and_distribution_bind_same_w95_source_contract(self):
