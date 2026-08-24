@@ -10,6 +10,12 @@ from .release_readiness import evaluate_release_readiness
 from .version import RELEASE_READY, RELEASE_TAG, __version__
 
 
+REQUIRED_PHASE_A_IDS = {
+    "company-switch", "inbox-to-crm", "pipeline-followup",
+    "campaign-execution", "results-decision",
+}
+
+
 def _evidence_digest(row: dict) -> str:
     evidence = dict(row)
     evidence["evidence_sha256"] = None
@@ -34,13 +40,15 @@ def _session_validation(session: dict, current_build: dict) -> dict:
     build = _normalized_build(session.get("build"))
     current = _normalized_build(current_build)
     scenarios = list(session.get("scenarios") or [])
-    required = [row for row in scenarios if row.get("required")]
+    required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
+    required_ids = {str(row.get("id") or "") for row in required}
+    required_set_exact = required_ids == REQUIRED_PHASE_A_IDS and len(required) == len(REQUIRED_PHASE_A_IDS)
     expected_digest = str(session.get("evidence_sha256") or "").strip().lower()
     actual_digest = _evidence_digest(session)
     digest_valid = bool(expected_digest) and expected_digest == actual_digest
     machine = session.get("machine") or {}
     machine_eligible = bool(machine.get("physical_gate_eligible")) and not bool(machine.get("is_ci"))
-    all_required_pass = bool(required) and all(row.get("status") == "PASS" for row in required)
+    all_required_pass = required_set_exact and all(row.get("status") == "PASS" for row in required)
     build_match = {
         "git_sha": bool(current.get("git_sha")) and build.get("git_sha") == current.get("git_sha"),
         "architecture": current.get("architecture") == "arm64" and build.get("architecture") == current.get("architecture"),
@@ -51,6 +59,7 @@ def _session_validation(session: dict, current_build: dict) -> dict:
         session.get("status") == "PASSED"
         and session.get("physical_uat_complete") is True
         and machine_eligible
+        and required_set_exact
         and all_required_pass
         and digest_valid
         and build_exact
@@ -62,6 +71,8 @@ def _session_validation(session: dict, current_build: dict) -> dict:
         reasons.append("physical_uat_not_complete")
     if not machine_eligible:
         reasons.append("machine_ineligible")
+    if not required_set_exact:
+        reasons.append("required_scenario_set_drift")
     if not all_required_pass:
         reasons.append("required_scenarios_not_all_pass")
     if not digest_valid:
@@ -79,6 +90,7 @@ def _session_validation(session: dict, current_build: dict) -> dict:
         "evidence_sha256": expected_digest or None,
         "digest_valid": digest_valid,
         "machine_eligible": machine_eligible,
+        "required_scenario_set_exact": required_set_exact,
         "all_required_pass": all_required_pass,
         "build": build,
         "build_match": build_match,
@@ -122,6 +134,7 @@ class AppRuntime(base.AppRuntime):
                     "session_status": "PASSED",
                     "physical_uat_complete": True,
                     "machine": "Darwin arm64 non-CI",
+                    "required_scenario_ids": sorted(REQUIRED_PHASE_A_IDS),
                     "all_required_scenarios": "PASS",
                     "evidence_digest": "MATCH",
                     "git_sha": "EXACT_MATCH",

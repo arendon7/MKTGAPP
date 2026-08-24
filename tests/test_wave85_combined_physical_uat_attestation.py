@@ -24,7 +24,14 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         git_sha = "a" * 40
         app = tmp / "Binario Marketing IA.app"
         resources = app / "Contents/Resources"
-        resources.mkdir(parents=True)
+        source = resources / "source"
+        for root in (source / "src", source / "web", source / "apps"):
+            root.mkdir(parents=True, exist_ok=True)
+        (source / "src/runtime.txt").write_text("wave76\n", encoding="utf-8")
+        (source / "web/ui.js").write_text("console.log('physical')\n", encoding="utf-8")
+        (source / "apps/catalog.json").write_text("{}\n", encoding="utf-8")
+        source_sha = module._source_digest(source)
+
         origin = {
             "event": "push" if trusted else "pull_request",
             "ref": "refs/heads/main" if trusted else "refs/pull/95/merge",
@@ -41,7 +48,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "source_contract_wave": 95,
             "source_release_state": "LOCKED_SOURCE",
             "build_origin": origin,
-            "candidate_source_sha256": "b" * 64,
+            "candidate_source_sha256": source_sha,
             "release_boundary": {
                 "source_release_state": "LOCKED_SOURCE",
                 "release_ready": False,
@@ -108,7 +115,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "source_contract_wave": 95,
             "source_release_state": "LOCKED_SOURCE",
             "source_release_tag": None,
-            "candidate_source_sha256": "b" * 64,
+            "candidate_source_sha256": source_sha,
             "candidate_manifest_sha256": module._sha256_file(candidate_path),
             "automatic_passed": True,
             "manual_steps": manual,
@@ -149,6 +156,14 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not physical-UAT eligible"):
                 module.finalize(app, phase_a, phase_b)
 
+    def test_rejects_extracted_source_drift_even_when_evidence_still_matches_manifest(self):
+        module = _module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app, phase_a, phase_b = self._fixture(module, Path(tmpdir))
+            (app / "Contents/Resources/source/web/ui.js").write_text("tampered after UAT\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source digest does not match extracted app"):
+                module.finalize(app, phase_a, phase_b)
+
     def test_rejects_phase_a_digest_tampering(self):
         module = _module()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -174,6 +189,9 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         source = command.read_text(encoding="utf-8")
         self.assertIn("FINALIZE_PHYSICAL_UAT.py", source)
         self.assertIn("release-uat-evidence.json", source)
+        self.assertIn("codesign --verify --deep --strict", source)
+        self.assertIn("PHYSICAL_UAT_HANDOFF_VERIFY.py", source)
+        self.assertIn("--require-physical-host", source)
         self.assertNotIn("RELEASE_READY=True", source)
 
     def test_packager_binds_combined_finalization_helpers(self):

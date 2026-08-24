@@ -19,6 +19,12 @@ ATTESTATION_WAVE = 85
 SOURCE_CONTRACT_WAVE = 95
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
+REQUIRED_PHASE_A_IDS = {
+    "company-switch", "inbox-to-crm", "pipeline-followup",
+    "campaign-execution", "results-decision",
+}
+OPTIONAL_PHASE_A_IDS = {"optional-ai"}
+CANONICAL_PHASE_A_IDS = REQUIRED_PHASE_A_IDS | OPTIONAL_PHASE_A_IDS
 REQUIRED_PHASE_B_IDS = {
     "launcher_relaunch", "persistence", "company_crm", "today_complete",
     "today_reschedule", "content_library", "social_readonly", "manual_reply",
@@ -41,6 +47,24 @@ def _sha256_file(path: Path) -> str:
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _source_digest(source: Path) -> str:
+    """Recompute the exact W81/W95 source identity from the extracted app."""
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for root in (source / "src", source / "web", source / "apps"):
+        if not root.is_dir():
+            raise ValueError(f"candidate source root missing: {root}")
+        files.extend(path for path in root.rglob("*") if path.is_file())
+    for path in sorted(files, key=lambda item: item.relative_to(source).as_posix()):
+        relative = path.relative_to(source).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
     return digest.hexdigest()
 
 
@@ -80,6 +104,7 @@ def _candidate_source_contract(candidate: dict[str, Any]) -> tuple[str, str | No
 
 def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], str, str | None]:
     resources = app / "Contents" / "Resources"
+    source = resources / "source"
     candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
     provenance_path = resources / "BUILD_PROVENANCE.json"
     _require(candidate_path.is_file(), "candidate manifest missing")
@@ -103,6 +128,9 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], st
     _require(physical.get("eligible_build_origin") is True, "candidate is not physical-UAT origin eligible")
     _require(physical.get("automatic_pass") is False, "candidate cannot carry automatic physical UAT PASS")
     source_state, source_tag = _candidate_source_contract(candidate)
+    expected_source_sha = str(candidate.get("candidate_source_sha256") or "")
+    _require(len(expected_source_sha) == 64, "candidate source digest missing or malformed")
+    _require(_source_digest(source) == expected_source_sha, "candidate source digest does not match extracted app")
     return candidate, candidate_path, provenance, source_state, source_tag
 
 
@@ -118,9 +146,24 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
     _require(machine.get("is_ci") is False, "Phase A cannot come from CI")
     _require(machine.get("physical_gate_eligible") is True, "Phase A machine is not physical-gate eligible")
 
-    scenarios = session.get("scenarios") or []
-    required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
-    _require(bool(required), "Phase A required scenarios missing")
+    scenarios = session.get("scenarios")
+    _require(isinstance(scenarios, list), "Phase A scenario contract missing")
+    _require(all(isinstance(row, dict) for row in scenarios), "Phase A scenario rows must be objects")
+    scenario_ids = [str(row.get("id") or "") for row in scenarios]
+    _require(len(scenario_ids) == len(CANONICAL_PHASE_A_IDS), "Phase A scenario count drift")
+    _require(len(set(scenario_ids)) == len(scenario_ids), "Phase A scenario ids contain duplicates")
+    _require(set(scenario_ids) == CANONICAL_PHASE_A_IDS, "Phase A scenario contract drift")
+    for row in scenarios:
+        scenario_id = str(row.get("id") or "")
+        expected_required = scenario_id in REQUIRED_PHASE_A_IDS
+        _require(row.get("required") is expected_required, f"Phase A required flag drift: {scenario_id}")
+
+    required = [row for row in scenarios if row.get("required")]
+    required_ids = {str(row.get("id") or "") for row in required}
+    _require(
+        required_ids == REQUIRED_PHASE_A_IDS and len(required) == len(REQUIRED_PHASE_A_IDS),
+        "Phase A required scenario set drift",
+    )
     _require(all(row.get("status") == "PASS" for row in required), "Phase A required scenarios are not all PASS")
 
     expected_digest = str(session.get("evidence_sha256") or "")
@@ -136,13 +179,30 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
 
     summary = report.get("summary") or {}
     _require(summary.get("physical_uat_complete") is True, "Phase A summary is not complete")
+    _require(int(summary.get("required") or 0) == len(REQUIRED_PHASE_A_IDS), "Phase A summary/required count mismatch")
+    summary_required_ids = summary.get("required_scenario_ids")
+    if summary_required_ids is not None:
+        _require(
+            isinstance(summary_required_ids, list) and set(map(str, summary_required_ids)) == REQUIRED_PHASE_A_IDS and len(summary_required_ids) == len(REQUIRED_PHASE_A_IDS),
+            "Phase A summary required scenario ids drift",
+        )
+    summary_optional_ids = summary.get("optional_scenario_ids")
+    if summary_optional_ids is not None:
+        _require(
+            isinstance(summary_optional_ids, list) and set(map(str, summary_optional_ids)) == OPTIONAL_PHASE_A_IDS and len(summary_optional_ids) == len(OPTIONAL_PHASE_A_IDS),
+            "Phase A summary optional scenario ids drift",
+        )
     _require(int(summary.get("failed") or 0) == 0, "Phase A summary contains failures")
     _require(int(summary.get("blocked") or 0) == 0, "Phase A summary contains blockers")
     _require(int(summary.get("pending") or 0) == 0, "Phase A summary contains pending required scenarios")
     _require(int(summary.get("passed") or 0) == len(required), "Phase A summary/pass count mismatch")
     return {
-        "session_id": session.get("id"), "evidence_sha256": expected_digest,
-        "required_scenarios": len(required), "passed_scenarios": len(required),
+        "session_id": session.get("id"),
+        "evidence_sha256": expected_digest,
+        "required_scenarios": len(required),
+        "passed_scenarios": len(required),
+        "required_scenario_ids": sorted(REQUIRED_PHASE_A_IDS),
+        "optional_scenario_ids": sorted(OPTIONAL_PHASE_A_IDS),
         "finished_at": session.get("finished_at"),
     }
 
@@ -220,6 +280,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Candidate source SHA-256: `{b['candidate_source_sha256']}`",
         f"- Candidate manifest SHA-256: `{b['candidate_manifest_sha256']}`",
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
+        f"- Phase A required IDs: `{','.join(a['required_scenario_ids'])}`",
+        f"- Phase A optional IDs: `{','.join(a['optional_scenario_ids'])}`",
         f"- Phase B: **PASS** · {p['passed_gates']}/{p['required_gates']} release gates",
         f"- Combined attestation SHA-256: `{report['attestation_sha256']}`",
         "- Release authority: **NO**", "- Publication authority: **NO**", "- Production ready: **NO**", "",

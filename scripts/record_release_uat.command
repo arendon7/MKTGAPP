@@ -20,6 +20,7 @@ RECORDER="$APP/Contents/Resources/release-tools/record_release_uat.py"
 [[ -x "$PY" ]] || fail "embedded Python runtime missing"
 [[ -f "$RECORDER" ]] || fail "embedded release UAT recorder missing"
 
+/usr/bin/codesign --verify --deep --strict "$APP" || fail "candidate bundle signature drift detected"
 "$PY" -I -B "$VERIFY" --delivery-dir "$ROOT" --app "$APP" --require-physical-host >/dev/null
 
 "$PY" -I -B - "$EVIDENCE" <<'PY'
