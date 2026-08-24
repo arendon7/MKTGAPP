@@ -119,10 +119,11 @@ class Wave87DeveloperIDNotarizationTrustTests(unittest.TestCase):
         self.assertNotIn("notarize_release_candidate.sh", pr_block)
         self.assertIn("Build and audit x86 current runtime", pr_block)
 
-    def test_release_version_and_workflow_count_stay_closed(self):
+    def test_release_version_and_workflow_count_stay_non_authoritative(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
