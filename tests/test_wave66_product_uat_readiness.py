@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave66_app import AppRuntime, create_server
 
 
@@ -123,9 +124,15 @@ class Wave66ProductUATReadinessTests(unittest.TestCase):
         self.assertTrue(payload["contracts"]["canonical_workflows_only"])
         self.assertTrue(payload["contracts"]["loopback_default"])
         self.assertFalse(payload["contracts"]["cloud_required"])
-        self.assertEqual(payload["release_boundary"]["version"], "0.9.0.dev1")
-        self.assertFalse(payload["release_boundary"]["release_ready"])
-        self.assertIsNone(payload["release_boundary"]["release_tag"])
+        self.assertEqual(payload["release_boundary"]["version"], "0.9.0")
+        self.assertTrue(payload["release_boundary"]["release_ready"])
+        self.assertEqual(payload["release_boundary"]["release_tag"], "v0.9.0")
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        source = source_release_readiness()
+        self.assertTrue(source["source_ready"])
+        self.assertEqual(source["stage"], "SOURCE_CONTRACT_READY")
+        self.assertFalse(source["operational_inputs_complete"])
+        self.assertFalse(source["production_ready"])
         self.assertTrue(payload["release_boundary"]["physical_uat_required"])
         self.assertFalse(payload["release_boundary"]["physical_uat_recorded"])
         self.assertFalse(payload["release_boundary"]["distribution_signing_certified"])
@@ -218,11 +225,13 @@ class Wave66ProductUATReadinessTests(unittest.TestCase):
         self.assertIn('host: str = "127.0.0.1"', service)
         self.assertIn("workflow_names = sorted(_CANONICAL_WORKFLOWS)", service)
         self.assertIn("WAVE 66 PRODUCT UAT READINESS AUDIT PASS", audit)
+        self.assertIn("PREPARED_RELEASE", audit)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
         version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn("0.9.0.dev1", version)
-        self.assertIn("RELEASE_READY = False", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
 
 
 if __name__ == "__main__":
