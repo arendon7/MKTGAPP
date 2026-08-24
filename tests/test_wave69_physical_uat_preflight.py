@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave69_app import AppRuntime, create_server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,15 +29,15 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
             path.parent.mkdir(parents=True,exist_ok=True); path.write_text("stub",encoding="utf-8"); path.chmod(0o755)
         manifest=runtime/"transcription/RUNTIME.json"; manifest.parent.mkdir(parents=True,exist_ok=True); manifest.write_text(json.dumps({"engine":"whisper.cpp"}),encoding="utf-8")
         model=runtime/"transcription/models/ggml-tiny.bin"; model.parent.mkdir(parents=True,exist_ok=True); model.write_bytes(b"model")
-        (resources/"BUILD_PROVENANCE.json").write_text(json.dumps({"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1","release_channel":"development","signing_mode":"ad_hoc","notarized":False}),encoding="utf-8")
+        (resources/"BUILD_PROVENANCE.json").write_text(json.dumps({"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0","release_channel":"development","signing_mode":"ad_hoc","notarized":False}),encoding="utf-8")
         candidate={
             "schema":"binario.marketing.physical-uat-candidate.v1",
             "role":"PHYSICAL_UAT_CANDIDATE_ONLY" if trusted else "VALIDATION_BUILD_ONLY",
-            "git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1",
+            "git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0",
             "runtime_wave":76,"certification_guard_wave":84,"source_contract_wave":95,
-            "source_release_state":"LOCKED_SOURCE","candidate_source_sha256":"b"*64,
-            "build_origin":{"event":"push" if trusted else "pull_request","ref":"refs/heads/main" if trusted else "refs/pull/106/merge","trusted_for_physical_uat":trusted},
-            "release_boundary":{"source_release_state":"LOCKED_SOURCE","release_ready":False,"release_tag":None,"operational_authorization":False,"release_authority":False,"publication_authority":False,"production_ready":False},
+            "source_release_state":"PREPARED_RELEASE","candidate_source_sha256":"b"*64,
+            "build_origin":{"event":"push" if trusted else "pull_request","ref":"refs/heads/main" if trusted else "refs/pull/108/merge","trusted_for_physical_uat":trusted},
+            "release_boundary":{"source_release_state":"PREPARED_RELEASE","release_ready":True,"release_tag":"v0.9.0","operational_authorization":False,"release_authority":False,"publication_authority":False,"production_ready":False},
             "physical_uat":{"required":True,"automatic_pass":False,"eligible_build_origin":trusted},
         }
         (resources/"PHYSICAL_UAT_CANDIDATE.json").write_text(json.dumps(candidate),encoding="utf-8")
@@ -49,7 +50,7 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
     def test_trusted_packaged_arm64_runtime_can_pass_preflight(self):
         self._fake_packaged_runtime()
         with patch("binario_marketing.service_wave69_app.machine_snapshot",return_value=self._eligible_machine()): payload=self.runtime.physical_uat_preflight(self.company["id"])
-        self.assertTrue(payload["ready_to_begin_physical_uat"]); self.assertEqual(payload["blockers"],[]); self.assertTrue(payload["candidate"]["trusted_for_physical_uat"]); self.assertEqual(payload["candidate"]["source_release_state"],"LOCKED_SOURCE"); self.assertEqual(payload["candidate"]["source_contract_wave"],95); self.assertEqual(payload["next_action"]["code"],"START_PHYSICAL_UAT")
+        self.assertTrue(payload["ready_to_begin_physical_uat"]); self.assertEqual(payload["blockers"],[]); self.assertTrue(payload["candidate"]["trusted_for_physical_uat"]); self.assertEqual(payload["candidate"]["source_release_state"],PREPARED_RELEASE); self.assertEqual(payload["candidate"]["source_release_tag"],"v0.9.0"); self.assertEqual(payload["candidate"]["source_contract_wave"],95); self.assertEqual(payload["next_action"]["code"],"START_PHYSICAL_UAT")
 
     def test_validation_pr_bundle_cannot_start_physical_uat(self):
         self._fake_packaged_runtime(trusted=False); machine=self._eligible_machine()
@@ -80,9 +81,10 @@ class Wave69PhysicalUATPreflightTests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); thread.join(timeout=3)
 
-    def test_release_contract_remains_fail_closed(self):
+    def test_release_contract_is_prepared_but_not_authoritative(self):
         workflows=sorted(path.name for path in (ROOT/".github/workflows").glob("*.yml")); self.assertEqual(workflows,["ci.yml","full-mac-app.yml","persistent-release.yml"])
-        version=(ROOT/"src/binario_marketing/version.py").read_text(encoding="utf-8"); self.assertIn("0.9.0.dev1",version); self.assertIn("RELEASE_READY = False",version); self.assertIn("RELEASE_TAG: str | None = None",version)
+        self.assertEqual(source_release_state(),PREPARED_RELEASE); source=source_release_readiness(); self.assertTrue(source["source_ready"]); self.assertEqual(source["stage"],"SOURCE_CONTRACT_READY"); self.assertFalse(source["operational_inputs_complete"]); self.assertFalse(source["production_ready"])
+        version=(ROOT/"src/binario_marketing/version.py").read_text(encoding="utf-8"); self.assertIn('__version__ = "0.9.0"',version); self.assertIn("RELEASE_READY = True",version); self.assertIn('RELEASE_TAG: str | None = "v0.9.0"',version)
 
 
 if __name__=="__main__": unittest.main()
