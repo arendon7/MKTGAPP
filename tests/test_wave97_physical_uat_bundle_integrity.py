@@ -12,6 +12,7 @@ VERIFIER = ROOT / "scripts/verify_physical_uat_handoff.py"
 FINALIZER = ROOT / "scripts/finalize_physical_uat.py"
 RECORD = ROOT / "scripts/record_release_uat.command"
 FINALIZE_COMMAND = ROOT / "scripts/finalize_physical_uat.command"
+BUILDER = ROOT / "scripts/build_full_mac_app.sh"
 VERSION = ROOT / "src/binario_marketing/version.py"
 
 
@@ -43,6 +44,11 @@ class Wave97PhysicalUATBundleIntegrityTests(unittest.TestCase):
             self.assertNotEqual(changed, expected)
             self.assertEqual(verifier._source_digest(source), changed)
             self.assertEqual(finalizer._source_digest(source), changed)
+
+    def test_runtime_keeps_embedded_source_read_only_for_digest_stability(self):
+        builder = BUILDER.read_text(encoding="utf-8")
+        self.assertIn("export PYTHONDONTWRITEBYTECODE=1", builder)
+        self.assertIn('exec "$PYTHON" -I -B "$RESOURCES/launch.py"', builder)
 
     def test_record_gate_revalidates_codesign_before_handoff_and_mutation(self):
         subprocess.run(["bash", "-n", str(RECORD)], check=True)
