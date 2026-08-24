@@ -18,7 +18,7 @@ from pathlib import Path
 src=Path(sys.argv[1]);sys.path.insert(0,str(src))
 provenance=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
 readiness=json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
-from binario_marketing.release_readiness import SCHEMA
+from binario_marketing.release_readiness import LOCKED_SOURCE, PREPARED_RELEASE, SCHEMA
 assert provenance.get('schema') == 'binario.marketing.full-mac-build.v4', provenance
 assert readiness.get('schema') == SCHEMA, readiness
 assert readiness.get('git_sha') == provenance.get('git_sha'), (readiness, provenance)
@@ -27,16 +27,27 @@ assert readiness.get('signing_mode') == provenance.get('signing_mode'), (readine
 assert readiness.get('notarized') is provenance.get('notarized'), (readiness, provenance)
 assert readiness.get('uat_passed') is False, readiness
 assert readiness.get('production_ready') is False, readiness
-assert readiness.get('stage') == 'DEVELOPMENT', readiness
+
 codes=set(readiness.get('blocker_codes') or [])
-required={
-  'development_version',
-  'release_flag_false',
-  'release_tag_missing',
-  'notarization_missing',
-  'physical_uat_missing',
-}
-assert required.issubset(codes), (codes, required)
+state=readiness.get('source_release_state')
+required_operational={'notarization_missing','physical_uat_missing'}
+assert required_operational.issubset(codes), (codes, required_operational)
+
+if state == LOCKED_SOURCE:
+    assert readiness.get('source_ready') is False, readiness
+    assert readiness.get('stage') == 'DEVELOPMENT', readiness
+    required_source={'development_version','release_flag_false','release_tag_missing'}
+    assert required_source.issubset(codes), (codes, required_source)
+elif state == PREPARED_RELEASE:
+    assert readiness.get('source_ready') is True, readiness
+    assert readiness.get('release_ready_flag') is True, readiness
+    assert readiness.get('release_tag') == f"v{readiness.get('version')}", readiness
+    assert readiness.get('stage') == 'RELEASE_CANDIDATE_BLOCKED', readiness
+    for forbidden in ('development_version','release_flag_false','release_tag_missing','release_tag_version_mismatch','source_release_contract_invalid'):
+        assert forbidden not in codes, (forbidden, codes)
+else:
+    raise AssertionError(f'Wave 46 audit: unsupported source release state: {state!r}')
+
 mode=provenance.get('signing_mode')
 if mode == 'ad_hoc':
     assert 'distribution_signing_missing' in codes, codes
@@ -45,7 +56,7 @@ elif mode == 'developer_id':
 else:
     assert 'distribution_signing_missing' in codes, codes
 print('WAVE 46 RELEASE READINESS FAIL-CLOSED PASS')
-print(json.dumps({'git_sha':provenance.get('git_sha'),'architecture':provenance.get('architecture'),'signing_mode':mode,'blockers':sorted(codes)},ensure_ascii=False))
+print(json.dumps({'git_sha':provenance.get('git_sha'),'architecture':provenance.get('architecture'),'signing_mode':mode,'source_release_state':state,'blockers':sorted(codes)},ensure_ascii=False))
 PY
 
 GATE_JSON="$(mktemp "${TMPDIR:-/tmp}/wave46-gate.XXXXXX.json")"
