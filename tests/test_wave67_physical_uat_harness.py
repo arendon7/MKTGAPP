@@ -31,7 +31,7 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         with patch("binario_marketing.physical_uat_store.platform.system", return_value=system), \
              patch("binario_marketing.physical_uat_store.platform.machine", return_value=machine), \
              patch("binario_marketing.physical_uat_store.platform.mac_ver", return_value=("15.7.7", ("", "", ""), "")), \
-             patch.dict(os.environ, {"GITHUB_ACTIONS": github_actions}, clear=False):
+             patch.dict(os.environ, {"GITHUB_ACTIONS": github_actions, "CI": ""}, clear=False):
             return self.runtime.start_physical_uat(self.company["id"], {"operator": "Agustin UAT"})
 
     def _resolve_required(self, session, status="PASS"):
