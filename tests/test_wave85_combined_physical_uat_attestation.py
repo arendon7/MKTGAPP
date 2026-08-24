@@ -35,17 +35,17 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "role": module.EXPECTED_ROLE if trusted else "VALIDATION_BUILD_ONLY",
             "git_sha": git_sha,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
             "runtime_wave": 76,
             "certification_guard_wave": 84,
             "source_contract_wave": 95,
-            "source_release_state": "LOCKED_SOURCE",
+            "source_release_state": "PREPARED_RELEASE",
             "build_origin": origin,
             "candidate_source_sha256": "b" * 64,
             "release_boundary": {
-                "source_release_state": "LOCKED_SOURCE",
-                "release_ready": False,
-                "release_tag": None,
+                "source_release_state": "PREPARED_RELEASE",
+                "release_ready": True,
+                "release_tag": "v0.9.0",
                 "operational_authorization": False,
                 "release_authority": False,
                 "publication_authority": False,
@@ -59,7 +59,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "schema": "binario.marketing.full-mac-build.v4",
             "git_sha": git_sha,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
         }), encoding="utf-8")
 
         session = {
@@ -73,7 +73,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "updated_at": "2026-08-22T00:10:00+00:00",
             "finished_at": "2026-08-22T00:10:00+00:00",
             "machine": {"system": "Darwin", "machine": "arm64", "is_ci": False, "physical_gate_eligible": True},
-            "build": {"source": "BUILD_PROVENANCE.json", "git_sha": git_sha, "architecture": "arm64", "product_version": "0.9.0.dev1"},
+            "build": {"source": "BUILD_PROVENANCE.json", "git_sha": git_sha, "architecture": "arm64", "product_version": "0.9.0"},
             "scenarios": [
                 {"id": scenario, "required": True, "status": "PASS", "note": "observed", "updated_at": "2026-08-22T00:05:00+00:00"}
                 for scenario in ("company-switch", "inbox-to-crm", "pipeline-followup", "campaign-execution", "results-decision")
@@ -103,11 +103,11 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "schema": module.PHASE_B_SCHEMA,
             "git_sha": git_sha,
             "architecture": "arm64",
-            "version": "0.9.0.dev1",
+            "version": "0.9.0",
             "runtime_wave": 76,
             "source_contract_wave": 95,
-            "source_release_state": "LOCKED_SOURCE",
-            "source_release_tag": None,
+            "source_release_state": "PREPARED_RELEASE",
+            "source_release_tag": "v0.9.0",
             "candidate_source_sha256": "b" * 64,
             "candidate_manifest_sha256": module._sha256_file(candidate_path),
             "automatic_passed": True,
@@ -135,7 +135,8 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             self.assertEqual(report["binding"]["runtime_wave"], 76)
             self.assertEqual(report["binding"]["attestation_wave"], 85)
             self.assertEqual(report["binding"]["source_contract_wave"], 95)
-            self.assertEqual(report["binding"]["source_release_state"], "LOCKED_SOURCE")
+            self.assertEqual(report["binding"]["source_release_state"], "PREPARED_RELEASE")
+            self.assertEqual(report["binding"]["source_release_tag"], "v0.9.0")
             self.assertEqual(report["phase_a"]["passed_scenarios"], 5)
             self.assertEqual(report["phase_b"]["passed_gates"], 12)
             encoded = json.dumps(report, ensure_ascii=False)
@@ -188,10 +189,11 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         self.assertIn("SOURCE_CONTRACT_WAVE = 95", verifier)
         self.assertIn("combined attestation release-transport boundary missing", verifier)
 
-    def test_release_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
+    def test_prepared_source_stays_non_authoritative_as_w86_supersedes_transport_hard_stop(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
         self.assertIn("verify_combined_uat_attestation.py", workflow)
