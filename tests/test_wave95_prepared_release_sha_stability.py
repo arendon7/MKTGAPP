@@ -134,7 +134,12 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
         core = {
             "schema": verifier.SCHEMA,
             "binding": binding,
-            "phase_a": {"required_scenarios": 5, "passed_scenarios": 5},
+            "phase_a": {
+                "required_scenarios": 5,
+                "passed_scenarios": 5,
+                "required_scenario_ids": sorted(verifier.EXPECTED_REQUIRED_PHASE_A_IDS),
+                "optional_scenario_ids": sorted(verifier.EXPECTED_OPTIONAL_PHASE_A_IDS),
+            },
             "phase_b": {"required_gates": 12, "passed_gates": 12, "overall": "UAT_PASS"},
             "w97_integrity": {
                 "schema": verifier.W97_INTEGRITY_SCHEMA,
@@ -163,6 +168,8 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
             self.assertEqual(report["source_contract_wave"], 95)
             self.assertEqual(report["source_release_state"], PREPARED_RELEASE)
             self.assertEqual(report["source_release_tag"], "v1.0.0")
+            self.assertEqual(set(report["phase_a_required_ids"]), verifier.EXPECTED_REQUIRED_PHASE_A_IDS)
+            self.assertEqual(set(report["phase_a_optional_ids"]), verifier.EXPECTED_OPTIONAL_PHASE_A_IDS)
             self.assertTrue(report["w97_integrity_required"])
             self.assertTrue(report["w97_integrity_verified"])
             self.assertEqual(report["w97_handoff_verification_sha256"], "9" * 64)

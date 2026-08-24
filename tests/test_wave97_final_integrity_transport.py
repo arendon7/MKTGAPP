@@ -46,6 +46,8 @@ def _prepared_attestation(module, *, include_w97: bool = True, extracted_source_
             "evidence_sha256": "d" * 64,
             "required_scenarios": 5,
             "passed_scenarios": 5,
+            "required_scenario_ids": sorted(module.EXPECTED_REQUIRED_PHASE_A_IDS),
+            "optional_scenario_ids": sorted(module.EXPECTED_OPTIONAL_PHASE_A_IDS),
             "finished_at": "2026-08-24T03:00:00+00:00",
             "report_sha256": "e" * 64,
         },
@@ -105,6 +107,8 @@ class Wave97FinalIntegrityTransportTests(unittest.TestCase):
                 expected_source_release_state="PREPARED_RELEASE",
                 expected_release_tag="v0.9.0",
             )
+            self.assertEqual(set(report["phase_a_required_ids"]), module.EXPECTED_REQUIRED_PHASE_A_IDS)
+            self.assertEqual(set(report["phase_a_optional_ids"]), module.EXPECTED_OPTIONAL_PHASE_A_IDS)
             self.assertTrue(report["w97_integrity_required"])
             self.assertTrue(report["w97_integrity_verified"])
             self.assertEqual(report["w97_handoff_verification_sha256"], "9" * 64)
@@ -125,6 +129,22 @@ class Wave97FinalIntegrityTransportTests(unittest.TestCase):
             row = _prepared_attestation(module, extracted_source_sha="0" * 64)
             path.write_text(json.dumps(row), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "extracted source digest mismatch"):
+                module.verify(path, expected_source_release_state="PREPARED_RELEASE", expected_release_tag="v0.9.0")
+
+    def test_prepared_attestation_cannot_drop_or_substitute_phase_a_ids_even_with_rehashed_payload(self):
+        module = _module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "combined.json"
+            row = _prepared_attestation(module)
+            row["phase_a"]["required_scenario_ids"] = [
+                "company-switch", "inbox-to-crm", "pipeline-followup", "campaign-execution", "replacement-scenario"
+            ]
+            core = dict(row)
+            core.pop("generated_at", None)
+            core.pop("attestation_sha256", None)
+            row["attestation_sha256"] = module._digest(core)
+            path.write_text(json.dumps(row), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "required ID set drift"):
                 module.verify(path, expected_source_release_state="PREPARED_RELEASE", expected_release_tag="v0.9.0")
 
     def test_finalize_command_rechecks_codesign_after_legacy_finalizer_before_w97_seal(self):

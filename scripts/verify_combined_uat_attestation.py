@@ -14,6 +14,11 @@ EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
 EXPECTED_SOURCE_CONTRACT_WAVE = 95
 EXPECTED_ARCHITECTURE = "arm64"
+EXPECTED_REQUIRED_PHASE_A_IDS = {
+    "company-switch", "inbox-to-crm", "pipeline-followup",
+    "campaign-execution", "results-decision",
+}
+EXPECTED_OPTIONAL_PHASE_A_IDS = {"optional-ai"}
 LOCKED_SOURCE = "LOCKED_SOURCE"
 PREPARED_RELEASE = "PREPARED_RELEASE"
 
@@ -99,6 +104,31 @@ def _w97_integrity(data: dict[str, Any], binding: dict[str, Any], source_state: 
     return integrity
 
 
+def _phase_a_contract(phase_a: dict[str, Any], source_state: str) -> tuple[int, int, list[str] | None, list[str] | None]:
+    required_scenarios = int(phase_a.get("required_scenarios") or 0)
+    passed_scenarios = int(phase_a.get("passed_scenarios") or 0)
+    required_ids_raw = phase_a.get("required_scenario_ids")
+    optional_ids_raw = phase_a.get("optional_scenario_ids")
+
+    if source_state == PREPARED_RELEASE:
+        _require(required_scenarios == len(EXPECTED_REQUIRED_PHASE_A_IDS), "combined UAT Phase A required scenario count drift")
+        _require(passed_scenarios == required_scenarios, "combined UAT Phase A is not fully passed")
+        _require(isinstance(required_ids_raw, list), "PREPARED_RELEASE combined UAT Phase A required IDs missing")
+        _require(isinstance(optional_ids_raw, list), "PREPARED_RELEASE combined UAT Phase A optional IDs missing")
+        required_ids = [str(value) for value in required_ids_raw]
+        optional_ids = [str(value) for value in optional_ids_raw]
+        _require(len(required_ids) == len(EXPECTED_REQUIRED_PHASE_A_IDS), "combined UAT Phase A required ID count drift")
+        _require(len(set(required_ids)) == len(required_ids), "combined UAT Phase A required IDs contain duplicates")
+        _require(set(required_ids) == EXPECTED_REQUIRED_PHASE_A_IDS, "combined UAT Phase A required ID set drift")
+        _require(len(optional_ids) == len(EXPECTED_OPTIONAL_PHASE_A_IDS), "combined UAT Phase A optional ID count drift")
+        _require(len(set(optional_ids)) == len(optional_ids), "combined UAT Phase A optional IDs contain duplicates")
+        _require(set(optional_ids) == EXPECTED_OPTIONAL_PHASE_A_IDS, "combined UAT Phase A optional ID set drift")
+        return required_scenarios, passed_scenarios, required_ids, optional_ids
+
+    _require(required_scenarios > 0 and passed_scenarios == required_scenarios, "combined UAT Phase A is not fully passed")
+    return required_scenarios, passed_scenarios, None, None
+
+
 def verify(
     path: Path,
     *,
@@ -141,11 +171,9 @@ def verify(
     phase_a = data.get("phase_a") or {}
     phase_b = data.get("phase_b") or {}
     _require(isinstance(phase_a, dict) and isinstance(phase_b, dict), "combined UAT phase summaries missing")
-    required_scenarios = int(phase_a.get("required_scenarios") or 0)
-    passed_scenarios = int(phase_a.get("passed_scenarios") or 0)
+    required_scenarios, passed_scenarios, phase_a_required_ids, phase_a_optional_ids = _phase_a_contract(phase_a, source_state)
     required_gates = int(phase_b.get("required_gates") or 0)
     passed_gates = int(phase_b.get("passed_gates") or 0)
-    _require(required_scenarios > 0 and passed_scenarios == required_scenarios, "combined UAT Phase A is not fully passed")
     _require(required_gates == 12 and passed_gates == required_gates, "combined UAT Phase B is not 12/12 PASS")
     _require(phase_b.get("overall") == "UAT_PASS", "combined UAT Phase B overall result is not UAT_PASS")
     _require(data.get("both_phases_passed") is True, "combined UAT both_phases_passed is not true")
@@ -174,6 +202,8 @@ def verify(
         "candidate_manifest_sha256": manifest_sha,
         "phase_a_required": required_scenarios,
         "phase_a_passed": passed_scenarios,
+        "phase_a_required_ids": phase_a_required_ids,
+        "phase_a_optional_ids": phase_a_optional_ids,
         "phase_b_required": required_gates,
         "phase_b_passed": passed_gates,
         "attestation_sha256": expected_sha,
