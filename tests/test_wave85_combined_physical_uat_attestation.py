@@ -188,10 +188,11 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         self.assertIn("SOURCE_CONTRACT_WAVE = 95", verifier)
         self.assertIn("combined attestation release-transport boundary missing", verifier)
 
-    def test_release_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
+    def test_prepared_source_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
         self.assertIn("verify_combined_uat_attestation.py", workflow)
