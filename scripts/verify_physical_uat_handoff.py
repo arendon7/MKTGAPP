@@ -43,6 +43,24 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _source_digest(source: Path) -> str:
+    """Recompute the exact W81/W95 source identity from the extracted app."""
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for root in (source / "src", source / "web", source / "apps"):
+        if not root.is_dir():
+            raise ValueError(f"candidate source root missing: {root}")
+        files.extend(path for path in root.rglob("*") if path.is_file())
+    for path in sorted(files, key=lambda item: item.relative_to(source).as_posix()):
+        relative = path.relative_to(source).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
@@ -80,6 +98,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     _require(delivery_dir.is_dir(), f"delivery directory missing: {delivery_dir}")
     _require(app.is_dir(), f"app bundle missing: {app}")
     resources = app / "Contents" / "Resources"
+    source = resources / "source"
     delivery_path = delivery_dir / "FULL_MAC_DELIVERY.json"
     external_candidate_path = delivery_dir / "PHYSICAL_UAT_CANDIDATE.json"
     internal_candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
@@ -131,6 +150,8 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
     _require(len(source_sha) == 64, "delivery candidate source SHA-256 malformed")
     _require(external.get("candidate_source_sha256") == source_sha, "external candidate source digest mismatch")
     _require(internal.get("candidate_source_sha256") == source_sha, "embedded candidate source digest mismatch")
+    actual_source_sha = _source_digest(source)
+    _require(actual_source_sha == source_sha, "candidate source digest does not match extracted app")
     expected_manifest_sha = str(delivery.get("candidate_manifest_sha256") or "")
     _require(_sha256(internal_candidate_path) == expected_manifest_sha, "embedded candidate manifest digest mismatch")
     _require(_sha256(external_candidate_path) == expected_manifest_sha, "external candidate manifest digest mismatch")
@@ -169,12 +190,13 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
         _require(role == PHYSICAL_ROLE, "physical UAT requires PHYSICAL_UAT_CANDIDATE_ONLY role")
 
     return {
-        "schema": "binario.marketing.physical-uat-handoff-verification.v2", "git_sha": git_sha, "role": role,
+        "schema": "binario.marketing.physical-uat-handoff-verification.v3", "git_sha": git_sha, "role": role,
         "build_origin": delivery.get("build_origin"), "physical_uat_eligible": trusted, "architecture": EXPECTED_ARCH,
         "runtime_wave": EXPECTED_RUNTIME_WAVE, "certification_guard_wave": EXPECTED_GUARD_WAVE,
         "operator_handoff_wave": EXPECTED_HANDOFF_WAVE, "combined_attestation_wave": combined_wave,
         "source_contract_wave": delivery.get("source_contract_wave"), "source_release_state": source_state, "source_release_tag": source_tag,
-        "candidate_source_sha256": source_sha, "candidate_manifest_sha256": expected_manifest_sha,
+        "candidate_source_sha256": source_sha, "actual_candidate_source_sha256": actual_source_sha,
+        "candidate_manifest_sha256": expected_manifest_sha,
         "artifact": artifact_name, "artifact_sha256": artifact_sha, "operator_helpers": helper_hashes,
         "host": {"system": system, "machine": machine, "is_ci": is_ci, "physical_gate_eligible": physical_host},
         "physical_product_uat_required": True, "release_operational_uat_required": True,
@@ -184,7 +206,7 @@ def verify(delivery_dir: Path, app: Path, *, expected_git_sha: str | None = None
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a W84/W85/W95 UAT delivery; physical start additionally requires trusted main origin and real arm64 host."); parser.add_argument("--delivery-dir", type=Path, required=True); parser.add_argument("--app", type=Path, required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Verify a W84/W85/W95/W97 UAT delivery; physical start additionally requires trusted main origin and real arm64 host."); parser.add_argument("--delivery-dir", type=Path, required=True); parser.add_argument("--app", type=Path, required=True); parser.add_argument("--expected-git-sha"); parser.add_argument("--require-physical-host", action="store_true"); args = parser.parse_args()
     try:
         report = verify(args.delivery_dir, args.app, expected_git_sha=args.expected_git_sha, require_physical_host=args.require_physical_host)
     except ValueError as exc:
