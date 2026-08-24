@@ -32,10 +32,13 @@ def _attestation(*, git_sha: str, source_sha: str, manifest_sha: str = "b" * 64)
         "schema": "binario.marketing.combined-physical-uat-attestation.v1",
         "binding": {
             "git_sha": git_sha,
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
             "architecture": "arm64",
             "runtime_wave": 76,
             "certification_guard_wave": 84,
+            "source_contract_wave": 95,
+            "source_release_state": "PREPARED_RELEASE",
+            "source_release_tag": "v0.9.0",
             "candidate_source_sha256": source_sha,
             "candidate_manifest_sha256": manifest_sha,
             "build_origin": {"event": "push", "ref": "refs/heads/main", "trusted_for_physical_uat": True},
@@ -58,6 +61,7 @@ def _attestation(*, git_sha: str, source_sha: str, manifest_sha: str = "b" * 64)
         },
         "both_phases_passed": True,
         "release_authority": False,
+        "publication_authority": False,
         "production_ready": False,
     }
     return {**core, "generated_at": "2026-08-22T12:06:00+00:00", "attestation_sha256": _digest(core)}
@@ -71,8 +75,16 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
             path = Path(tmpdir) / "combined.json"
             row = _attestation(git_sha=git_sha, source_sha="f" * 64)
             path.write_text(json.dumps(row), encoding="utf-8")
-            report = verify.verify(path, expected_git_sha=git_sha)
+            report = verify.verify(
+                path,
+                expected_git_sha=git_sha,
+                expected_source_release_state="PREPARED_RELEASE",
+                expected_release_tag="v0.9.0",
+            )
             self.assertTrue(report["both_phases_passed"])
+            self.assertEqual(report["source_contract_wave"], 95)
+            self.assertEqual(report["source_release_state"], "PREPARED_RELEASE")
+            self.assertEqual(report["source_release_tag"], "v0.9.0")
             self.assertFalse(report["release_authority"])
             with self.assertRaisesRegex(ValueError, "git SHA mismatch"):
                 verify.verify(path, expected_git_sha="9" * 40)
@@ -97,7 +109,7 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
                 evidence,
                 git_sha=git_sha,
                 architecture="x86_64",
-                product_version="0.9.0.dev1",
+                product_version="0.9.0",
                 current_source_sha256=source_sha,
                 candidate_source_sha256=None,
                 candidate_manifest_sha256=None,
@@ -105,6 +117,7 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
             self.assertTrue(passed)
             self.assertEqual(mode, "source_equivalent_cross_arch_distribution")
             self.assertEqual((row or {}).get("binding", {}).get("architecture"), "arm64")
+            self.assertEqual((row or {}).get("binding", {}).get("source_release_state"), "PREPARED_RELEASE")
 
     def test_gate_rejects_cross_arch_when_source_digest_differs(self):
         gate = _module(GATE_PATH, "wave86_gate_mismatch")
@@ -116,7 +129,7 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
                 evidence,
                 git_sha=git_sha,
                 architecture="x86_64",
-                product_version="0.9.0.dev1",
+                product_version="0.9.0",
                 current_source_sha256="b" * 64,
                 candidate_source_sha256=None,
                 candidate_manifest_sha256=None,
@@ -135,7 +148,7 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
                 evidence,
                 git_sha=git_sha,
                 architecture="arm64",
-                product_version="0.9.0.dev1",
+                product_version="0.9.0",
                 current_source_sha256=source_sha,
                 candidate_source_sha256=source_sha,
                 candidate_manifest_sha256="5" * 64,
@@ -147,6 +160,8 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
         workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
         self.assertIn("verify_combined_uat_attestation.py", workflow)
+        self.assertIn("--expected-source-release-state PREPARED_RELEASE", workflow)
+        self.assertIn('--expected-release-tag "$GITHUB_REF_NAME"', workflow)
         self.assertIn("verified-physical-uat-attestation-${{ github.sha }}", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
         self.assertIn("actions/download-artifact@v4", workflow)
@@ -158,10 +173,11 @@ class Wave86SafeUATEvidenceTransportTests(unittest.TestCase):
         self.assertIn("--uat-evidence", window)
         self.assertIn("combined-physical-uat-attestation.json", window)
 
-    def test_release_boundary_and_workflow_count_remain_fail_closed(self):
+    def test_prepared_release_boundary_keeps_external_release_gates_fail_closed(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
