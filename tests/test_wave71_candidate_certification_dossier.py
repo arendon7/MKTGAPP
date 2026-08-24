@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave71_app import AppRuntime, create_server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,9 +20,9 @@ class Wave71CandidateDossierTests(unittest.TestCase):
         self.readiness = {"manual_scenarios": [{"id":"journey","title":"Recorrido","required":True,"view":"home","precondition":"empresa","expected":"flujo"}]}
         self.preflight = {"ready_to_begin_physical_uat": True, "checks": [{"id":"machine","status":"PASS"}], "blockers": []}
         self.evidence = {
-            "current_build": {"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0.dev1","signing_mode":"ad_hoc","notarized":False},
+            "current_build": {"git_sha":"a"*40,"architecture":"arm64","product_version":"0.9.0","signing_mode":"ad_hoc","notarized":False},
             "physical_uat": {"accepted_for_current_build": False},
-            "release_readiness": {"stage":"BLOCKED","production_ready":False,"blocker_codes":["physical_uat_missing","development_version"]},
+            "release_readiness": {"stage":"RELEASE_CANDIDATE_BLOCKED","production_ready":False,"blocker_codes":["physical_uat_missing","distribution_signing_missing","notarization_missing"]},
         }
 
     def tearDown(self):
@@ -40,8 +41,8 @@ class Wave71CandidateDossierTests(unittest.TestCase):
         row=self._dossier([session]);self.assertEqual(row["stage"],"PHYSICAL_UAT_IN_PROGRESS");self.assertEqual(row["uat"]["latest_session"]["required_pass"],1)
 
     def test_accepted_exact_build_is_reported_but_does_not_make_production_ready(self):
-        evidence=dict(self.evidence);evidence["physical_uat"]={"accepted_for_current_build":True};evidence["release_readiness"]={"stage":"BLOCKED","production_ready":False,"blocker_codes":["development_version","release_flag_false","release_tag_missing","distribution_signing_missing","notarization_missing"]}
-        row=self._dossier(evidence=evidence);self.assertEqual(row["stage"],"PHYSICAL_UAT_PASSED_FOR_BUILD");self.assertFalse(row["release"]["production_ready"]);self.assertIn("development_version",row["release"]["blocker_codes"])
+        evidence=dict(self.evidence);evidence["physical_uat"]={"accepted_for_current_build":True};evidence["release_readiness"]={"stage":"RELEASE_CANDIDATE_BLOCKED","production_ready":False,"blocker_codes":["distribution_signing_missing","notarization_missing"]}
+        row=self._dossier(evidence=evidence);self.assertEqual(row["stage"],"PHYSICAL_UAT_PASSED_FOR_BUILD");self.assertFalse(row["release"]["production_ready"]);self.assertIn("distribution_signing_missing",row["release"]["blocker_codes"]);self.assertIn("notarization_missing",row["release"]["blocker_codes"])
 
     def test_digest_is_stable_for_same_canonical_evidence(self):
         first=self._dossier();second=self._dossier();self.assertNotEqual(first["generated_at"],second["generated_at"]);self.assertEqual(first["dossier_sha256"],second["dossier_sha256"])
@@ -59,7 +60,8 @@ class Wave71CandidateDossierTests(unittest.TestCase):
             server.shutdown();server.server_close();thread.join(timeout=3)
 
     def test_release_contract_and_workflow_count_remain_fail_closed(self):
-        version=(ROOT/"src/binario_marketing/version.py").read_text(encoding="utf-8");self.assertIn('0.9.0.dev1',version);self.assertIn("RELEASE_READY = False",version);self.assertIn("RELEASE_TAG: str | None = None",version)
+        self.assertEqual(source_release_state(),PREPARED_RELEASE)
+        report=source_release_readiness();self.assertTrue(report["source_ready"]);self.assertFalse(report["operational_inputs_complete"]);self.assertFalse(report["production_ready"])
         workflows=sorted(p.name for p in (ROOT/".github/workflows").glob("*.yml"));self.assertEqual(workflows,["ci.yml","full-mac-app.yml","persistent-release.yml"])
         service=(ROOT/"src/binario_marketing/service_wave71_app.py").read_text(encoding="utf-8");self.assertNotIn("RELEASE_READY = True",service);self.assertIn("dossier_is_release_authority",service)
 
