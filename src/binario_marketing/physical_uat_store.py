@@ -17,6 +17,11 @@ from .social_store import _now
 UAT_SESSION_ID_RE = re.compile(r"^uat_[0-9a-f]{24}$")
 SCENARIO_STATUSES = {"PENDING", "PASS", "FAIL", "BLOCKED", "SKIPPED"}
 SESSION_STATUSES = {"IN_PROGRESS", "PASSED", "FAILED", "BLOCKED"}
+REQUIRED_PHASE_A_IDS = {
+    "company-switch", "inbox-to-crm", "pipeline-followup",
+    "campaign-execution", "results-decision",
+}
+OPTIONAL_PHASE_A_IDS = {"optional-ai"}
 
 
 def _text(value: object, limit: int, *, field: str) -> str | None:
@@ -29,7 +34,10 @@ def _text(value: object, limit: int, *, field: str) -> str | None:
 def machine_snapshot() -> dict:
     system = platform.system() or "unknown"
     machine = (platform.machine() or "unknown").lower()
-    is_ci = str(os.environ.get("GITHUB_ACTIONS") or "").strip().lower() == "true"
+    is_ci = any(
+        str(os.environ.get(name) or "").strip().lower() == "true"
+        for name in ("GITHUB_ACTIONS", "CI")
+    )
     return {
         "system": system,
         "macos_version": platform.mac_ver()[0] or None,
@@ -121,7 +129,9 @@ class PhysicalUATStore:
             if scenario_id in seen:
                 raise ValueError("duplicate UAT scenario id")
             seen.add(scenario_id)
-            required = scenario_id != "optional-ai"
+            if scenario_id not in REQUIRED_PHASE_A_IDS | OPTIONAL_PHASE_A_IDS:
+                raise ValueError(f"unexpected physical UAT scenario id: {scenario_id}")
+            required = scenario_id in REQUIRED_PHASE_A_IDS
             scenario_rows.append({
                 "id": scenario_id,
                 "label": str(source.get("label") or scenario_id).strip()[:200],
@@ -130,6 +140,15 @@ class PhysicalUATStore:
                 "note": None,
                 "updated_at": None,
             })
+        required_ids = {item["id"] for item in scenario_rows if item["required"]}
+        if required_ids != REQUIRED_PHASE_A_IDS:
+            missing = sorted(REQUIRED_PHASE_A_IDS - required_ids)
+            extra = sorted(required_ids - REQUIRED_PHASE_A_IDS)
+            raise ValueError(
+                "physical UAT required scenario set drift"
+                + (f"; missing={','.join(missing)}" if missing else "")
+                + (f"; extra={','.join(extra)}" if extra else "")
+            )
         row = {
             "schema": "binario.marketing.physical-uat-session.v1",
             "id": f"uat_{uuid.uuid4().hex[:24]}",
