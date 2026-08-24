@@ -40,8 +40,8 @@ class Wave71CandidateDossierTests(unittest.TestCase):
         row=self._dossier([session]);self.assertEqual(row["stage"],"PHYSICAL_UAT_IN_PROGRESS");self.assertEqual(row["uat"]["latest_session"]["required_pass"],1)
 
     def test_accepted_exact_build_is_reported_but_does_not_make_production_ready(self):
-        evidence=dict(self.evidence);evidence["physical_uat"]={"accepted_for_current_build":True};evidence["release_readiness"]={"stage":"BLOCKED","production_ready":False,"blocker_codes":["development_version","release_flag_false","release_tag_missing","distribution_signing_missing","notarization_missing"]}
-        row=self._dossier(evidence=evidence);self.assertEqual(row["stage"],"PHYSICAL_UAT_PASSED_FOR_BUILD");self.assertFalse(row["release"]["production_ready"]);self.assertIn("development_version",row["release"]["blocker_codes"])
+        evidence=dict(self.evidence);evidence["physical_uat"]={"accepted_for_current_build":True};evidence["release_readiness"]={"stage":"BLOCKED","production_ready":False,"blocker_codes":["distribution_signing_missing","notarization_missing"]}
+        row=self._dossier(evidence=evidence);self.assertEqual(row["stage"],"PHYSICAL_UAT_PASSED_FOR_BUILD");self.assertFalse(row["release"]["production_ready"]);self.assertIn("distribution_signing_missing",row["release"]["blocker_codes"])
 
     def test_digest_is_stable_for_same_canonical_evidence(self):
         first=self._dossier();second=self._dossier();self.assertNotEqual(first["generated_at"],second["generated_at"]);self.assertEqual(first["dossier_sha256"],second["dossier_sha256"])
@@ -58,8 +58,8 @@ class Wave71CandidateDossierTests(unittest.TestCase):
         finally:
             server.shutdown();server.server_close();thread.join(timeout=3)
 
-    def test_release_contract_and_workflow_count_remain_fail_closed(self):
-        version=(ROOT/"src/binario_marketing/version.py").read_text(encoding="utf-8");self.assertIn('0.9.0.dev1',version);self.assertIn("RELEASE_READY = False",version);self.assertIn("RELEASE_TAG: str | None = None",version)
+    def test_release_contract_and_workflow_count_remain_non_authoritative(self):
+        version=(ROOT/"src/binario_marketing/version.py").read_text(encoding="utf-8");self.assertIn('__version__ = "0.9.0"',version);self.assertIn("RELEASE_READY = True",version);self.assertIn('RELEASE_TAG: str | None = "v0.9.0"',version)
         workflows=sorted(p.name for p in (ROOT/".github/workflows").glob("*.yml"));self.assertEqual(workflows,["ci.yml","full-mac-app.yml","persistent-release.yml"])
         service=(ROOT/"src/binario_marketing/service_wave71_app.py").read_text(encoding="utf-8");self.assertNotIn("RELEASE_READY = True",service);self.assertIn("dossier_is_release_authority",service)
 
