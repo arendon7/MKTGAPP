@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave74_app import AppRuntime, INTERACTION_ASSETS, create_server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,9 +88,11 @@ class Wave74InteractionIntegrityTests(unittest.TestCase):
         self.assertEqual(missing, [], f'static action controls without browser reference: {missing}')
 
     def test_release_workflows_and_builder_remain_fail_closed(self):
-        version = (ROOT / 'src/binario_marketing/version.py').read_text(encoding='utf-8')
-        self.assertIn('0.9.0.dev1', version)
-        self.assertIn('RELEASE_READY = False', version)
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        report = source_release_readiness()
+        self.assertTrue(report['source_ready'])
+        self.assertFalse(report['operational_inputs_complete'])
+        self.assertFalse(report['production_ready'])
         workflows = sorted(path.name for path in (ROOT / '.github/workflows').glob('*.yml'))
         self.assertEqual(workflows, ['ci.yml', 'full-mac-app.yml', 'persistent-release.yml'])
         service = (ROOT / 'src/binario_marketing/service_wave74_app.py').read_text(encoding='utf-8')
