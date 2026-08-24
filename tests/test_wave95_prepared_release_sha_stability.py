@@ -131,6 +131,7 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
                 "physical_gate_eligible": True,
             },
         }
+        handoff_sha = verifier._handoff_report_sha256(handoff)
         core = {
             "schema": verifier.SCHEMA,
             "binding": binding,
@@ -143,7 +144,7 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
             "phase_b": {"required_gates": 12, "passed_gates": 12, "overall": "UAT_PASS"},
             "w97_integrity": {
                 "schema": verifier.W97_INTEGRITY_SCHEMA,
-                "handoff_verification_sha256": "9" * 64,
+                "handoff_verification_sha256": handoff_sha,
                 "handoff_verification": handoff,
                 "bundle_signature_verified": True,
                 "codesign_requirement": ["--deep", "--strict"],
@@ -172,7 +173,7 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
             self.assertEqual(set(report["phase_a_optional_ids"]), verifier.EXPECTED_OPTIONAL_PHASE_A_IDS)
             self.assertTrue(report["w97_integrity_required"])
             self.assertTrue(report["w97_integrity_verified"])
-            self.assertEqual(report["w97_handoff_verification_sha256"], "9" * 64)
+            self.assertEqual(report["w97_handoff_verification_sha256"], handoff_sha)
             self.assertFalse(report["release_authority"])
             self.assertFalse(report["publication_authority"])
             self.assertFalse(report["production_ready"])

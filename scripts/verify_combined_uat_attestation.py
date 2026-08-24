@@ -38,6 +38,12 @@ def _digest(payload: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _handoff_report_sha256(payload: dict[str, Any]) -> str:
+    """Reconstruct the exact verifier CLI JSON bytes written by FINALIZE_PHYSICAL_UAT.command."""
+    raw = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
@@ -83,6 +89,10 @@ def _w97_integrity(data: dict[str, Any], binding: dict[str, Any], source_state: 
 
     handoff = integrity.get("handoff_verification")
     _require(isinstance(handoff, dict), "W97 embedded final handoff verification missing")
+    _require(
+        _handoff_report_sha256(handoff) == handoff_sha,
+        "W97 final handoff verification SHA-256 mismatch",
+    )
     _require(handoff.get("schema") == W97_HANDOFF_SCHEMA, "W97 embedded handoff schema drift")
     _require(handoff.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY", "W97 embedded handoff is not the physical candidate")
     _require(handoff.get("physical_uat_eligible") is True, "W97 embedded handoff is not physically eligible")
@@ -210,6 +220,7 @@ def verify(
         "w97_integrity_required": source_state == PREPARED_RELEASE,
         "w97_integrity_verified": isinstance(w97_integrity, dict) if source_state == PREPARED_RELEASE else w97_integrity is not None,
         "w97_handoff_verification_sha256": (w97_integrity or {}).get("handoff_verification_sha256"),
+        "w98_handoff_seal_verified": source_state != PREPARED_RELEASE or isinstance(w97_integrity, dict),
         "both_phases_passed": True,
         "release_authority": False,
         "publication_authority": False,
@@ -218,7 +229,7 @@ def verify(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W95/W97 combined physical-UAT attestation.")
+    parser = argparse.ArgumentParser(description="Verify a sanitized W85/W95/W97/W98 combined physical-UAT attestation.")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--expected-git-sha")
     parser.add_argument("--expected-source-release-state", choices=(LOCKED_SOURCE, PREPARED_RELEASE))
