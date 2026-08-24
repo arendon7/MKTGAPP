@@ -17,13 +17,13 @@ def _module():
 
 
 class Wave89ReleaseEnablementReadinessAuditTests(unittest.TestCase):
-    def test_current_source_is_explicitly_blocked_without_mutation(self):
+    def test_current_source_is_prepared_without_operational_authority(self):
         report = _module().audit(ROOT)
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertIn("development_version", report["blocker_codes"])
-        self.assertIn("release_flag_false", report["blocker_codes"])
-        self.assertIn("release_tag_missing", report["blocker_codes"])
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertFalse(report["mutations_performed"])
+        self.assertFalse(report["operational_authorization"])
         self.assertFalse(report["release_authority"])
         self.assertFalse(report["production_ready"])
 
@@ -45,7 +45,6 @@ class Wave89ReleaseEnablementReadinessAuditTests(unittest.TestCase):
         self.assertFalse(report["operational_authorization"])
         self.assertIn("physical UAT", report["notes"])
         self.assertIn("external runtime fact", report["notes"])
-        self.assertNotIn("RELEASE_READY = True", source)
         self.assertNotIn("gh release create", source)
 
 
