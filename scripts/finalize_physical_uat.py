@@ -23,6 +23,8 @@ REQUIRED_PHASE_A_IDS = {
     "company-switch", "inbox-to-crm", "pipeline-followup",
     "campaign-execution", "results-decision",
 }
+OPTIONAL_PHASE_A_IDS = {"optional-ai"}
+CANONICAL_PHASE_A_IDS = REQUIRED_PHASE_A_IDS | OPTIONAL_PHASE_A_IDS
 REQUIRED_PHASE_B_IDS = {
     "launcher_relaunch", "persistence", "company_crm", "today_complete",
     "today_reschedule", "content_library", "social_readonly", "manual_reply",
@@ -144,8 +146,19 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
     _require(machine.get("is_ci") is False, "Phase A cannot come from CI")
     _require(machine.get("physical_gate_eligible") is True, "Phase A machine is not physical-gate eligible")
 
-    scenarios = session.get("scenarios") or []
-    required = [row for row in scenarios if isinstance(row, dict) and row.get("required")]
+    scenarios = session.get("scenarios")
+    _require(isinstance(scenarios, list), "Phase A scenario contract missing")
+    _require(all(isinstance(row, dict) for row in scenarios), "Phase A scenario rows must be objects")
+    scenario_ids = [str(row.get("id") or "") for row in scenarios]
+    _require(len(scenario_ids) == len(CANONICAL_PHASE_A_IDS), "Phase A scenario count drift")
+    _require(len(set(scenario_ids)) == len(scenario_ids), "Phase A scenario ids contain duplicates")
+    _require(set(scenario_ids) == CANONICAL_PHASE_A_IDS, "Phase A scenario contract drift")
+    for row in scenarios:
+        scenario_id = str(row.get("id") or "")
+        expected_required = scenario_id in REQUIRED_PHASE_A_IDS
+        _require(row.get("required") is expected_required, f"Phase A required flag drift: {scenario_id}")
+
+    required = [row for row in scenarios if row.get("required")]
     required_ids = {str(row.get("id") or "") for row in required}
     _require(
         required_ids == REQUIRED_PHASE_A_IDS and len(required) == len(REQUIRED_PHASE_A_IDS),
@@ -167,13 +180,29 @@ def _phase_a(report: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
     summary = report.get("summary") or {}
     _require(summary.get("physical_uat_complete") is True, "Phase A summary is not complete")
     _require(int(summary.get("required") or 0) == len(REQUIRED_PHASE_A_IDS), "Phase A summary/required count mismatch")
+    summary_required_ids = summary.get("required_scenario_ids")
+    if summary_required_ids is not None:
+        _require(
+            isinstance(summary_required_ids, list) and set(map(str, summary_required_ids)) == REQUIRED_PHASE_A_IDS and len(summary_required_ids) == len(REQUIRED_PHASE_A_IDS),
+            "Phase A summary required scenario ids drift",
+        )
+    summary_optional_ids = summary.get("optional_scenario_ids")
+    if summary_optional_ids is not None:
+        _require(
+            isinstance(summary_optional_ids, list) and set(map(str, summary_optional_ids)) == OPTIONAL_PHASE_A_IDS and len(summary_optional_ids) == len(OPTIONAL_PHASE_A_IDS),
+            "Phase A summary optional scenario ids drift",
+        )
     _require(int(summary.get("failed") or 0) == 0, "Phase A summary contains failures")
     _require(int(summary.get("blocked") or 0) == 0, "Phase A summary contains blockers")
     _require(int(summary.get("pending") or 0) == 0, "Phase A summary contains pending required scenarios")
     _require(int(summary.get("passed") or 0) == len(required), "Phase A summary/pass count mismatch")
     return {
-        "session_id": session.get("id"), "evidence_sha256": expected_digest,
-        "required_scenarios": len(required), "passed_scenarios": len(required),
+        "session_id": session.get("id"),
+        "evidence_sha256": expected_digest,
+        "required_scenarios": len(required),
+        "passed_scenarios": len(required),
+        "required_scenario_ids": sorted(REQUIRED_PHASE_A_IDS),
+        "optional_scenario_ids": sorted(OPTIONAL_PHASE_A_IDS),
         "finished_at": session.get("finished_at"),
     }
 
@@ -251,6 +280,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Candidate source SHA-256: `{b['candidate_source_sha256']}`",
         f"- Candidate manifest SHA-256: `{b['candidate_manifest_sha256']}`",
         f"- Phase A: **PASS** · {a['passed_scenarios']}/{a['required_scenarios']} required scenarios",
+        f"- Phase A required IDs: `{','.join(a['required_scenario_ids'])}`",
+        f"- Phase A optional IDs: `{','.join(a['optional_scenario_ids'])}`",
         f"- Phase B: **PASS** · {p['passed_gates']}/{p['required_gates']} release gates",
         f"- Combined attestation SHA-256: `{report['attestation_sha256']}`",
         "- Release authority: **NO**", "- Publication authority: **NO**", "- Production ready: **NO**", "",
