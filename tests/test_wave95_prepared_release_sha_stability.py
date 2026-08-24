@@ -197,14 +197,16 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
         self.assertEqual(report["runtime_wave"], 76)
         self.assertEqual(report["certification_guard_wave"], 95)
         self.assertEqual(report["source_contract_wave"], 95)
-        self.assertEqual(report["source_release_state"], LOCKED_SOURCE)
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertEqual(report["source_status"], "BLOCKED")
+        self.assertEqual(report["source_release_state"], PREPARED_RELEASE)
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertFalse(report["operational_authorization"])
         self.assertFalse(report["release_authority"])
         self.assertFalse(report["publication_authority"])
         self.assertFalse(report["production_ready"])
         self.assertFalse(report["mutations_performed"])
+        self.assertTrue(all(value is False for value in report["external_runtime_requirements"].values()))
         missing = [name for name, ok in report["structural_gates"].items() if ok is not True]
         self.assertEqual(missing, [], report)
         for gate in (
@@ -225,14 +227,18 @@ class Wave95PreparedReleaseShaStabilityTests(unittest.TestCase):
         ):
             self.assertTrue(report["structural_gates"][gate], gate)
 
-    def test_current_repository_remains_locked_and_does_not_create_release_authority(self):
-        self.assertEqual(__version__, "0.9.0.dev1")
-        self.assertFalse(RELEASE_READY)
-        self.assertIsNone(RELEASE_TAG)
-        self.assertEqual(source_release_state(), LOCKED_SOURCE)
+    def test_current_repository_may_be_prepared_without_release_authority(self):
+        self.assertEqual(__version__, "0.9.0")
+        self.assertTrue(RELEASE_READY)
+        self.assertEqual(RELEASE_TAG, "v0.9.0")
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        readiness = evaluate_release_readiness()
+        self.assertTrue(readiness["source_ready"])
+        self.assertEqual(readiness["stage"], "SOURCE_CONTRACT_READY")
+        self.assertFalse(readiness["operational_inputs_complete"])
+        self.assertFalse(readiness["production_ready"])
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
-        self.assertNotIn("RELEASE_READY = True", (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8"))
 
     def test_phase_b_handoff_and_distribution_bind_same_w95_source_contract(self):
         files = {
