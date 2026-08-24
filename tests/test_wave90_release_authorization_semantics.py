@@ -19,15 +19,15 @@ def _module():
 
 
 class Wave90ReleaseAuthorizationSemanticsTests(unittest.TestCase):
-    def test_current_source_remains_blocked_without_release_mutation(self):
+    def test_current_source_is_ready_but_still_not_operationally_authorized(self):
         report = _module().audit(ROOT)
-        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["source_release_state"], "PREPARED_RELEASE")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertFalse(report["operational_authorization"])
         self.assertFalse(report["release_authority"])
         self.assertFalse(report["production_ready"])
-        self.assertIn("development_version", report["blocker_codes"])
-        self.assertIn("release_flag_false", report["blocker_codes"])
-        self.assertIn("release_tag_missing", report["blocker_codes"])
 
     def test_source_ready_state_never_becomes_release_authority(self):
         module = _module()
