@@ -23,14 +23,20 @@ source = Path(sys.argv[1])
 provenance_path = Path(sys.argv[2])
 data_root = Path(sys.argv[3]) / "data"
 sys.path.insert(0, str(source / "src"))
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave76_app import AppRuntime
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
 
 provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
 assert provenance["architecture"] == "x86_64", provenance
-assert provenance["product_version"] == __version__ == "0.9.0.dev1", provenance
-assert RELEASE_READY is False
-assert RELEASE_TAG is None
+assert provenance["product_version"] == __version__ == "0.9.0", provenance
+assert RELEASE_READY is True
+assert RELEASE_TAG == "v0.9.0"
+assert source_release_state() == PREPARED_RELEASE
+source_readiness = source_release_readiness()
+assert source_readiness["source_ready"] is True, source_readiness
+assert source_readiness["operational_inputs_complete"] is False, source_readiness
+assert source_readiness["production_ready"] is False, source_readiness
 
 runtime = AppRuntime.create(source, data_root)
 try:
