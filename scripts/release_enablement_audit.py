@@ -8,6 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
+SOURCE_CONTRACT_WAVE = 95
+
 
 def _load_version(repo: Path) -> tuple[str, bool, str | None]:
     sys.path.insert(0, str(repo / "src"))
@@ -21,13 +25,29 @@ def _load_version(repo: Path) -> tuple[str, bool, str | None]:
             pass
 
 
+def _source_release_state(version: str, release_ready: bool, release_tag: str | None) -> str:
+    value = str(version or "").strip()
+    tag = str(release_tag or "").strip() or None
+    development = not value or bool(re.search(r"(?:\.dev|-dev|rc|alpha|beta)", value, re.I))
+    if release_ready is False and tag is None:
+        return LOCKED_SOURCE
+    if release_ready is True and not development and tag == f"v{value}":
+        return PREPARED_RELEASE
+    return "INVALID_SOURCE_CONTRACT"
+
+
 def audit(repo: Path) -> dict[str, Any]:
     repo = repo.resolve()
     version, release_ready, release_tag = _load_version(repo)
+    source_state = _source_release_state(version, release_ready, release_tag)
     workflow = (repo / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
     gate = (repo / "scripts/release_candidate_gate.py").read_text(encoding="utf-8")
     tag_verifier = (repo / "scripts/verify_release_tag.py").read_text(encoding="utf-8")
     distribution_writer = (repo / "scripts/write_distribution_rebuild_manifest.py").read_text(encoding="utf-8")
+    candidate_writer = (repo / "scripts/write_physical_uat_candidate.py").read_text(encoding="utf-8")
+    combined_verifier = (repo / "scripts/verify_combined_uat_attestation.py").read_text(encoding="utf-8")
+    readiness_source = (repo / "src/binario_marketing/release_readiness.py").read_text(encoding="utf-8")
+    wave69 = (repo / "src/binario_marketing/service_wave69_app.py").read_text(encoding="utf-8")
     evidence_chain = (repo / "scripts/release_evidence_chain.py").read_text(encoding="utf-8")
     bundle_verifier = (repo / "scripts/verify_release_evidence_bundle.py").read_text(encoding="utf-8")
     packaged_verifier = (repo / "scripts/verify_packaged_release_asset.py").read_text(encoding="utf-8")
@@ -36,9 +56,8 @@ def audit(repo: Path) -> dict[str, Any]:
     publication_transaction = (repo / "scripts/publish_release_transaction.sh").read_text(encoding="utf-8")
     published_roundtrip = (repo / "scripts/verify_published_release_roundtrip.py").read_text(encoding="utf-8")
 
-    # W93 remains the final mutation boundary. W94 only proves provenance and
-    # emits a mutation-free handoff that W93 must validate before any provider
-    # call. Source structure can prove ordering, never external runtime truth.
+    # W95 stabilizes source identity before physical UAT. It does not replace
+    # W94 provenance or W93's final GitHub mutation transaction.
     publish_index = workflow.find("run: bash scripts/publish_release_transaction.sh")
     w91_authorize_index = workflow.find("release_evidence_chain.py authorize")
     w91_verify_index = workflow.find("release_evidence_chain.py verify-authorization")
@@ -120,6 +139,14 @@ def audit(repo: Path) -> dict[str, Any]:
         "w94_authorization_manifest_required": "RELEASE-CI-PROVENANCE-AUTHORIZATION.json" in workflow and "RELEASE-CI-PROVENANCE-AUTHORIZATION.json" in publication_transaction,
         "w94_transaction_handoff_precedes_any_w93_mutation": 0 <= w94_handoff <= w94_handoff_verify < preexisting_check < draft_create,
         "w94_transaction_handoff_verifies_exact_publisher": "--transaction-script scripts/publish_release_transaction.sh" in publication_transaction and "verify-transaction-handoff" in publication_transaction,
+        "w95_two_state_source_contract": all(marker in readiness_source for marker in ("LOCKED_SOURCE", "PREPARED_RELEASE", "source_release_state")),
+        "w95_source_contract_generation_is_95": all(marker in source for source in (candidate_writer, combined_verifier, gate, wave69) for marker in ("95",)) and "SOURCE_CONTRACT_WAVE = 95" in candidate_writer and "EXPECTED_SOURCE_CONTRACT_WAVE = 95" in combined_verifier and "EXPECTED_SOURCE_CONTRACT_WAVE = 95" in gate and "SOURCE_CONTRACT_WAVE = 95" in wave69,
+        "w95_exact_physical_candidate_is_main_only": 'ref == "refs/heads/main"' in candidate_writer and 'event == "push"' in candidate_writer and "startsWith(github.ref, 'refs/tags/v')" in workflow,
+        "w95_production_requires_prepared_uat": all(marker in gate for marker in ("prepared_release_uat_required", "prepared_release_tag_mismatch", "prepared_release_source_required", "PREPARED_RELEASE")),
+        "w95_tag_preflight_binds_prepared_uat": "--expected-source-release-state PREPARED_RELEASE" in workflow and '--expected-release-tag "$GITHUB_REF_NAME"' in workflow,
+        "w95_intel_smoke_uses_canonical_version": "from binario_marketing.version import __version__" in workflow and "row['product_version']==__version__" in workflow and "row['product_version']=='0.9.0.dev1'" not in workflow,
+        "w95_prepared_source_remains_non_authoritative": all(marker in readiness_source for marker in ("operational_inputs_complete", "production_ready")) and all(marker in candidate_writer for marker in ('"operational_authorization": False', '"release_authority": False', '"publication_authority": False', '"production_ready": False')),
+        "w95_preserves_w94_before_w93": 0 <= w94_verify_index < publish_index and 0 <= w94_handoff_verify < preexisting_check,
     }
 
     blockers: list[str] = []
@@ -131,11 +158,13 @@ def audit(repo: Path) -> dict[str, Any]:
         blockers.append("release_tag_missing")
     if release_tag and release_tag != f"v{version}":
         blockers.append("release_tag_version_mismatch")
+    if source_state == "INVALID_SOURCE_CONTRACT":
+        blockers.append("source_release_contract_invalid")
     for name, ok in structural.items():
         if not ok:
             blockers.append(f"structural_gate_missing:{name}")
 
-    source_ready = not blockers
+    source_ready = source_state == PREPARED_RELEASE and not blockers
     external_requirements = {
         "physical_uat_attestation_verified_at_tag_runtime": False,
         "apple_distribution_credentials_verified_at_tag_runtime": False,
@@ -156,14 +185,17 @@ def audit(repo: Path) -> dict[str, Any]:
         "github_oidc_provenance_verified_for_arm64_at_tag_runtime": False,
         "github_oidc_provenance_verified_for_x86_64_at_tag_runtime": False,
         "w94_ci_provenance_handoff_verified_at_tag_runtime": False,
+        "w95_prepared_release_physical_uat_verified_at_tag_runtime": False,
     }
     return {
-        "schema": "binario.marketing.release-enablement-audit.v6",
+        "schema": "binario.marketing.release-enablement-audit.v7",
         "version": version,
         "release_ready": release_ready,
         "release_tag": release_tag,
+        "source_release_state": source_state,
+        "source_contract_wave": SOURCE_CONTRACT_WAVE,
         "runtime_wave": 76,
-        "certification_guard_wave": 94,
+        "certification_guard_wave": 95,
         "structural_gates": structural,
         "source_status": "SOURCE_CONTRACT_READY" if source_ready else "BLOCKED",
         "status": "BLOCKED" if not source_ready else "AWAITING_OPERATIONAL_AUTHORIZATION",
@@ -174,7 +206,7 @@ def audit(repo: Path) -> dict[str, Any]:
         "release_authority": False,
         "publication_authority": False,
         "production_ready": False,
-        "notes": "Source readiness never authorizes publication. Physical UAT evidence and Apple credentials remain external runtime facts. W91 cross-architecture evidence remains mandatory; W92 requires exact native ZIP round-trip trust; W94 requires GitHub OIDC/Sigstore provenance for both exact ZIPs and a hash-bound, mutation-free handoff into the publisher. W93 remains the final fail-closed GitHub Release draft transaction and still performs exact byte verification of the authorized and final draft inventories before publication. None of these external runtime facts are inferred from source.",
+        "notes": "W95 makes release source identity SHA-stable before physical UAT: LOCKED_SOURCE remains development-only; PREPARED_RELEASE freezes a stable version and matching tag but grants no operational or publication authority. Production later requires physical UAT from that exact W95 prepared source identity. W91 cross-architecture evidence, W92 exact ZIP trust, W94 GitHub OIDC/Sigstore provenance, and the W93 fail-closed GitHub Release transaction all remain mandatory. No external runtime fact is inferred from source.",
     }
 
 
