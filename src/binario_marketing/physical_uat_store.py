@@ -22,6 +22,7 @@ REQUIRED_PHASE_A_IDS = {
     "campaign-execution", "results-decision",
 }
 OPTIONAL_PHASE_A_IDS = {"optional-ai"}
+CANONICAL_PHASE_A_IDS = REQUIRED_PHASE_A_IDS | OPTIONAL_PHASE_A_IDS
 
 
 def _text(value: object, limit: int, *, field: str) -> str | None:
@@ -50,6 +51,37 @@ def machine_snapshot() -> dict:
 def _digest(payload: dict) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_stored_scenario_contract(scenarios: object) -> list[dict]:
+    if not isinstance(scenarios, list):
+        raise ValueError("invalid physical UAT scenario contract")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for row in scenarios:
+        if not isinstance(row, dict):
+            raise ValueError("invalid physical UAT scenario row")
+        scenario_id = str(row.get("id") or "").strip()
+        if scenario_id not in CANONICAL_PHASE_A_IDS:
+            raise ValueError(f"unexpected physical UAT scenario id: {scenario_id or '<missing>'}")
+        if scenario_id in seen:
+            raise ValueError("duplicate UAT scenario id")
+        seen.add(scenario_id)
+        expected_required = scenario_id in REQUIRED_PHASE_A_IDS
+        if row.get("required") is not expected_required:
+            raise ValueError(f"physical UAT scenario required flag drift: {scenario_id}")
+        if row.get("status") not in SCENARIO_STATUSES:
+            raise ValueError(f"invalid UAT scenario status: {scenario_id}")
+        rows.append(row)
+    if seen != CANONICAL_PHASE_A_IDS or len(rows) != len(CANONICAL_PHASE_A_IDS):
+        missing = sorted(CANONICAL_PHASE_A_IDS - seen)
+        extra = sorted(seen - CANONICAL_PHASE_A_IDS)
+        raise ValueError(
+            "physical UAT scenario contract drift"
+            + (f"; missing={','.join(missing)}" if missing else "")
+            + (f"; extra={','.join(extra)}" if extra else "")
+        )
+    return rows
 
 
 class PhysicalUATStore:
@@ -87,6 +119,7 @@ class PhysicalUATStore:
             raise ValueError("invalid physical UAT payload")
         if payload.get("status") not in SESSION_STATUSES:
             raise ValueError("invalid physical UAT session status")
+        _validate_stored_scenario_contract(payload.get("scenarios"))
         return payload
 
     def get(self, company_id: str, session_id: str) -> dict:
@@ -123,13 +156,15 @@ class PhysicalUATStore:
         scenario_rows: list[dict] = []
         seen: set[str] = set()
         for source in scenarios:
+            if not isinstance(source, dict):
+                raise ValueError("physical UAT scenarios must be objects")
             scenario_id = str(source.get("id") or "").strip()
             if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,79}", scenario_id):
                 raise ValueError("invalid UAT scenario id")
             if scenario_id in seen:
                 raise ValueError("duplicate UAT scenario id")
             seen.add(scenario_id)
-            if scenario_id not in REQUIRED_PHASE_A_IDS | OPTIONAL_PHASE_A_IDS:
+            if scenario_id not in CANONICAL_PHASE_A_IDS:
                 raise ValueError(f"unexpected physical UAT scenario id: {scenario_id}")
             required = scenario_id in REQUIRED_PHASE_A_IDS
             scenario_rows.append({
@@ -140,15 +175,15 @@ class PhysicalUATStore:
                 "note": None,
                 "updated_at": None,
             })
-        required_ids = {item["id"] for item in scenario_rows if item["required"]}
-        if required_ids != REQUIRED_PHASE_A_IDS:
-            missing = sorted(REQUIRED_PHASE_A_IDS - required_ids)
-            extra = sorted(required_ids - REQUIRED_PHASE_A_IDS)
+        if seen != CANONICAL_PHASE_A_IDS or len(scenario_rows) != len(CANONICAL_PHASE_A_IDS):
+            missing = sorted(CANONICAL_PHASE_A_IDS - seen)
+            extra = sorted(seen - CANONICAL_PHASE_A_IDS)
             raise ValueError(
-                "physical UAT required scenario set drift"
+                "physical UAT scenario contract drift"
                 + (f"; missing={','.join(missing)}" if missing else "")
                 + (f"; extra={','.join(extra)}" if extra else "")
             )
+        _validate_stored_scenario_contract(scenario_rows)
         row = {
             "schema": "binario.marketing.physical-uat-session.v1",
             "id": f"uat_{uuid.uuid4().hex[:24]}",
@@ -203,7 +238,7 @@ class PhysicalUATStore:
             row = self.get(company_id, session_id)
             if row.get("status") != "IN_PROGRESS":
                 return row
-            scenarios = list(row.get("scenarios") or [])
+            scenarios = _validate_stored_scenario_contract(row.get("scenarios"))
             required = [item for item in scenarios if item.get("required")]
             pending = [item for item in required if item.get("status") == "PENDING"]
             if pending:
@@ -233,12 +268,15 @@ class PhysicalUATStore:
 
     def report(self, company_id: str, session_id: str) -> dict:
         row = self.get(company_id, session_id)
-        required = [item for item in row.get("scenarios") or [] if item.get("required")]
+        scenarios = _validate_stored_scenario_contract(row.get("scenarios"))
+        required = [item for item in scenarios if item.get("required")]
         return {
             "schema": "binario.marketing.physical-uat-evidence.v1",
             "session": row,
             "summary": {
                 "required": len(required),
+                "required_scenario_ids": sorted(REQUIRED_PHASE_A_IDS),
+                "optional_scenario_ids": sorted(OPTIONAL_PHASE_A_IDS),
                 "passed": sum(1 for item in required if item.get("status") == "PASS"),
                 "failed": sum(1 for item in required if item.get("status") == "FAIL"),
                 "blocked": sum(1 for item in required if item.get("status") == "BLOCKED"),
