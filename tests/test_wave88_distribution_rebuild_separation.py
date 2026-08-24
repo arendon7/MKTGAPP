@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL = ROOT / "scripts/write_physical_uat_candidate.py"
@@ -33,7 +34,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             folder.mkdir(parents=True, exist_ok=True)
         (source / "src/binario_marketing/__init__.py").write_text("", encoding="utf-8")
         (source / "src/binario_marketing/version.py").write_text(
-            '__version__ = "0.9.0.dev1"\nRELEASE_READY = False\nRELEASE_TAG = None\n', encoding="utf-8"
+            '__version__ = "0.9.0"\nRELEASE_READY = True\nRELEASE_TAG = "v0.9.0"\n', encoding="utf-8"
         )
         (source / "web/app.js").write_text("console.log('w88')\n", encoding="utf-8")
         (source / "apps/README.md").write_text("apps\n", encoding="utf-8")
@@ -41,10 +42,13 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             "schema": "binario.marketing.full-mac-build.v4",
             "git_sha": "a" * 40,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
         }), encoding="utf-8")
         (resources / "launch.py").write_text("from binario_marketing.service_wave76_app import serve\n", encoding="utf-8")
         return app
+
+    def _prepared_source(self, rebuild):
+        return patch.object(rebuild, "_load_version", return_value=("0.9.0", True, "v0.9.0", "PREPARED_RELEASE"))
 
     def test_exact_physical_uat_origin_is_main_only_not_tag(self):
         physical = _load(PHYSICAL, "w88_physical")
@@ -56,12 +60,15 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
 
     def test_distribution_manifest_is_tag_only_source_equivalent_and_detects_drift(self):
         rebuild = _load(REBUILD, "w88_rebuild")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, self._prepared_source(rebuild):
             app = self._fake_app(Path(tmpdir))
             origin = {"event": "push", "ref": "refs/tags/v0.9.0", "eligible_distribution_origin": True}
             manifest = rebuild.build_manifest(app, origin=origin)
             self.assertEqual(manifest["schema"], rebuild.SCHEMA)
             self.assertEqual(manifest["purpose"], "SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD")
+            self.assertEqual(manifest["source_contract_wave"], 95)
+            self.assertEqual(manifest["source_release_state"], "PREPARED_RELEASE")
+            self.assertEqual(manifest["source_release_tag"], "v0.9.0")
             self.assertFalse(manifest["physical_uat"]["claimed"])
             self.assertFalse(manifest["physical_uat"]["exact_bundle_tested"])
             self.assertEqual(manifest["physical_uat"]["authorization_mode"], "source_equivalent_only")
@@ -74,7 +81,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
 
     def test_distribution_manifest_rejects_physical_candidate_identity(self):
         rebuild = _load(REBUILD, "w88_rebuild_conflict")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, self._prepared_source(rebuild):
             app = self._fake_app(Path(tmpdir))
             (app / "Contents/Resources/PHYSICAL_UAT_CANDIDATE.json").write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must not contain physical-UAT candidate"):
@@ -114,6 +121,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             "distribution_requires_combined_source_equivalent_uat",
             "source_equivalent_arm64_rebuild",
             "source_equivalent_cross_arch_distribution",
+            "prepared_release_uat_required",
         ):
             self.assertIn(marker, source)
         self.assertIn('candidate_origin.get("ref") == "refs/heads/main"', source)

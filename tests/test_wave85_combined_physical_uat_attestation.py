@@ -27,7 +27,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         resources.mkdir(parents=True)
         origin = {
             "event": "push" if trusted else "pull_request",
-            "ref": "refs/heads/main" if trusted else "refs/pull/92/merge",
+            "ref": "refs/heads/main" if trusted else "refs/pull/95/merge",
             "trusted_for_physical_uat": trusted,
         }
         candidate = {
@@ -38,9 +38,19 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "product_version": "0.9.0.dev1",
             "runtime_wave": 76,
             "certification_guard_wave": 84,
+            "source_contract_wave": 95,
+            "source_release_state": "LOCKED_SOURCE",
             "build_origin": origin,
             "candidate_source_sha256": "b" * 64,
-            "release_boundary": {"release_ready": False, "release_tag": None, "production_ready": False},
+            "release_boundary": {
+                "source_release_state": "LOCKED_SOURCE",
+                "release_ready": False,
+                "release_tag": None,
+                "operational_authorization": False,
+                "release_authority": False,
+                "publication_authority": False,
+                "production_ready": False,
+            },
             "physical_uat": {"required": True, "automatic_pass": False, "eligible_build_origin": trusted},
         }
         candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
@@ -95,12 +105,18 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             "architecture": "arm64",
             "version": "0.9.0.dev1",
             "runtime_wave": 76,
+            "source_contract_wave": 95,
+            "source_release_state": "LOCKED_SOURCE",
+            "source_release_tag": None,
             "candidate_source_sha256": "b" * 64,
             "candidate_manifest_sha256": module._sha256_file(candidate_path),
             "automatic_passed": True,
             "manual_steps": manual,
             "uat_passed": True,
             "overall": "UAT_PASS",
+            "release_authority": False,
+            "publication_authority": False,
+            "production_ready": False,
             "updated_at": "2026-08-22T00:20:00+00:00",
         }
         phase_b_path = tmp / "phase-b.json"
@@ -114,9 +130,12 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
             report = module.finalize(app, phase_a, phase_b)
             self.assertTrue(report["both_phases_passed"])
             self.assertFalse(report["release_authority"])
+            self.assertFalse(report["publication_authority"])
             self.assertFalse(report["production_ready"])
             self.assertEqual(report["binding"]["runtime_wave"], 76)
             self.assertEqual(report["binding"]["attestation_wave"], 85)
+            self.assertEqual(report["binding"]["source_contract_wave"], 95)
+            self.assertEqual(report["binding"]["source_release_state"], "LOCKED_SOURCE")
             self.assertEqual(report["phase_a"]["passed_scenarios"], 5)
             self.assertEqual(report["phase_b"]["passed_gates"], 12)
             encoded = json.dumps(report, ensure_ascii=False)
@@ -160,11 +179,13 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
     def test_packager_binds_combined_finalization_helpers(self):
         source = (ROOT / "scripts/package_current_arm64_candidate.py").read_text(encoding="utf-8")
         self.assertIn("COMBINED_ATTESTATION_WAVE = 85", source)
+        self.assertIn("SOURCE_CONTRACT_WAVE = 95", source)
         self.assertIn("combined_finalizer_sha256", source)
         self.assertIn("finalize_command_sha256", source)
         self.assertIn("combined_attestation_required_before_release_transport", source)
         verifier = (ROOT / "scripts/verify_physical_uat_handoff.py").read_text(encoding="utf-8")
         self.assertIn("FINALIZE_PHYSICAL_UAT.py", verifier)
+        self.assertIn("SOURCE_CONTRACT_WAVE = 95", verifier)
         self.assertIn("combined attestation release-transport boundary missing", verifier)
 
     def test_release_stays_fail_closed_as_w86_supersedes_transport_hard_stop(self):
@@ -174,6 +195,7 @@ class Wave85CombinedPhysicalUATAttestationTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
         self.assertIn("PHYSICAL_UAT_ATTESTATION_B64", workflow)
         self.assertIn("verify_combined_uat_attestation.py", workflow)
+        self.assertIn("--expected-source-release-state PREPARED_RELEASE", workflow)
         self.assertIn("release_candidate_gate.py", workflow)
         gate = workflow.index("release_candidate_gate.py")
         package = workflow.index("Package immutable release asset")

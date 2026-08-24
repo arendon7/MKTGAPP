@@ -67,7 +67,8 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
             self.assertFalse(external[name])
         self.assertIn("W91", report["notes"])
         self.assertIn("W92", report["notes"])
-        self.assertIn("round-trip", report["notes"])
+        self.assertIn("ZIP trust", report["notes"])
+        self.assertIn("external runtime fact", report["notes"])
 
     def test_w91_remains_necessary_but_is_not_the_last_publication_gate(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

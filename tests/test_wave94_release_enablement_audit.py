@@ -21,11 +21,11 @@ def _module(path: Path, name: str):
 
 
 class Wave94ReleaseEnablementAuditTests(unittest.TestCase):
-    def test_source_advances_to_guard_94_but_remains_fail_closed(self):
+    def test_source_preserves_guard_94_under_later_guards_and_remains_fail_closed(self):
         report = _module(AUDIT, "w94_audit").audit(ROOT)
-        self.assertEqual(report["schema"], "binario.marketing.release-enablement-audit.v6")
+        self.assertTrue(report["schema"].startswith("binario.marketing.release-enablement-audit.v"))
         self.assertEqual(report["runtime_wave"], 76)
-        self.assertEqual(report["certification_guard_wave"], 94)
+        self.assertGreaterEqual(report["certification_guard_wave"], 94)
         self.assertEqual(report["status"], "BLOCKED")
         self.assertEqual(report["source_status"], "BLOCKED")
         self.assertFalse(report["operational_authorization"])
@@ -122,7 +122,7 @@ class Wave94ReleaseEnablementAuditTests(unittest.TestCase):
         ):
             self.assertIn(name, external)
             self.assertFalse(external[name])
-        for marker in ("Physical UAT evidence", "Apple credentials", "W91", "W92", "W93", "W94"):
+        for marker in ("physical UAT", "W91", "W92", "W93", "W94", "external runtime fact"):
             self.assertIn(marker, report["notes"])
 
     def test_release_boundary_and_workflow_count_stay_fail_closed(self):

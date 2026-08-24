@@ -15,6 +15,9 @@ RAW_UAT_SCHEMA = "binario.marketing.release-uat-evidence.v1"
 COMBINED_UAT_SCHEMA = "binario.marketing.combined-physical-uat-attestation.v1"
 EXPECTED_RUNTIME_WAVE = 76
 EXPECTED_GUARD_WAVE = 84
+EXPECTED_SOURCE_CONTRACT_WAVE = 95
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -59,6 +62,59 @@ def _source_digest(source: Path) -> str:
     return digest.hexdigest()
 
 
+def _combined_source_contract(binding: dict[str, Any]) -> tuple[str | None, str | None, bool]:
+    version = str(binding.get("product_version") or "")
+    state = binding.get("source_release_state")
+    tag = binding.get("source_release_tag")
+    wave = binding.get("source_contract_wave")
+    # Legacy W85/W86 evidence remains diagnostically readable as LOCKED_SOURCE only.
+    if state is None and tag is None:
+        state = LOCKED_SOURCE
+    if state == LOCKED_SOURCE:
+        return LOCKED_SOURCE, None, bool(tag is None and wave in {None, EXPECTED_SOURCE_CONTRACT_WAVE})
+    if state == PREPARED_RELEASE:
+        valid = bool(
+            wave == EXPECTED_SOURCE_CONTRACT_WAVE
+            and tag == f"v{version}"
+            and ".dev" not in version.lower()
+            and "rc" not in version.lower()
+        )
+        return PREPARED_RELEASE, str(tag) if tag is not None else None, valid
+    return str(state) if state is not None else None, str(tag) if tag is not None else None, False
+
+
+def _candidate_source_contract(candidate: dict[str, Any] | None) -> tuple[str | None, str | None, bool]:
+    if not candidate:
+        return None, None, False
+    boundary = candidate.get("release_boundary") if isinstance(candidate.get("release_boundary"), dict) else {}
+    version = str(candidate.get("product_version") or "")
+    state = candidate.get("source_release_state") or boundary.get("source_release_state")
+    ready = boundary.get("release_ready")
+    tag = boundary.get("release_tag")
+    wave = candidate.get("source_contract_wave")
+    if state is None and ready is False and tag is None:
+        state = LOCKED_SOURCE
+    authority_clear = bool(
+        boundary.get("operational_authorization") in {None, False}
+        and boundary.get("release_authority") in {None, False}
+        and boundary.get("publication_authority") in {None, False}
+        and boundary.get("production_ready") is False
+    )
+    if state == LOCKED_SOURCE:
+        return LOCKED_SOURCE, None, bool(ready is False and tag is None and wave in {None, EXPECTED_SOURCE_CONTRACT_WAVE} and authority_clear)
+    if state == PREPARED_RELEASE:
+        valid = bool(
+            wave == EXPECTED_SOURCE_CONTRACT_WAVE
+            and ready is True
+            and tag == f"v{version}"
+            and ".dev" not in version.lower()
+            and "rc" not in version.lower()
+            and authority_clear
+        )
+        return PREPARED_RELEASE, str(tag) if tag is not None else None, valid
+    return str(state) if state is not None else None, str(tag) if tag is not None else None, False
+
+
 def _combined_uat_valid(data: dict[str, Any]) -> bool:
     if data.get("schema") != COMBINED_UAT_SCHEMA:
         return False
@@ -66,6 +122,16 @@ def _combined_uat_valid(data: dict[str, Any]) -> bool:
     phase_a = data.get("phase_a") or {}
     phase_b = data.get("phase_b") or {}
     if not isinstance(binding, dict) or not isinstance(phase_a, dict) or not isinstance(phase_b, dict):
+        return False
+    certification_guard = binding.get("certification_guard_wave")
+    candidate_guard = binding.get("candidate_guard_wave")
+    if certification_guard is not None and candidate_guard is not None and certification_guard != candidate_guard:
+        return False
+    guard = certification_guard if certification_guard is not None else candidate_guard
+    if guard != EXPECTED_GUARD_WAVE:
+        return False
+    _, _, source_contract_valid = _combined_source_contract(binding)
+    if not source_contract_valid:
         return False
     try:
         required_scenarios = int(phase_a.get("required_scenarios") or 0)
@@ -79,6 +145,8 @@ def _combined_uat_valid(data: dict[str, Any]) -> bool:
     if required_gates != 12 or passed_gates != required_gates or phase_b.get("overall") != "UAT_PASS":
         return False
     if data.get("both_phases_passed") is not True or data.get("release_authority") is not False or data.get("production_ready") is not False:
+        return False
+    if data.get("publication_authority") not in {None, False}:
         return False
     expected_sha = str(data.get("attestation_sha256") or "")
     if len(expected_sha) != 64:
@@ -109,6 +177,8 @@ def _uat_passed(
             return False, data, None
         if architecture and data.get("architecture") not in {architecture, "universal"}:
             return False, data, None
+        if data.get("source_contract_wave") != EXPECTED_SOURCE_CONTRACT_WAVE:
+            return False, data, None
         if candidate_source_sha256 is not None and data.get("candidate_source_sha256") != candidate_source_sha256:
             return False, data, None
         if candidate_manifest_sha256 is not None and data.get("candidate_manifest_sha256") != candidate_manifest_sha256:
@@ -128,7 +198,7 @@ def _uat_passed(
             return False, data, None
         if binding.get("architecture") != "arm64":
             return False, data, None
-        if binding.get("runtime_wave") != EXPECTED_RUNTIME_WAVE or binding.get("certification_guard_wave") != EXPECTED_GUARD_WAVE:
+        if binding.get("runtime_wave") != EXPECTED_RUNTIME_WAVE:
             return False, data, None
         source_sha = str(binding.get("candidate_source_sha256") or "")
         if current_source_sha256 is None or source_sha != current_source_sha256:
@@ -249,7 +319,7 @@ def main() -> int:
     )
 
     if embedded:
-        source_keys = ("version", "release_ready_flag", "release_tag", "git_sha", "architecture")
+        source_keys = ("version", "source_release_state", "release_ready_flag", "release_tag", "git_sha", "architecture")
         report["embedded_source_state_matches"] = all(report.get(key) == embedded.get(key) for key in source_keys)
         if not report["embedded_source_state_matches"]:
             _append_blocker(report, "embedded_state_mismatch", "candidate", "El estado embebido del candidato no coincide con la evaluación reproducida.")
@@ -284,6 +354,7 @@ def main() -> int:
 
     candidate_consistent = None
     candidate_origin: dict[str, Any] = {}
+    candidate_source_state, candidate_source_tag, candidate_source_contract_valid = _candidate_source_contract(candidate)
     if provenance and architecture == "arm64" and rebuild is None:
         candidate_origin = candidate.get("build_origin") if candidate and isinstance(candidate.get("build_origin"), dict) else {}
         trusted_origin = bool(
@@ -298,6 +369,8 @@ def main() -> int:
             and candidate.get("schema") == CANDIDATE_SCHEMA
             and candidate.get("role") == "PHYSICAL_UAT_CANDIDATE_ONLY"
             and trusted_origin
+            and candidate_source_contract_valid
+            and candidate.get("source_contract_wave") == EXPECTED_SOURCE_CONTRACT_WAVE
             and candidate.get("git_sha") == git_sha
             and candidate.get("architecture") == architecture
             and candidate.get("product_version") == product_version
@@ -308,7 +381,7 @@ def main() -> int:
             and candidate_source_sha256 == current_source_sha256
         )
         if not candidate_consistent:
-            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto W84 válido de origen main confiable.")
+            _append_blocker(report, "physical_uat_candidate_manifest_missing_or_invalid", "uat", "El bundle arm64 no contiene un manifiesto físico válido de origen main confiable y contrato W95.")
 
     if uat is not None and not uat_passed:
         if uat.get("schema") == RAW_UAT_SCHEMA and architecture == "arm64":
@@ -321,6 +394,9 @@ def main() -> int:
             if binding.get("git_sha") == git_sha and binding.get("candidate_source_sha256") != current_source_sha256:
                 _append_blocker(report, "physical_uat_source_equivalence_mismatch", "uat", "La atestación física no corresponde al digest de fuente del build de distribución actual.")
 
+    attestation_binding = uat.get("binding") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else {}
+    uat_source_state, uat_source_tag, uat_source_contract_valid = _combined_source_contract(attestation_binding) if attestation_binding else (None, None, False)
+
     if args.production:
         if distribution is None:
             _append_blocker(report, "distribution_trust_evidence_missing", "distribution", "El gate de producción exige evidencia verificada de Developer ID + notarización + Gatekeeper.")
@@ -328,13 +404,22 @@ def main() -> int:
             _append_blocker(report, "distribution_rebuild_manifest_missing_or_invalid", "distribution", "El gate de producción exige un manifiesto de rebuild de distribución source-equivalent válido.")
         if uat is None or uat.get("schema") != COMBINED_UAT_SCHEMA or uat_binding_mode not in {"source_equivalent_arm64_rebuild", "source_equivalent_cross_arch_distribution"}:
             _append_blocker(report, "distribution_requires_combined_source_equivalent_uat", "uat", "Un rebuild de distribución debe autorizarse mediante la atestación física combinada y equivalencia exacta de fuente.")
+        if not uat_source_contract_valid or uat_source_state != PREPARED_RELEASE:
+            _append_blocker(report, "prepared_release_uat_required", "uat", "Producción exige UAT física ejecutada sobre el mismo commit PREPARED_RELEASE y contrato W95; evidencia LOCKED_SOURCE/legacy no puede autorizar publicación.")
+        if uat_source_tag != report.get("release_tag"):
+            _append_blocker(report, "prepared_release_tag_mismatch", "uat", "La UAT física preparada no está ligada al RELEASE_TAG canónico del mismo commit.")
+        if report.get("source_release_state") != PREPARED_RELEASE:
+            _append_blocker(report, "prepared_release_source_required", "source", "El build de distribución debe provenir del mismo commit PREPARED_RELEASE físicamente probado.")
 
-    attestation_binding = uat.get("binding") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else {}
     report.update({
+        "source_contract_wave": EXPECTED_SOURCE_CONTRACT_WAVE,
         "app_evaluated": str(args.app.expanduser().resolve()) if args.app else None,
         "uat_evidence": str(args.uat_evidence.expanduser().resolve()) if args.uat_evidence else None,
         "uat_evidence_file_sha256": uat_evidence_file_sha256,
         "uat_attestation_sha256": uat.get("attestation_sha256") if uat and uat.get("schema") == COMBINED_UAT_SCHEMA else None,
+        "uat_source_contract_wave": attestation_binding.get("source_contract_wave") if attestation_binding else (uat.get("source_contract_wave") if uat else None),
+        "uat_source_release_state": uat_source_state,
+        "uat_source_release_tag": uat_source_tag,
         "distribution_evidence": str(args.distribution_evidence.expanduser().resolve()) if args.distribution_evidence else None,
         "distribution_evidence_file_sha256": distribution_evidence_file_sha256,
         "distribution_trust_schema": distribution.get("schema") if distribution else None,
@@ -351,6 +436,8 @@ def main() -> int:
         "candidate_schema": candidate.get("schema") if candidate else None,
         "candidate_role": candidate.get("role") if candidate else None,
         "candidate_build_origin": candidate_origin,
+        "candidate_source_release_state": candidate_source_state,
+        "candidate_source_release_tag": candidate_source_tag,
         "candidate_source_sha256": candidate_source_sha256,
         "current_source_sha256": current_source_sha256,
         "candidate_manifest_sha256": candidate_manifest_sha256,

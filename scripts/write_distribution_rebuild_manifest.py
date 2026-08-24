@@ -13,6 +13,9 @@ SCHEMA = "binario.marketing.distribution-rebuild.v1"
 PURPOSE = "SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD"
 RUNTIME_WAVE = 76
 RUNTIME_ENTRYPOINT = "service_wave76_app"
+SOURCE_CONTRACT_WAVE = 95
+LOCKED_SOURCE = "LOCKED_SOURCE"
+PREPARED_RELEASE = "PREPARED_RELEASE"
 MANIFEST_NAME = "DISTRIBUTION_REBUILD.json"
 
 
@@ -40,11 +43,17 @@ def _source_digest(source: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_version(source: Path) -> tuple[str, bool, str | None]:
+def _load_version(source: Path) -> tuple[str, bool, str | None, str]:
     sys.path.insert(0, str(source / "src"))
     try:
+        from binario_marketing.release_readiness import source_release_state
         from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
-        return __version__, RELEASE_READY, RELEASE_TAG
+        state = source_release_state(
+            version=__version__,
+            release_ready=bool(RELEASE_READY),
+            release_tag=RELEASE_TAG,
+        )
+        return __version__, bool(RELEASE_READY), RELEASE_TAG, state
     finally:
         try:
             sys.path.remove(str(source / "src"))
@@ -64,7 +73,7 @@ def build_manifest(app: Path, *, origin: dict[str, Any] | None = None) -> dict[s
     source = resources / "source"
     provenance = _json(resources / "BUILD_PROVENANCE.json")
     launch = (resources / "launch.py").read_text(encoding="utf-8")
-    version, release_ready, release_tag = _load_version(source)
+    version, release_ready, release_tag, source_state = _load_version(source)
     actual_origin = origin if origin is not None else _origin()
     event = str(actual_origin.get("event") or "local")
     ref = str(actual_origin.get("ref") or "local")
@@ -79,6 +88,10 @@ def build_manifest(app: Path, *, origin: dict[str, Any] | None = None) -> dict[s
         raise ValueError(f"distribution rebuild runtime is not Wave {RUNTIME_WAVE}")
     if (resources / "PHYSICAL_UAT_CANDIDATE.json").exists() or (resources / "PHYSICAL_UAT_CANDIDATE.md").exists():
         raise ValueError("distribution rebuild must not contain physical-UAT candidate identity")
+    if eligible and source_state != PREPARED_RELEASE:
+        raise ValueError("tag distribution rebuild requires PREPARED_RELEASE source contract")
+    if eligible and release_tag != ref.removeprefix("refs/tags/"):
+        raise ValueError("distribution rebuild tag/source contract mismatch")
     return {
         "schema": SCHEMA,
         "purpose": PURPOSE,
@@ -88,10 +101,25 @@ def build_manifest(app: Path, *, origin: dict[str, Any] | None = None) -> dict[s
         "runtime_wave": RUNTIME_WAVE,
         "runtime_entrypoint": RUNTIME_ENTRYPOINT,
         "source_sha256": _source_digest(source),
+        "source_contract_wave": SOURCE_CONTRACT_WAVE,
+        "source_release_state": source_state,
+        "source_release_tag": release_tag,
         "build_origin": {"event": event, "ref": ref, "eligible_distribution_origin": eligible},
-        "release_contract": {"release_ready": bool(release_ready), "release_tag": release_tag},
-        "physical_uat": {"claimed": False, "exact_bundle_tested": False, "authorization_mode": "source_equivalent_only"},
+        "release_contract": {
+            "source_release_state": source_state,
+            "release_ready": release_ready,
+            "release_tag": release_tag,
+            "operational_authorization": False,
+            "release_authority": False,
+            "publication_authority": False,
+        },
+        "physical_uat": {
+            "claimed": False,
+            "exact_bundle_tested": False,
+            "authorization_mode": "source_equivalent_only",
+        },
         "release_authority": False,
+        "publication_authority": False,
     }
 
 
@@ -126,6 +154,9 @@ def main() -> int:
         "git_sha": manifest["git_sha"],
         "architecture": manifest["architecture"],
         "source_sha256": manifest["source_sha256"],
+        "source_contract_wave": manifest["source_contract_wave"],
+        "source_release_state": manifest["source_release_state"],
+        "source_release_tag": manifest["source_release_tag"],
         "physical_uat_claimed": manifest["physical_uat"]["claimed"],
         "verified": bool(args.verify),
     }, ensure_ascii=False, indent=2, sort_keys=True))
