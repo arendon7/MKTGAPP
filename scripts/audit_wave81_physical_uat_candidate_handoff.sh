@@ -59,7 +59,7 @@ assert row['sandbox_boundary']['functional_sandbox_is_release_evidence'] is Fals
 assert row['sandbox_boundary']['synthetic_company_is_physical_uat_eligible'] is False, row
 PY
 /usr/bin/grep -q 'Physical UAT Candidate' "$SUMMARY"
-/usr/bin/grep -q 'Source contract guard: `Wave 95`' "$SUMMARY"
+/usr/bin/grep -q 'Source contract guard: Wave 95' "$SUMMARY"
 /usr/bin/grep -q 'Release authority: \*\*NO\*\*' "$SUMMARY"
 /usr/bin/grep -q 'Publication authority: \*\*NO\*\*' "$SUMMARY"
 /usr/bin/grep -q 'Production ready: \*\*NO\*\*' "$SUMMARY"
