@@ -84,7 +84,7 @@ def _prepared_attestation(module, *, include_w97: bool = True, extracted_source_
         }
         core["w97_integrity"] = {
             "schema": module.W97_INTEGRITY_SCHEMA,
-            "handoff_verification_sha256": "9" * 64,
+            "handoff_verification_sha256": module._handoff_report_sha256(handoff),
             "handoff_verification": handoff,
             "bundle_signature_verified": True,
             "codesign_requirement": ["--deep", "--strict"],
@@ -111,7 +111,9 @@ class Wave97FinalIntegrityTransportTests(unittest.TestCase):
             self.assertEqual(set(report["phase_a_optional_ids"]), module.EXPECTED_OPTIONAL_PHASE_A_IDS)
             self.assertTrue(report["w97_integrity_required"])
             self.assertTrue(report["w97_integrity_verified"])
-            self.assertEqual(report["w97_handoff_verification_sha256"], "9" * 64)
+            expected = module._handoff_report_sha256(row["w97_integrity"]["handoff_verification"])
+            self.assertEqual(report["w97_handoff_verification_sha256"], expected)
+            self.assertTrue(report["w98_handoff_seal_verified"])
 
     def test_prepared_attestation_without_w97_seal_is_rejected_even_with_valid_digest(self):
         module = _module()
@@ -145,6 +147,20 @@ class Wave97FinalIntegrityTransportTests(unittest.TestCase):
             row["attestation_sha256"] = module._digest(core)
             path.write_text(json.dumps(row), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "required ID set drift"):
+                module.verify(path, expected_source_release_state="PREPARED_RELEASE", expected_release_tag="v0.9.0")
+
+    def test_rehashed_attestation_cannot_carry_invented_handoff_file_digest(self):
+        module = _module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "combined.json"
+            row = _prepared_attestation(module)
+            row["w97_integrity"]["handoff_verification_sha256"] = "9" * 64
+            core = dict(row)
+            core.pop("generated_at", None)
+            core.pop("attestation_sha256", None)
+            row["attestation_sha256"] = module._digest(core)
+            path.write_text(json.dumps(row), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "handoff verification SHA-256 mismatch"):
                 module.verify(path, expected_source_release_state="PREPARED_RELEASE", expected_release_tag="v0.9.0")
 
     def test_finalize_command_rechecks_codesign_after_legacy_finalizer_before_w97_seal(self):
