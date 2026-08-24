@@ -32,12 +32,15 @@ class Wave46ReleaseReadinessTests(unittest.TestCase):
     def test_full_production_contract_requires_every_gate(self):
         report = evaluate_release_readiness(version="1.0.0", release_ready=True, release_tag="v1.0.0", signing_mode="developer_id", notarized=True, uat_passed=True, git_sha="a" * 40, architecture="arm64")
         self.assertEqual(report["stage"], "PRODUCTION_READY")
+        self.assertTrue(report["operational_inputs_complete"])
         self.assertTrue(report["production_ready"])
         self.assertEqual(report["blocker_codes"], [])
 
     def test_release_candidate_remains_blocked_without_distribution_and_uat(self):
         report = evaluate_release_readiness(version="1.0.0", release_ready=True, release_tag="v1.0.0", signing_mode="ad_hoc", notarized=False, uat_passed=False)
         self.assertEqual(report["stage"], "RELEASE_CANDIDATE_BLOCKED")
+        self.assertFalse(report["operational_inputs_complete"])
+        self.assertFalse(report["production_ready"])
         self.assertIn("distribution_signing_missing", report["blocker_codes"])
         self.assertIn("notarization_missing", report["blocker_codes"])
         self.assertIn("physical_uat_missing", report["blocker_codes"])
