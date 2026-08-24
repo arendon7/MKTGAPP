@@ -22,10 +22,17 @@ X86="$ROOT/scripts/build_full_mac_current_x86_64.sh"
 
 PYTHON_BIN="${PYTHON:-python3}"
 PYTHONPATH="$ROOT/src" "$PYTHON_BIN" - <<'PY'
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
-assert __version__ == "0.9.0.dev1", __version__
-assert RELEASE_READY is False, RELEASE_READY
-assert RELEASE_TAG is None, RELEASE_TAG
+
+assert __version__ == "0.9.0", __version__
+assert RELEASE_READY is True, RELEASE_READY
+assert RELEASE_TAG == "v0.9.0", RELEASE_TAG
+assert source_release_state() == PREPARED_RELEASE
+readiness = source_release_readiness()
+assert readiness["source_ready"] is True, readiness
+assert readiness["operational_inputs_complete"] is False, readiness
+assert readiness["production_ready"] is False, readiness
 PY
 
 echo 'WAVE 79 PERSISTENT RELEASE RUNTIME PARITY AUDIT PASS'
