@@ -37,11 +37,14 @@ class Wave89ReleaseEnablementReadinessAuditTests(unittest.TestCase):
     def test_audit_never_claims_external_runtime_evidence(self):
         report = _module().audit(ROOT)
         source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("physical_uat_attestation_verified_at_tag_runtime", report["external_runtime_requirements"])
-        self.assertIn("apple_distribution_credentials_verified_at_tag_runtime", report["external_runtime_requirements"])
+        external = report["external_runtime_requirements"]
+        self.assertIn("physical_uat_attestation_verified_at_tag_runtime", external)
+        self.assertIn("apple_distribution_credentials_verified_at_tag_runtime", external)
+        self.assertFalse(external["physical_uat_attestation_verified_at_tag_runtime"])
+        self.assertFalse(external["apple_distribution_credentials_verified_at_tag_runtime"])
         self.assertFalse(report["operational_authorization"])
-        self.assertIn("Physical UAT evidence", report["notes"])
-        self.assertIn("Apple credentials", report["notes"])
+        self.assertIn("physical UAT", report["notes"])
+        self.assertIn("external runtime fact", report["notes"])
         self.assertNotIn("RELEASE_READY = True", source)
         self.assertNotIn("gh release create", source)
 
