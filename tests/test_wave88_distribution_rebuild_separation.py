@@ -33,7 +33,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             folder.mkdir(parents=True, exist_ok=True)
         (source / "src/binario_marketing/__init__.py").write_text("", encoding="utf-8")
         (source / "src/binario_marketing/version.py").write_text(
-            '__version__ = "0.9.0.dev1"\nRELEASE_READY = False\nRELEASE_TAG = None\n', encoding="utf-8"
+            '__version__ = "0.9.0"\nRELEASE_READY = True\nRELEASE_TAG = "v0.9.0"\n', encoding="utf-8"
         )
         (source / "web/app.js").write_text("console.log('w88')\n", encoding="utf-8")
         (source / "apps/README.md").write_text("apps\n", encoding="utf-8")
@@ -41,7 +41,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             "schema": "binario.marketing.full-mac-build.v4",
             "git_sha": "a" * 40,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
         }), encoding="utf-8")
         (resources / "launch.py").write_text("from binario_marketing.service_wave76_app import serve\n", encoding="utf-8")
         return app
@@ -62,6 +62,9 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             manifest = rebuild.build_manifest(app, origin=origin)
             self.assertEqual(manifest["schema"], rebuild.SCHEMA)
             self.assertEqual(manifest["purpose"], "SOURCE_EQUIVALENT_DISTRIBUTION_REBUILD")
+            self.assertEqual(manifest["source_contract_wave"], 95)
+            self.assertEqual(manifest["source_release_state"], "PREPARED_RELEASE")
+            self.assertEqual(manifest["source_release_tag"], "v0.9.0")
             self.assertFalse(manifest["physical_uat"]["claimed"])
             self.assertFalse(manifest["physical_uat"]["exact_bundle_tested"])
             self.assertEqual(manifest["physical_uat"]["authorization_mode"], "source_equivalent_only")
@@ -114,6 +117,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
             "distribution_requires_combined_source_equivalent_uat",
             "source_equivalent_arm64_rebuild",
             "source_equivalent_cross_arch_distribution",
+            "prepared_release_uat_required",
         ):
             self.assertIn(marker, source)
         self.assertIn('candidate_origin.get("ref") == "refs/heads/main"', source)
