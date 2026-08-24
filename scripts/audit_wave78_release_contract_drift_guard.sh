@@ -35,12 +35,18 @@ source = Path(sys.argv[1])
 data = Path(sys.argv[2]) / "data"
 sys.path.insert(0, str(source / "src"))
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave76_app import AppRuntime
 from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
 
-assert __version__ == "0.9.0.dev1", __version__
-assert RELEASE_READY is False, RELEASE_READY
-assert RELEASE_TAG is None, RELEASE_TAG
+assert __version__ == "0.9.0", __version__
+assert RELEASE_READY is True, RELEASE_READY
+assert RELEASE_TAG == "v0.9.0", RELEASE_TAG
+assert source_release_state() == PREPARED_RELEASE
+source_readiness = source_release_readiness()
+assert source_readiness["source_ready"] is True, source_readiness
+assert source_readiness["operational_inputs_complete"] is False, source_readiness
+assert source_readiness["production_ready"] is False, source_readiness
 
 runtime = AppRuntime.create(source, data)
 try:
@@ -61,15 +67,15 @@ try:
         "current_build": {
             "git_sha": "a" * 40,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
             "signing_mode": "ad_hoc",
             "notarized": False,
         },
         "physical_uat": {"accepted_for_current_build": False},
         "release_readiness": {
-            "stage": "BLOCKED",
+            "stage": "RELEASE_CANDIDATE_BLOCKED",
             "production_ready": False,
-            "blocker_codes": ["physical_uat_missing", "development_version"],
+            "blocker_codes": ["physical_uat_missing", "distribution_signing_missing", "notarization_missing"],
         },
     }
     canonical_preflight = {
