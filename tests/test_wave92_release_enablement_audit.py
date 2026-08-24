@@ -4,13 +4,14 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
+
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "scripts" / "release_enablement_audit.py"
 ROUNDTRIP = ROOT / "scripts" / "verify_packaged_release_asset.py"
 AUTH = ROOT / "scripts" / "release_artifact_authorization.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "persistent-release.yml"
 PUBLISHER = ROOT / "scripts" / "publish_release_transaction.sh"
-VERSION = ROOT / "src" / "binario_marketing" / "version.py"
 
 
 def _module(path: Path, name: str):
@@ -22,10 +23,11 @@ def _module(path: Path, name: str):
 
 
 class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
-    def test_current_source_remains_blocked_and_has_no_publication_authority(self):
-        report = _module(AUDIT, "w92_audit_blocked").audit(ROOT)
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertEqual(report["source_status"], "BLOCKED")
+    def test_current_source_is_prepared_and_has_no_publication_authority(self):
+        report = _module(AUDIT, "w92_audit_prepared").audit(ROOT)
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertEqual(report["runtime_wave"], 76)
         self.assertGreaterEqual(report["certification_guard_wave"], 92)
         self.assertFalse(report["operational_authorization"])
@@ -33,9 +35,6 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
         self.assertFalse(report["publication_authority"])
         self.assertFalse(report["production_ready"])
         self.assertFalse(report["mutations_performed"])
-        self.assertIn("development_version", report["blocker_codes"])
-        self.assertIn("release_flag_false", report["blocker_codes"])
-        self.assertIn("release_tag_missing", report["blocker_codes"])
 
     def test_all_w92_structural_gates_are_present(self):
         report = _module(AUDIT, "w92_audit_structure").audit(ROOT)
@@ -99,9 +98,11 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
         self.assertIn("both_gatekeeper_assessments_pass_after_roundtrip", source)
 
     def test_release_boundary_and_workflow_count_remain_closed(self):
-        version = VERSION.read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        source = source_release_readiness()
+        self.assertTrue(source["source_ready"])
+        self.assertFalse(source["operational_inputs_complete"])
+        self.assertFalse(source["production_ready"])
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
