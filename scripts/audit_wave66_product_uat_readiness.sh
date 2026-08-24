@@ -39,8 +39,29 @@ VERSION="$SRC/src/binario_marketing/version.py"
 ! /usr/bin/grep -q 'supabase' "$UI"
 ! /usr/bin/grep -q 'vercel' "$UI"
 
-/usr/bin/grep -q '0.9.0.dev1' "$VERSION"
-/usr/bin/grep -q 'RELEASE_READY = False' "$VERSION"
+# W66's product-UAT surface must remain valid under both W95 source states.
+# A later PREPARED_RELEASE source is not physical-UAT evidence and is never
+# production authority by itself.
+"$PY" -I -B - "$SRC/src" <<'PY'
+from binario_marketing.release_readiness import LOCKED_SOURCE, PREPARED_RELEASE, source_release_readiness, source_release_state
+from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
+
+state = source_release_state()
+assert state in {LOCKED_SOURCE, PREPARED_RELEASE}, state
+report = source_release_readiness()
+assert report['production_ready'] is False, report
+assert report['operational_inputs_complete'] is False, report
+if state == LOCKED_SOURCE:
+    assert RELEASE_READY is False
+    assert RELEASE_TAG is None
+    assert report['source_ready'] is False
+else:
+    assert RELEASE_READY is True
+    assert RELEASE_TAG == f'v{__version__}'
+    assert report['source_ready'] is True
+    assert report['stage'] == 'SOURCE_CONTRACT_READY', report
+print(f'Wave 66 source release contract PASS: {state} / {__version__}')
+PY
 
 "$PY" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path
