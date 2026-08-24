@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from binario_marketing import __version__
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.version import MACOS_BUNDLE_VERSION, MACOS_SHORT_VERSION, RELEASE_READY, RELEASE_TAG
 
 
@@ -16,13 +17,14 @@ class VersionContractTests(unittest.TestCase):
         init = (ROOT / "src/binario_marketing/__init__.py").read_text(encoding="utf-8")
         self.assertIn('dynamic = ["version"]', pyproject)
         self.assertIn('version = {attr = "binario_marketing.version.__version__"}', pyproject)
-        self.assertNotIn('version = "0.9.0.dev1"', pyproject)
+        self.assertNotIn('version = "0.9.0"', pyproject)
         self.assertIn("from .version import __version__", init)
-        self.assertEqual(__version__, "0.9.0.dev1")
+        self.assertEqual(__version__, "0.9.0")
 
     def test_macos_version_fields_are_explicit_and_valid(self):
         self.assertRegex(MACOS_SHORT_VERSION, r"^[0-9]+(?:\.[0-9]+){1,2}$")
         self.assertRegex(MACOS_BUNDLE_VERSION, r"^[0-9]+(?:\.[0-9]+){0,2}$")
+        self.assertEqual(MACOS_SHORT_VERSION, __version__)
 
     def test_full_mac_builder_consumes_canonical_version(self):
         builder = (ROOT / "scripts/build_full_mac_app.sh").read_text(encoding="utf-8")
@@ -35,17 +37,33 @@ class VersionContractTests(unittest.TestCase):
         self.assertIn("plist_short == MACOS_SHORT_VERSION", audit)
         self.assertIn("plist_build == MACOS_BUNDLE_VERSION", audit)
 
-    def test_release_is_fail_closed_until_explicitly_certified(self):
-        self.assertFalse(RELEASE_READY)
-        self.assertIsNone(RELEASE_TAG)
+    def test_release_source_is_prepared_but_not_operationally_authorized(self):
+        self.assertTrue(RELEASE_READY)
+        self.assertEqual(RELEASE_TAG, "v0.9.0")
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        readiness = source_release_readiness()
+        self.assertTrue(readiness["source_ready"])
+        self.assertEqual(readiness["stage"], "SOURCE_CONTRACT_READY")
+        self.assertFalse(readiness["operational_inputs_complete"])
+        self.assertFalse(readiness["production_ready"])
+
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/verify_release_tag.py"), "--tag", f"v{__version__}"],
+            [sys.executable, str(ROOT / "scripts/verify_release_tag.py"), "--tag", RELEASE_TAG],
             cwd=ROOT,
             text=True,
             capture_output=True,
         )
-        self.assertEqual(proc.returncode, 4)
-        self.assertIn("release publishing is disabled", proc.stderr)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("RELEASE TAG PASS", proc.stdout)
+
+        mismatch = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/verify_release_tag.py"), "--tag", "v0.9.1"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(mismatch.returncode, 4)
+        self.assertIn("tag mismatch", mismatch.stderr)
 
     def test_persistent_release_has_preflight_before_native_builds(self):
         workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
