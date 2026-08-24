@@ -74,7 +74,8 @@ def evaluate_release_readiness(
     if uat_passed is not None and uat_passed is not True:
         blockers.append(ReleaseBlocker("physical_uat_missing", "uat", "No existe evidencia PASS de UAT física para este candidato."))
 
-    operational_inputs_complete = signing_mode is not None and notarized is not None and uat_passed is not None
+    operational_inputs_present = signing_mode is not None and notarized is not None and uat_passed is not None
+    operational_inputs_complete = signing_mode == "developer_id" and notarized is True and uat_passed is True
     codes = [row.code for row in blockers]
     source_blocked = any(row.scope == "source" for row in blockers)
     distribution_blocked = any(row.scope == "distribution" for row in blockers)
@@ -83,9 +84,9 @@ def evaluate_release_readiness(
     production_ready = bool(source_ready and operational_inputs_complete and not blockers)
     if source_blocked:
         stage = "DEVELOPMENT"
-    elif not operational_inputs_complete:
+    elif not operational_inputs_present:
         stage = "SOURCE_CONTRACT_READY"
-    elif distribution_blocked or uat_blocked:
+    elif not operational_inputs_complete or distribution_blocked or uat_blocked:
         stage = "RELEASE_CANDIDATE_BLOCKED"
     else:
         stage = "PRODUCTION_READY"

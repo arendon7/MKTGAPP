@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave70_app import AppRuntime, create_server
 
 
@@ -21,7 +22,7 @@ class Wave70ReleaseEvidenceTests(unittest.TestCase):
             "source": "BUILD_PROVENANCE.json",
             "git_sha": "a" * 40,
             "architecture": "arm64",
-            "product_version": "0.9.0.dev1",
+            "product_version": "0.9.0",
             "release_channel": "development",
             "signing_mode": "ad_hoc",
             "notarized": False,
@@ -67,13 +68,14 @@ class Wave70ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(payload["physical_uat"]["accepted"]["session_id"], session["id"])
         blockers = payload["release_readiness"]["blocker_codes"]
         self.assertNotIn("physical_uat_missing", blockers)
-        for expected in (
-            "development_version", "release_flag_false", "release_tag_missing",
-            "distribution_signing_missing", "notarization_missing",
-        ):
+        for removed_source_blocker in ("development_version", "release_flag_false", "release_tag_missing"):
+            self.assertNotIn(removed_source_blocker, blockers)
+        for expected in ("distribution_signing_missing", "notarization_missing"):
             self.assertIn(expected, blockers)
         self.assertFalse(payload["release_readiness"]["production_ready"])
-        self.assertFalse(payload["release_boundary"]["release_ready"])
+        self.assertTrue(payload["release_boundary"]["release_ready"])
+        self.assertEqual(payload["release_boundary"]["release_tag"], "v0.9.0")
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
 
     def test_stale_git_sha_is_rejected_fail_closed(self):
         stale = dict(self.build, git_sha="b" * 40)
@@ -86,7 +88,7 @@ class Wave70ReleaseEvidenceTests(unittest.TestCase):
         self.assertIn("physical_uat_missing", payload["release_readiness"]["blocker_codes"])
 
     def test_architecture_and_version_mismatch_are_rejected(self):
-        mismatched = dict(self.build, architecture="x86_64", product_version="0.9.0")
+        mismatched = dict(self.build, architecture="x86_64", product_version="0.9.1")
         self._passed_session(build=mismatched)
         with patch.object(self.runtime, "_build_provenance", return_value=dict(self.build)):
             payload = self.runtime.release_evidence(self.company["id"])
@@ -140,11 +142,15 @@ class Wave70ReleaseEvidenceTests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); thread.join(timeout=3)
 
-    def test_release_contract_and_workflow_count_remain_unchanged(self):
+    def test_release_contract_and_workflow_count_are_prepared_not_authoritative(self):
         version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn('0.9.0.dev1', version)
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
+        source = source_release_readiness()
+        self.assertTrue(source["source_ready"])
+        self.assertFalse(source["operational_inputs_complete"])
+        self.assertFalse(source["production_ready"])
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
         service = (ROOT / "src" / "binario_marketing" / "service_wave70_app.py").read_text(encoding="utf-8")

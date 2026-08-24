@@ -79,10 +79,16 @@ class Wave82ReleasePublicationHardStopTests(unittest.TestCase):
         self.assertLess(body.index("if not RELEASE_READY"), body.index("verify_pipeline_contract()"))
         self.assertLess(body.index("if tag != RELEASE_TAG"), body.index("verify_pipeline_contract()"))
 
-    def test_release_remains_fail_closed_today(self):
+    def test_prepared_source_still_requires_runtime_release_hard_stop(self):
         version = (ROOT / "src/binario_marketing/version.py").read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
+        workflow = (ROOT / ".github/workflows/persistent-release.yml").read_text(encoding="utf-8")
+        self.assertIn("verify_combined_uat_attestation.py", workflow)
+        self.assertIn("notarize_release_candidate.sh", workflow)
+        self.assertIn("release_candidate_gate.py", workflow)
+        self.assertIn("--production", workflow)
 
     def test_hard_stop_does_not_add_a_fourth_workflow(self):
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))

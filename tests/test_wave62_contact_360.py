@@ -7,6 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave62_app import AppRuntime, create_server
 
 
@@ -217,8 +218,14 @@ class Wave62Contact360Tests(unittest.TestCase):
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
         version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn("0.9.0.dev1", version)
-        self.assertIn("RELEASE_READY = False", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        readiness = source_release_readiness()
+        self.assertTrue(readiness["source_ready"])
+        self.assertFalse(readiness["operational_inputs_complete"])
+        self.assertFalse(readiness["production_ready"])
 
 
 if __name__ == "__main__":

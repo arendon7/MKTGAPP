@@ -29,9 +29,9 @@ grep -q 'transaction_handoff_authority' "$PROVENANCE"
 grep -q 'W94_STAGE_PROVENANCE_HANDOFF' "$TRANSACTION"
 grep -q 'verify-transaction-handoff' "$TRANSACTION"
 grep -q 'RELEASE-CI-PROVENANCE-AUTHORIZATION.json' "$TRANSACTION"
-grep -q '__version__ = "0.9.0.dev1"' "$VERSION"
-grep -q 'RELEASE_READY = False' "$VERSION"
-grep -q 'RELEASE_TAG: str | None = None' "$VERSION"
+grep -q '__version__ = "0.9.0"' "$VERSION"
+grep -q 'RELEASE_READY = True' "$VERSION"
+grep -q 'RELEASE_TAG: str | None = "v0.9.0"' "$VERSION"
 
 python - "$WORKFLOW" "$TRANSACTION" <<'PY'
 from pathlib import Path

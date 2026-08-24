@@ -2,7 +2,7 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-from binario_marketing.release_readiness import evaluate_release_readiness, source_release_readiness
+from binario_marketing.release_readiness import PREPARED_RELEASE, evaluate_release_readiness, source_release_readiness
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,23 +20,27 @@ def _compact(text: str) -> str:
 
 
 class Wave46ReleaseReadinessTests(unittest.TestCase):
-    def test_current_source_is_explicitly_development_blocked(self):
+    def test_current_source_is_prepared_but_not_production_ready(self):
         report = source_release_readiness()
-        self.assertEqual(report["stage"], "DEVELOPMENT")
+        self.assertEqual(report["source_release_state"], PREPARED_RELEASE)
+        self.assertTrue(report["source_ready"])
+        self.assertEqual(report["stage"], "SOURCE_CONTRACT_READY")
+        self.assertFalse(report["operational_inputs_complete"])
         self.assertFalse(report["production_ready"])
-        self.assertIn("development_version", report["blocker_codes"])
-        self.assertIn("release_flag_false", report["blocker_codes"])
-        self.assertIn("release_tag_missing", report["blocker_codes"])
+        self.assertEqual(report["blocker_codes"], [])
 
     def test_full_production_contract_requires_every_gate(self):
         report = evaluate_release_readiness(version="1.0.0", release_ready=True, release_tag="v1.0.0", signing_mode="developer_id", notarized=True, uat_passed=True, git_sha="a" * 40, architecture="arm64")
         self.assertEqual(report["stage"], "PRODUCTION_READY")
+        self.assertTrue(report["operational_inputs_complete"])
         self.assertTrue(report["production_ready"])
         self.assertEqual(report["blocker_codes"], [])
 
     def test_release_candidate_remains_blocked_without_distribution_and_uat(self):
         report = evaluate_release_readiness(version="1.0.0", release_ready=True, release_tag="v1.0.0", signing_mode="ad_hoc", notarized=False, uat_passed=False)
         self.assertEqual(report["stage"], "RELEASE_CANDIDATE_BLOCKED")
+        self.assertFalse(report["operational_inputs_complete"])
+        self.assertFalse(report["production_ready"])
         self.assertIn("distribution_signing_missing", report["blocker_codes"])
         self.assertIn("notarization_missing", report["blocker_codes"])
         self.assertIn("physical_uat_missing", report["blocker_codes"])
@@ -67,6 +71,7 @@ class Wave46ReleaseReadinessTests(unittest.TestCase):
         self.assertIn("release-tools", builder)
         self.assertIn("audit_wave46_release_readiness.sh", builder)
         self.assertIn("physical_uat_missing", audit)
+        self.assertIn("PREPARED_RELEASE", audit)
         self.assertIn("release_candidate_gate.py", audit)
 
     def test_uat_recorder_only_passes_when_every_manual_gate_passes(self):

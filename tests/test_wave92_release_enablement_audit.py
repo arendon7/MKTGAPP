@@ -22,10 +22,12 @@ def _module(path: Path, name: str):
 
 
 class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
-    def test_current_source_remains_blocked_and_has_no_publication_authority(self):
-        report = _module(AUDIT, "w92_audit_blocked").audit(ROOT)
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertEqual(report["source_status"], "BLOCKED")
+    def test_current_source_is_prepared_and_has_no_publication_authority(self):
+        report = _module(AUDIT, "w92_audit_prepared").audit(ROOT)
+        self.assertEqual(report["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(report["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(report["source_release_state"], "PREPARED_RELEASE")
+        self.assertEqual(report["blocker_codes"], [])
         self.assertEqual(report["runtime_wave"], 76)
         self.assertGreaterEqual(report["certification_guard_wave"], 92)
         self.assertFalse(report["operational_authorization"])
@@ -33,9 +35,6 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
         self.assertFalse(report["publication_authority"])
         self.assertFalse(report["production_ready"])
         self.assertFalse(report["mutations_performed"])
-        self.assertIn("development_version", report["blocker_codes"])
-        self.assertIn("release_flag_false", report["blocker_codes"])
-        self.assertIn("release_tag_missing", report["blocker_codes"])
 
     def test_all_w92_structural_gates_are_present(self):
         report = _module(AUDIT, "w92_audit_structure").audit(ROOT)
@@ -98,10 +97,11 @@ class Wave92ReleaseEnablementAuditTests(unittest.TestCase):
         self.assertIn("both_notarization_tickets_survive_roundtrip", source)
         self.assertIn("both_gatekeeper_assessments_pass_after_roundtrip", source)
 
-    def test_release_boundary_and_workflow_count_remain_closed(self):
+    def test_release_boundary_and_workflow_count_remain_non_authoritative(self):
         version = VERSION.read_text(encoding="utf-8")
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 

@@ -34,10 +34,14 @@ class Wave80X86CurrentRuntimeCertificationTests(unittest.TestCase):
     def test_x86_bundle_audit_preserves_arm64_only_physical_uat_boundary(self):
         audit = (ROOT / "scripts/audit_wave80_x86_runtime_parity.sh").read_text(encoding="utf-8")
         self.assertIn('provenance["architecture"] == "x86_64"', audit)
+        self.assertIn('provenance["product_version"] == __version__ == "0.9.0"', audit)
+        self.assertIn('source_release_state() == PREPARED_RELEASE', audit)
+        self.assertIn('source_readiness["production_ready"] is False', audit)
         self.assertIn('"arm64-build" in preflight["blockers"]', audit)
         self.assertIn('ready_to_begin_physical_uat"] is False', audit)
         self.assertIn('dossier["stage"] == "BLOCKED_PREFLIGHT"', audit)
-        self.assertIn("RELEASE_READY is False", audit)
+        self.assertIn("RELEASE_READY is True", audit)
+        self.assertIn('RELEASE_TAG == "v0.9.0"', audit)
 
     def test_release_candidate_has_no_direct_historical_builder_fallback(self):
         candidate = (ROOT / "scripts/build_full_mac_release_candidate.sh").read_text(encoding="utf-8")

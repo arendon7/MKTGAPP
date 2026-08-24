@@ -86,11 +86,12 @@ class Wave74InteractionIntegrityTests(unittest.TestCase):
         missing = sorted(control_id for control_id in action_ids if control_id not in corpus)
         self.assertEqual(missing, [], f'static action controls without browser reference: {missing}')
 
-    def test_release_workflows_and_builder_remain_fail_closed(self):
+    def test_release_workflows_and_builder_remain_non_authoritative(self):
         version = (ROOT / 'src/binario_marketing/version.py').read_text(encoding='utf-8')
-        self.assertIn('0.9.0.dev1', version)
-        self.assertIn('RELEASE_READY = False', version)
-        workflows = sorted(path.name for path in (ROOT / '.github/workflows').glob('*.yml'))
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn('RELEASE_READY = True', version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
+        workflows = sorted(path.name for path in (ROOT / '.github' / 'workflows').glob('*.yml'))
         self.assertEqual(workflows, ['ci.yml', 'full-mac-app.yml', 'persistent-release.yml'])
         service = (ROOT / 'src/binario_marketing/service_wave74_app.py').read_text(encoding='utf-8')
         self.assertNotIn('RELEASE_READY = True', service)

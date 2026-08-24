@@ -200,9 +200,12 @@ class Wave91ReleaseEvidenceChainTests(unittest.TestCase):
         self.assertTrue(0 <= gate < asset_chain < cross_arch < verify_auth < publish, (gate, asset_chain, cross_arch, verify_auth, publish))
         self.assertIn("RELEASE-AUTHORIZATION.json", workflow)
 
-    def test_source_audit_remains_fail_closed_and_knows_w91_runtime_gate(self):
+    def test_source_audit_is_prepared_and_knows_w91_runtime_gate(self):
         audit = _module(AUDIT_SCRIPT).audit(ROOT)
-        self.assertEqual(audit["status"], "BLOCKED")
+        self.assertEqual(audit["source_status"], "SOURCE_CONTRACT_READY")
+        self.assertEqual(audit["status"], "AWAITING_OPERATIONAL_AUTHORIZATION")
+        self.assertEqual(audit["source_release_state"], "PREPARED_RELEASE")
+        self.assertEqual(audit["blocker_codes"], [])
         self.assertEqual(audit["runtime_wave"], 76)
         self.assertGreaterEqual(audit["certification_guard_wave"], 91)
         self.assertFalse(audit["operational_authorization"])

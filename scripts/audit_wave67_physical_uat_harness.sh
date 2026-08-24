@@ -29,6 +29,9 @@ VERSION="$SRC/src/binario_marketing/version.py"
 /usr/bin/grep -q 'release_ready_changed.*False' "$SERVICE"
 /usr/bin/grep -q 'physical.src='"'"'/physical-uat.js'"'"'' "$SERVICE"
 /usr/bin/grep -q 'host: str = "127.0.0.1"' "$SERVICE"
+/usr/bin/grep -q 'distribution_signing_certified.*False' "$SERVICE"
+/usr/bin/grep -q 'notarization_certified.*False' "$SERVICE"
+/usr/bin/grep -q 'production_ready.*False' "$SERVICE"
 
 /usr/bin/grep -q 'Evidencia de prueba en Mac físico' "$UI"
 /usr/bin/grep -q 'CI nunca podrá satisfacer el gate físico' "$UI"
@@ -44,8 +47,30 @@ VERSION="$SRC/src/binario_marketing/version.py"
 ! /usr/bin/grep -q '/publications' "$UI"
 ! /usr/bin/grep -q '/paid-media' "$UI"
 
-/usr/bin/grep -q '0.9.0.dev1' "$VERSION"
-/usr/bin/grep -q 'RELEASE_READY = False' "$VERSION"
+# A prepared source is allowed here because physical UAT must occur after the
+# release identity is frozen. The harness itself still cannot certify signing,
+# notarization, production, or mutate release state.
+"$PY" -I -B - "$SRC/src" <<'PY'
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(sys.argv[1]).resolve()))
+from binario_marketing.release_readiness import LOCKED_SOURCE, PREPARED_RELEASE, source_release_readiness, source_release_state
+from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
+state = source_release_state()
+assert state in {LOCKED_SOURCE, PREPARED_RELEASE}, state
+source = source_release_readiness()
+assert source['production_ready'] is False, source
+assert source['operational_inputs_complete'] is False, source
+if state == LOCKED_SOURCE:
+    assert RELEASE_READY is False and RELEASE_TAG is None
+else:
+    assert RELEASE_READY is True
+    assert RELEASE_TAG == f'v{__version__}'
+    assert source['source_ready'] is True
+    assert source['stage'] == 'SOURCE_CONTRACT_READY', source
+print(f'Wave 67 source release contract PASS: {state} / {__version__}')
+PY
 
 "$PY" -I -B - "$LAUNCH" <<'PY'
 from pathlib import Path

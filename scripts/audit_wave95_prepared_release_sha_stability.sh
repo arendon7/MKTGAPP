@@ -56,10 +56,27 @@ grep -q 'release-enablement-audit.v7' "$AUDIT"
 grep -q 'certification_guard_wave": 95' "$AUDIT"
 grep -q 'w95_preserves_w94_before_w93' "$AUDIT"
 
-# W95 changes the contract only; source remains locked until a separate explicit prepare wave.
-grep -q '__version__ = "0.9.0.dev1"' "$VERSION"
-grep -q 'RELEASE_READY = False' "$VERSION"
-grep -q 'RELEASE_TAG: str | None = None' "$VERSION"
+# W95 defines the two-state source contract. Later waves may move the canonical
+# source from LOCKED_SOURCE to PREPARED_RELEASE, but must stay coherent and
+# non-authoritative until external operational evidence exists.
+PYTHONPATH=src python - <<'PY'
+from binario_marketing.release_readiness import LOCKED_SOURCE, PREPARED_RELEASE, source_release_readiness, source_release_state
+from binario_marketing.version import RELEASE_READY, RELEASE_TAG, __version__
+
+state = source_release_state()
+assert state in {LOCKED_SOURCE, PREPARED_RELEASE}
+report = source_release_readiness()
+assert report["production_ready"] is False
+if state == LOCKED_SOURCE:
+    assert RELEASE_READY is False
+    assert RELEASE_TAG is None
+else:
+    assert RELEASE_READY is True
+    assert RELEASE_TAG == f"v{__version__}"
+    assert report["source_ready"] is True
+    assert report["stage"] == "SOURCE_CONTRACT_READY"
+    assert report["operational_inputs_complete"] is False
+PY
 
 # Canonical workflow count remains exactly three.
 test "$(find .github/workflows -maxdepth 1 -type f -name '*.yml' | wc -l | tr -d ' ')" = "3"
