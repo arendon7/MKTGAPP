@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave63_app import AppRuntime, create_server
 
 
@@ -62,8 +63,7 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
         })
         self.runtime.create_activity(self.company["id"], {
             "contact_id": contact["id"], "opportunity_id": overdue["id"], "kind": "TASK",
-            "summary": "Seguimiento vencido",
-            "due_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            "summary": "Seguimiento vencido", "due_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
         })
         payload = self.runtime.commercial_pipeline(self.company["id"])
         lane = next(row for row in payload["lanes"] if row["stage"] == "NEW")
@@ -75,12 +75,8 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
 
     def test_closed_opportunities_do_not_require_attention(self):
         contact = self._contact("Cierres")
-        won = self.runtime.create_opportunity(self.company["id"], {
-            "contact_id": contact["id"], "title": "Ganada", "stage": "WON", "value": 900000, "currency": "COP"
-        })
-        lost = self.runtime.create_opportunity(self.company["id"], {
-            "contact_id": contact["id"], "title": "Perdida", "stage": "LOST", "value": 500000, "currency": "COP"
-        })
+        won = self.runtime.create_opportunity(self.company["id"], {"contact_id": contact["id"], "title": "Ganada", "stage": "WON", "value": 900000, "currency": "COP"})
+        lost = self.runtime.create_opportunity(self.company["id"], {"contact_id": contact["id"], "title": "Perdida", "stage": "LOST", "value": 500000, "currency": "COP"})
         payload = self.runtime.commercial_pipeline(self.company["id"])
         closed = [row for lane in payload["lanes"] if lane["stage"] in {"WON", "LOST"} for row in lane["opportunities"]]
         self.assertEqual({row["id"] for row in closed}, {won["id"], lost["id"]})
@@ -91,14 +87,10 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
 
     def test_pipeline_is_company_scoped(self):
         first_contact = self._contact("Empresa A")
-        first = self.runtime.create_opportunity(self.company["id"], {
-            "contact_id": first_contact["id"], "title": "Solo A", "currency": "COP"
-        })
+        first = self.runtime.create_opportunity(self.company["id"], {"contact_id": first_contact["id"], "title": "Solo A", "currency": "COP"})
         other = self.runtime.create_company({"name": "Otra empresa"})
         second_contact = self.runtime.create_contact(other["id"], {"name": "Empresa B", "email": "b@example.com"})
-        second = self.runtime.create_opportunity(other["id"], {
-            "contact_id": second_contact["id"], "title": "Solo B", "currency": "USD"
-        })
+        second = self.runtime.create_opportunity(other["id"], {"contact_id": second_contact["id"], "title": "Solo B", "currency": "USD"})
         first_payload = self.runtime.commercial_pipeline(self.company["id"])
         second_payload = self.runtime.commercial_pipeline(other["id"])
         first_ids = {row["id"] for lane in first_payload["lanes"] for row in lane["opportunities"]}
@@ -108,9 +100,7 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
 
     def test_pipeline_get_never_reads_provider(self):
         contact = self._contact("Sin Meta")
-        self.runtime.create_opportunity(self.company["id"], {
-            "contact_id": contact["id"], "title": "Local", "currency": "COP"
-        })
+        self.runtime.create_opportunity(self.company["id"], {"contact_id": contact["id"], "title": "Local", "currency": "COP"})
         with patch.object(self.runtime, "social_inbox", side_effect=AssertionError("pipeline must not read Meta")):
             payload = self.runtime.commercial_pipeline(self.company["id"])
         self.assertFalse(payload["safety"]["provider_read_performed"])
@@ -120,12 +110,9 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
 
     def test_http_serves_pipeline_bootstrap_and_inherited_explicit_patch(self):
         contact = self._contact("HTTP pipeline")
-        opportunity = self.runtime.create_opportunity(self.company["id"], {
-            "contact_id": contact["id"], "title": "HTTP oportunidad", "stage": "NEW", "currency": "COP"
-        })
+        opportunity = self.runtime.create_opportunity(self.company["id"], {"contact_id": contact["id"], "title": "HTTP oportunidad", "stage": "NEW", "currency": "COP"})
         server = create_server(self.runtime, "127.0.0.1", 0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         try:
             base = f"http://127.0.0.1:{server.server_address[1]}"
             with urlopen(base + "/contact-360.js", timeout=5) as response:
@@ -138,11 +125,7 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
             with urlopen(base + f"/api/companies/{self.company['id']}/commercial-pipeline", timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             self.assertEqual(payload["schema"], "binario.marketing.commercial-pipeline.v1")
-            request = Request(
-                base + f"/api/companies/{self.company['id']}/opportunities/{opportunity['id']}",
-                data=json.dumps({"stage": "CONTACTED"}).encode("utf-8"),
-                headers={"Content-Type": "application/json"}, method="PATCH",
-            )
+            request = Request(base + f"/api/companies/{self.company['id']}/opportunities/{opportunity['id']}", data=json.dumps({"stage": "CONTACTED"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="PATCH")
             with urlopen(request, timeout=5) as response:
                 updated = json.loads(response.read().decode("utf-8"))
             self.assertEqual(updated["stage"], "CONTACTED")
@@ -152,50 +135,29 @@ class Wave63CommercialPipelineTests(unittest.TestCase):
 
     def test_frontend_requires_explicit_stage_save_and_has_no_polling(self):
         ui = (ROOT / "web" / "commercial-pipeline.js").read_text(encoding="utf-8")
-        for marker in (
-            "Pipeline comercial operativo",
-            "Valores separados por moneda",
-            "Solo requieren atención",
-            "Guardar etapa",
-            "Contacto 360",
-            "select.addEventListener('change',()=>{save.disabled=select.value===row.stage})",
-            "save.addEventListener('click',()=>wave63SaveStage",
-            "window.confirm",
-            "method:'PATCH'",
-        ):
+        for marker in ("Pipeline comercial operativo", "Valores separados por moneda", "Solo requieren atención", "Guardar etapa", "Contacto 360", "select.addEventListener('change',()=>{save.disabled=select.value===row.stage})", "save.addEventListener('click',()=>wave63SaveStage", "window.confirm", "method:'PATCH'"):
             self.assertIn(marker, ui)
         self.assertNotIn("addEventListener('change',async", ui)
         self.assertEqual(ui.count("method:'PATCH'"), 1)
-        self.assertNotIn("setInterval", ui)
-        self.assertNotIn("fetch('https://", ui)
-        self.assertNotIn("sendBeacon", ui)
+        self.assertNotIn("setInterval", ui); self.assertNotIn("fetch('https://", ui); self.assertNotIn("sendBeacon", ui)
 
     def test_builder_service_workflows_and_release_boundary(self):
         builder = (ROOT / "scripts" / "build_full_mac_current.sh").read_text(encoding="utf-8")
         service = (ROOT / "src" / "binario_marketing" / "service_wave63_app.py").read_text(encoding="utf-8")
         self.assertIn("service_wave60_app','service_wave61_app','service_wave62_app','service_wave63_app", builder)
-        for audit in (
-            "audit_wave55_lead_intake.sh",
-            "audit_wave59_local_product_integration.sh",
-            "audit_wave60_daily_workdesk.sh",
-            "audit_wave61_commercial_desk.sh",
-            "audit_wave62_contact_360.sh",
-            "audit_wave63_commercial_pipeline.sh",
-        ):
+        for audit in ("audit_wave55_lead_intake.sh", "audit_wave59_local_product_integration.sh", "audit_wave60_daily_workdesk.sh", "audit_wave61_commercial_desk.sh", "audit_wave62_contact_360.sh", "audit_wave63_commercial_pipeline.sh"):
             self.assertIn(audit, builder)
-        for wave in (59, 60, 61, 62, 63):
-            self.assertIn(f"CURRENT ARM64 ITERATION BUILD PASS: Wave {wave}", builder)
-        self.assertIn("service_wave62_app as base", service)
-        self.assertIn("pipeline.src='/commercial-pipeline.js'", service)
-        self.assertNotIn("def do_POST", service)
-        self.assertNotIn("def do_PATCH", service)
-        self.assertNotIn("social_inbox(", service)
+        for wave in (59, 60, 61, 62, 63): self.assertIn(f"CURRENT ARM64 ITERATION BUILD PASS: Wave {wave}", builder)
+        self.assertIn("service_wave62_app as base", service); self.assertIn("pipeline.src='/commercial-pipeline.js'", service)
+        self.assertNotIn("def do_POST", service); self.assertNotIn("def do_PATCH", service); self.assertNotIn("social_inbox(", service)
         self.assertIn('host: str = "127.0.0.1"', service)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
-        version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn("0.9.0.dev1", version)
-        self.assertIn("RELEASE_READY = False", version)
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        report = source_release_readiness()
+        self.assertTrue(report["source_ready"])
+        self.assertFalse(report["operational_inputs_complete"])
+        self.assertFalse(report["production_ready"])
 
 
 if __name__ == "__main__":
