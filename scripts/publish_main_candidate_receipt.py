@@ -7,7 +7,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from typing import NamedTuple
 
 CONTEXT = "physical-uat-candidate/main-artifact"
 API_VERSION = "2022-11-28"
@@ -16,8 +16,7 @@ SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
-@dataclass(frozen=True)
-class CandidateReceipt:
+class CandidateReceipt(NamedTuple):
     repository: str
     git_sha: str
     run_id: str
