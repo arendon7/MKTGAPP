@@ -44,6 +44,24 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _source_digest(source: Path) -> str:
+    """Recompute the exact W81/W95 source identity from the extracted app."""
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for root in (source / "src", source / "web", source / "apps"):
+        if not root.is_dir():
+            raise ValueError(f"candidate source root missing: {root}")
+        files.extend(path for path in root.rglob("*") if path.is_file())
+    for path in sorted(files, key=lambda item: item.relative_to(source).as_posix()):
+        relative = path.relative_to(source).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _digest(payload: dict[str, Any]) -> str:
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
@@ -80,6 +98,7 @@ def _candidate_source_contract(candidate: dict[str, Any]) -> tuple[str, str | No
 
 def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], str, str | None]:
     resources = app / "Contents" / "Resources"
+    source = resources / "source"
     candidate_path = resources / "PHYSICAL_UAT_CANDIDATE.json"
     provenance_path = resources / "BUILD_PROVENANCE.json"
     _require(candidate_path.is_file(), "candidate manifest missing")
@@ -103,6 +122,9 @@ def _load_candidate(app: Path) -> tuple[dict[str, Any], Path, dict[str, Any], st
     _require(physical.get("eligible_build_origin") is True, "candidate is not physical-UAT origin eligible")
     _require(physical.get("automatic_pass") is False, "candidate cannot carry automatic physical UAT PASS")
     source_state, source_tag = _candidate_source_contract(candidate)
+    expected_source_sha = str(candidate.get("candidate_source_sha256") or "")
+    _require(len(expected_source_sha) == 64, "candidate source digest missing or malformed")
+    _require(_source_digest(source) == expected_source_sha, "candidate source digest does not match extracted app")
     return candidate, candidate_path, provenance, source_state, source_tag
 
 
