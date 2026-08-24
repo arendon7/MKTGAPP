@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL = ROOT / "scripts/write_physical_uat_candidate.py"
@@ -46,6 +47,9 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
         (resources / "launch.py").write_text("from binario_marketing.service_wave76_app import serve\n", encoding="utf-8")
         return app
 
+    def _prepared_source(self, rebuild):
+        return patch.object(rebuild, "_load_version", return_value=("0.9.0", True, "v0.9.0", "PREPARED_RELEASE"))
+
     def test_exact_physical_uat_origin_is_main_only_not_tag(self):
         physical = _load(PHYSICAL, "w88_physical")
         self.assertTrue(physical._trusted_origin("push", "refs/heads/main"))
@@ -56,7 +60,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
 
     def test_distribution_manifest_is_tag_only_source_equivalent_and_detects_drift(self):
         rebuild = _load(REBUILD, "w88_rebuild")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, self._prepared_source(rebuild):
             app = self._fake_app(Path(tmpdir))
             origin = {"event": "push", "ref": "refs/tags/v0.9.0", "eligible_distribution_origin": True}
             manifest = rebuild.build_manifest(app, origin=origin)
@@ -77,7 +81,7 @@ class Wave88DistributionRebuildSeparationTests(unittest.TestCase):
 
     def test_distribution_manifest_rejects_physical_candidate_identity(self):
         rebuild = _load(REBUILD, "w88_rebuild_conflict")
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, self._prepared_source(rebuild):
             app = self._fake_app(Path(tmpdir))
             (app / "Contents/Resources/PHYSICAL_UAT_CANDIDATE.json").write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must not contain physical-UAT candidate"):
