@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
+from binario_marketing.release_readiness import PREPARED_RELEASE, source_release_readiness, source_release_state
 from binario_marketing.service_wave67_app import AppRuntime, create_server
 
 
@@ -52,6 +53,14 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         with urlopen(request, timeout=5) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
 
+    def _assert_prepared_release_boundary(self, boundary):
+        self.assertEqual(boundary["version"], "0.9.0")
+        self.assertTrue(boundary["release_ready"])
+        self.assertEqual(boundary["release_tag"], "v0.9.0")
+        self.assertFalse(boundary["distribution_signing_certified"])
+        self.assertFalse(boundary["notarization_certified"])
+        self.assertFalse(boundary["production_ready"])
+
     def test_ci_arm64_session_can_pass_logic_but_never_satisfies_physical_gate(self):
         session = self._start(github_actions="true", system="Darwin", machine="arm64")
         self.assertTrue(session["machine"]["is_ci"])
@@ -64,7 +73,7 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         report = self.runtime.physical_uat_report(self.company["id"], session["id"])
         self.assertFalse(report["summary"]["physical_gate_eligible"])
         self.assertFalse(report["summary"]["physical_uat_complete"])
-        self.assertFalse(report["release_boundary"]["release_ready"])
+        self._assert_prepared_release_boundary(report["release_boundary"])
 
     def test_real_darwin_arm64_outside_ci_is_eligible_but_does_not_open_release(self):
         session = self._start(github_actions="", system="Darwin", machine="arm64")
@@ -74,10 +83,12 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         self.assertTrue(finished["physical_uat_complete"])
         overview = self.runtime.physical_uat_overview(self.company["id"])
         self.assertTrue(overview["physical_uat_complete"])
-        self.assertFalse(overview["release_boundary"]["release_ready"])
-        self.assertFalse(overview["release_boundary"]["distribution_signing_certified"])
-        self.assertFalse(overview["release_boundary"]["notarization_certified"])
-        self.assertFalse(overview["release_boundary"]["production_ready"])
+        self._assert_prepared_release_boundary(overview["release_boundary"])
+        self.assertEqual(source_release_state(), PREPARED_RELEASE)
+        source = source_release_readiness()
+        self.assertTrue(source["source_ready"])
+        self.assertFalse(source["operational_inputs_complete"])
+        self.assertFalse(source["production_ready"])
 
     def test_fail_and_blocked_sessions_never_complete_physical_gate(self):
         failed = self._start(github_actions="", system="Darwin", machine="arm64")
@@ -185,7 +196,7 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, ui.lower() if forbidden in {"supabase", "vercel"} else ui)
 
-    def test_builder_audit_workflows_and_release_boundary_remain_unchanged(self):
+    def test_builder_audit_workflows_and_release_boundary_remain_non_authoritative(self):
         builder = (ROOT / "scripts" / "build_full_mac_current.sh").read_text(encoding="utf-8")
         service = (ROOT / "src" / "binario_marketing" / "service_wave67_app.py").read_text(encoding="utf-8")
         store = (ROOT / "src" / "binario_marketing" / "physical_uat_store.py").read_text(encoding="utf-8")
@@ -203,12 +214,16 @@ class Wave67PhysicalUATHarnessTests(unittest.TestCase):
         self.assertIn("physical_gate_eligible", store)
         self.assertIn("release_authority", store)
         self.assertIn("WAVE 67 PHYSICAL UAT EVIDENCE HARNESS AUDIT PASS", audit)
+        self.assertIn("PREPARED_RELEASE", audit)
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
         version = (ROOT / "src" / "binario_marketing" / "version.py").read_text(encoding="utf-8")
-        self.assertIn("0.9.0.dev1", version)
-        self.assertIn("RELEASE_READY = False", version)
-        self.assertIn("RELEASE_TAG: str | None = None", version)
+        self.assertIn('__version__ = "0.9.0"', version)
+        self.assertIn("RELEASE_READY = True", version)
+        self.assertIn('RELEASE_TAG: str | None = "v0.9.0"', version)
+        self.assertIn('"production_ready": False', service)
+        self.assertIn('"distribution_signing_certified": False', service)
+        self.assertIn('"notarization_certified": False', service)
 
 
 if __name__ == "__main__":
