@@ -19,7 +19,11 @@ Las superficies superiores son deliberadamente complementarias:
 - **Evidence Observability** muestra qué evidencia local existe, cuándo fue observada y dónde la cobertura es parcial/no observada/unknown. No consulta proveedores, no califica desempeño y no altera prioridad ni completitud.
 - **Portfolio Cadence** describe la semántica temporal de la cola transversal: deadlines ya declarados por la fuente, incidentes, antigüedad observacional de leads, trabajo sin agenda y anomalías temporales. Nunca cambia el orden ni inventa vencimientos.
 
-`service_post_w99_portfolio_cadence_app` es ahora el terminal de composición de `serve-dev`. Hereda `service_post_w99_evidence_observability_integrated_app` y, a través de esa cadena, conserva Execution Return y Contextual Deep Linking.
+`service_post_w99_portfolio_cadence_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
+
+`service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
+
+Que una capa deje de ser el terminal directo no elimina su contrato: cada capa posterior hereda la anterior y las pruebas deben verificar esa composición acumulativa, no una posición terminal histórica.
 
 La secuencia de browser bootstraps queda:
 
