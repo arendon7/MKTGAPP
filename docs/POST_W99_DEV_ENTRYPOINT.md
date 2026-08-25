@@ -7,7 +7,14 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower. Así el CLI no necesita conocer el nombre de cada incremento post-W99.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit.
+
+Las dos superficies superiores son deliberadamente complementarias:
+
+- **Portfolio Control Tower** responde qué empresa requiere atención primero y conserva el orden transversal de Action Center.
+- **Executive Marketing Cockpit** responde qué está pasando dentro de la empresa seleccionada en Operación, Comercial, Campañas y Decisiones.
+
+`service_post_w99_integrated_cockpit_app` es el terminal de composición: hereda Portfolio y agrega Executive Cockpit, de modo que `serve-dev` conserva ambos endpoints y ambos bootstraps en la misma cadena.
 
 Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para la UAT del issue #113.
 
