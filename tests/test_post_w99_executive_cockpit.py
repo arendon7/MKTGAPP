@@ -76,8 +76,8 @@ class PostW99ExecutiveCockpitTests(unittest.TestCase):
 
     def test_blocker_is_elevated_without_reordering_action_center(self):
         data = _inputs()
-        first = {"id": "first", "urgency": "CRITICAL", "title": "Resolver publicación", "detail": "Falló", "action": {"view": "execution", "label": "Resolver"}}
-        second = {"id": "second", "urgency": "HIGH", "title": "Lead", "detail": "Resolver", "action": {"view": "commercial-desk", "label": "Abrir"}}
+        first = {"id": "first", "source": "OPERATIONS", "urgency": "CRITICAL", "blocking": True, "title": "Resolver publicación", "detail": "Falló", "action": {"view": "execution", "label": "Resolver"}}
+        second = {"id": "second", "source": "COMMERCIAL", "urgency": "HIGH", "blocking": False, "title": "Lead", "detail": "Resolver", "action": {"view": "commercial-desk", "label": "Abrir"}}
         data["action_center"] = {
             "summary": {"queue_total": 2, "blocking": 1, "critical": 1, "high": 1},
             "queue": [first, second], "next_action": first,
@@ -86,7 +86,12 @@ class PostW99ExecutiveCockpitTests(unittest.TestCase):
         self.assertEqual(payload["status"]["state"], "BLOCKED")
         self.assertEqual(payload["next_action"]["id"], "first")
         self.assertEqual([row["id"] for row in payload["top_actions"]], ["first", "second"])
+        operations = next(row for row in payload["lanes"] if row["key"] == "OPERATIONS")
+        commercial = next(row for row in payload["lanes"] if row["key"] == "COMMERCIAL")
+        self.assertEqual(operations["state"], "BLOCKED")
+        self.assertEqual(commercial["state"], "ATTENTION")
         self.assertTrue(payload["contracts"]["action_center_order_preserved"])
+        self.assertTrue(payload["contracts"]["lane_state_uses_authoritative_source"])
 
     def test_pipeline_attention_is_not_probability_or_forecast(self):
         data = _inputs()
