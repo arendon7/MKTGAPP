@@ -7,7 +7,7 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review. Así el CLI no necesita conocer el nombre de cada incremento post-W99.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Executive Marketing Cockpit. Así el CLI no necesita conocer el nombre de cada incremento post-W99.
 
 Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para la UAT del issue #113.
 
