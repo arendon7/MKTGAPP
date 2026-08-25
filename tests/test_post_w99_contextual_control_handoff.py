@@ -88,7 +88,7 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
         self.assertIn("targetKind==='ACTIVITY'&&kind==='crm_unscheduled'", source)
         self.assertIn("esa card no expone Reprogramar", source)
         self.assertIn("no se sustituye por Completar", source)
-        self.assertIn("no se cruza a otro owner", source)
+        self.assertIn("no se sustituye por Completar ni se cruza a otro owner", source)
         reschedule = (ROOT / "web" / "followup-reschedule.js").read_text(encoding="utf-8")
         self.assertIn("dailyActionButtons", reschedule)
         self.assertIn("Reprogramar", reschedule)
