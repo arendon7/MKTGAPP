@@ -60,6 +60,14 @@ class SupabaseRestStorage:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RuntimeError("Supabase queue returned invalid JSON") from exc
 
+    def healthcheck(self) -> bool:
+        """Prove that the configured backend credential can read the dedicated queue table."""
+        query = "?" + urlencode({"select": "tenant_id", "limit": "1"})
+        data = self._request("GET", query)
+        if not isinstance(data, list):
+            raise RuntimeError("Supabase queue health response must be an array")
+        return True
+
     @staticmethod
     def _row(payload: dict) -> StoredEvent:
         body = payload.get("body_json")
