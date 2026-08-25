@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         from .service import serve
         serve(args.host, args.port, allow_network=args.allow_network, open_browser=args.open_browser)
     elif args.command == "serve-dev":
-        from .service_post_w99_navigator_app import serve
+        from .service_post_w99_dev_app import serve
         serve(args.host, args.port, allow_network=args.allow_network, open_browser=args.open_browser)
     return 0
 
