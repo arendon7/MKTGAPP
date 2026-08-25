@@ -4,7 +4,7 @@ Canonical release `serve` remains separate. New post-W99 product increments shou
 advance this alias rather than teaching the CLI about every individual feature.
 """
 
-from .service_post_w99_portfolio_control_tower_app import (
+from .service_post_w99_integrated_cockpit_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
