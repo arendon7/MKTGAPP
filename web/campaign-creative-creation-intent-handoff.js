@@ -31,7 +31,9 @@ function creativeIntentActivate(item,contract){
     title:String(item.title||'Crear o vincular creativo'),source_resolution_state:'OWNER_ONLY',source_code:'CREATE_CREATIVE',
     mode:'CHOICE',media_id:null,imported_media_id:null,selection_source:null,opened_at:new Date().toISOString(),persisted:false,
   };
-  postW99CampaignCreativeCreationIntentState.active=active;return active
+  postW99CampaignCreativeCreationIntentState.active=active;
+  if(typeof wave49CreativeState!=='undefined')wave49CreativeState.tab='pipeline';
+  return active
 }
 function creativeIntentCurrent(){
   const active=postW99CampaignCreativeCreationIntentState.active,company=creativeIntentCompany();
