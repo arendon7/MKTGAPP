@@ -45,6 +45,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertTrue(callable(runtime.campaign_results_owner_context))
             self.assertTrue(callable(runtime.campaign_execution_owner_context))
             self.assertTrue(callable(runtime.campaign_coordinate_state))
+            self.assertTrue(callable(runtime.campaign_coordinate_recovery_guidance))
         finally:
             if runtime.social_scheduler is not None:
                 runtime.social_scheduler.shutdown()
@@ -70,11 +71,11 @@ class PostW99DevEntrypointTests(unittest.TestCase):
                 runtime.renders.shutdown()
                 server.server_close()
 
-    def test_docs_preserve_w99_release_boundary(self):
+    def test_docs_preserve_w99_release_boundary_and_accumulated_composition(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_campaign_coordinate_state_decomposition_app", entrypoint)
-        self.assertNotIn("service_post_w99_campaign_creative_creation_intent_handoff_app import", entrypoint)
+        self.assertIn("service_post_w99_campaign_coordinate_recovery_guidance_app", entrypoint)
+        self.assertNotIn("service_post_w99_campaign_coordinate_state_decomposition_app import", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
@@ -95,6 +96,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Campaign Execution Candidate Selector",
             "Campaign Creative Creation Intent Handoff",
             "Campaign Coordinate State Decomposition",
+            "Campaign Coordinate Recovery Guidance",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -107,17 +109,24 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_campaign_execution_candidate_selector_app",
             "service_post_w99_campaign_creative_creation_intent_handoff_app",
             "service_post_w99_campaign_coordinate_state_decomposition_app",
+            "service_post_w99_campaign_coordinate_recovery_guidance_app",
         ):
             self.assertIn(module, doc)
         browser_chain = (
             "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → "
             "Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → "
             "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
-            "Campaign Creative Creation Intent Handoff"
+            "Campaign Creative Creation Intent Handoff → Campaign Coordinate Recovery Guidance"
         )
         self.assertIn(browser_chain, doc)
-        self.assertIn("no cambia", doc)
-        self.assertNotIn(browser_chain + " → Campaign Coordinate State Decomposition", doc)
+        self.assertIn("Campaign Coordinate State Decomposition no aparece en la cadena browser", doc)
+
+    def test_recovery_adapter_is_bootstrapped_after_creative_intent_handoff(self):
+        service = (ROOT / "src" / "binario_marketing" / "service_post_w99_campaign_coordinate_recovery_guidance_app.py").read_text(encoding="utf-8")
+        self.assertIn('path == "/campaign-creative-creation-intent-handoff.js"', service)
+        self.assertIn("loadPostW99CampaignCoordinateRecoveryGuidance", service)
+        self.assertIn("script.src='/campaign-coordinate-recovery-guidance.js'", service)
+        self.assertIn("data-post-w99-campaign-coordinate-recovery-guidance", service)
 
 
 if __name__ == "__main__":
