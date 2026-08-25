@@ -4,7 +4,7 @@ Canonical release `serve` remains separate. New post-W99 product increments shou
 advance this alias rather than teaching the CLI about every individual feature.
 """
 
-from .service_post_w99_campaign_execution_candidate_selector_app import (
+from .service_post_w99_campaign_creative_creation_intent_handoff_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
