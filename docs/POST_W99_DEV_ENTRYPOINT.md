@@ -7,7 +7,7 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence + Contextual Action Handoff.
 
 Las superficies superiores son deliberadamente complementarias:
 
@@ -18,14 +18,19 @@ Las superficies superiores son deliberadamente complementarias:
 - **Contextual Deep Linking** usa únicamente los IDs canónicos ya presentes en la acción para enfocar el registro exacto dentro del módulo propietario. Si no existe identidad suficiente o el registro no está presente en la lectura local, abre el owner sin adivinar un sustituto.
 - **Evidence Observability** muestra qué evidencia local existe, cuándo fue observada y dónde la cobertura es parcial/no observada/unknown. No consulta proveedores, no califica desempeño y no altera prioridad ni completitud.
 - **Portfolio Cadence** describe la semántica temporal de la cola transversal: deadlines ya declarados por la fuente, incidentes, antigüedad observacional de leads, trabajo sin agenda y anomalías temporales. Nunca cambia el orden ni inventa vencimientos.
+- **Contextual Action Handoff** opera solamente después de que Deep Linking identifica el registro exacto. Señala y explica un control ya existente del módulo propietario cuando existe un mapeo determinístico entre el motivo de Action Center y ese control. No hace clicks sintéticos, no introduce transporte de negocio, no duplica mutaciones y la ausencia del control nunca equivale a completitud.
 
-`service_post_w99_portfolio_cadence_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
+`service_post_w99_contextual_action_handoff_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
 
-`service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
+`service_post_w99_contextual_action_handoff_app` → `service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
 
-Que una capa deje de ser el terminal directo no elimina su contrato: cada capa posterior hereda la anterior y las pruebas deben verificar esa composición acumulativa, no una posición terminal histórica.
+Que una capa deje de ser el terminal directo no elimina su contrato: cada capa posterior hereda la anterior y las pruebas verifican esa composición acumulativa, no una posición terminal histórica.
 
 La secuencia de browser bootstraps queda:
+
+`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Action Handoff`
+
+Por tanto también permanece literalmente válido el prefijo previamente certificado:
 
 `Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence`
 
