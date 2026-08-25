@@ -183,7 +183,7 @@ class PostW99CampaignExecutionOwnerCardinalityHardeningTests(unittest.TestCase):
         self.assertNotIn("def do_DELETE", service)
         self.assertIn("main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No constituye W100", doc)
-        self.assertIn("physical UAT", doc.lower())
+        self.assertIn("physical uat", doc.lower())
 
 
 if __name__ == "__main__":
