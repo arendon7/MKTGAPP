@@ -38,6 +38,11 @@ def main(argv: list[str] | None = None) -> int:
     serve_parser.add_argument("--port", type=int, default=8765)
     serve_parser.add_argument("--open", action="store_true", dest="open_browser")
     serve_parser.add_argument("--allow-network", action="store_true")
+    dev_parser = sub.add_parser("serve-dev", help="run the isolated post-W99 development runtime without changing the frozen release runtime")
+    dev_parser.add_argument("--host", default="127.0.0.1")
+    dev_parser.add_argument("--port", type=int, default=8766)
+    dev_parser.add_argument("--open", action="store_true", dest="open_browser")
+    dev_parser.add_argument("--allow-network", action="store_true")
     args = parser.parse_args(argv)
     repo_root = Path(__file__).resolve().parents[2]
     if args.command == "apps":
@@ -60,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"connected": status.configured, "source": status.source}, ensure_ascii=False, indent=2))
     elif args.command == "serve":
         from .service import serve
+        serve(args.host, args.port, allow_network=args.allow_network, open_browser=args.open_browser)
+    elif args.command == "serve-dev":
+        from .service_post_w99_navigator_app import serve
         serve(args.host, args.port, allow_network=args.allow_network, open_browser=args.open_browser)
     return 0
 
