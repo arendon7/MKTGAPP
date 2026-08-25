@@ -42,7 +42,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
                 runtime.proxies.shutdown();runtime.transcriptions.shutdown();runtime.renders.shutdown();server.server_close()
 
     def test_docs_preserve_w99_release_boundary(self):
-        doc=(ROOT/'docs'/'POST_W99_DEV_ENTRYPOINT.md').read_text();self.assertIn('serve-dev',doc);self.assertIn('60ef38aa01c841c60f98b7dc79fcc9bb5d676e53',doc);self.assertIn('No debe interpretarse como W100',doc);self.assertIn('Decision Review',doc);self.assertIn('Portfolio Control Tower',doc);self.assertIn('Executive Marketing Cockpit',doc);self.assertIn('Today / Operator Execution',doc);self.assertIn('service_post_w99_today_execution_app',doc)
+        doc=(ROOT/'docs'/'POST_W99_DEV_ENTRYPOINT.md').read_text();self.assertIn('serve-dev',doc);self.assertIn('60ef38aa01c841c60f98b7dc79fcc9bb5d676e53',doc);self.assertIn('No debe interpretarse como W100',doc);self.assertIn('Decision Review',doc);self.assertIn('Portfolio Control Tower',doc);self.assertIn('Executive Marketing Cockpit',doc);self.assertIn('Today / Operator Execution',doc);self.assertIn('Execution Return Flow',doc);self.assertIn('service_post_w99_execution_return_app',doc)
 
 
 if __name__=='__main__':unittest.main()
