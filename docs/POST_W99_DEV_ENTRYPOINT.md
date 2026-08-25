@@ -7,7 +7,7 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence + Contextual Control Handoff.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence + Contextual Control Handoff + Opportunity Follow-up Control.
 
 Las superficies superiores son deliberadamente complementarias:
 
@@ -19,16 +19,17 @@ Las superficies superiores son deliberadamente complementarias:
 - **Evidence Observability** muestra qué evidencia local existe, cuándo fue observada y dónde la cobertura es parcial/no observada/unknown. No consulta proveedores, no califica desempeño y no altera prioridad ni completitud.
 - **Portfolio Cadence** describe la semántica temporal de la cola transversal: deadlines ya declarados por la fuente, incidentes, antigüedad observacional de leads, trabajo sin agenda y anomalías temporales. Nunca cambia el orden ni inventa vencimientos.
 - **Contextual Control Handoff** toma la acción Today y el target exacto ya resueltos y, solo cuando existe una regla inequívoca, señala el control canónico del owner. No ejecuta el control; si falta, está ambiguo o no corresponde, falla cerrado.
+- **Opportunity Follow-up Control** extiende el owner real de oportunidades de Wave 63 con controles separados para `next_action/next_action_at` y nueva actividad CRM. También corrige el deep link de oportunidades para apuntar a `.w63-card` y esperar la carga local de Wave 63. Toda mutación exige submit humano explícito.
 
-`service_post_w99_contextual_control_handoff_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
+`service_post_w99_opportunity_followup_control_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
 
-`service_post_w99_contextual_control_handoff_app` → `service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
+`service_post_w99_opportunity_followup_control_app` → `service_post_w99_contextual_control_handoff_app` → `service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
 
 Que una capa deje de ser el terminal directo no elimina su contrato: cada capa posterior hereda la anterior y las pruebas deben verificar esa composición acumulativa, no una posición terminal histórica.
 
 La secuencia de browser bootstraps queda:
 
-`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff`
+`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control`
 
 Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para la UAT del issue #113.
 

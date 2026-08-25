@@ -39,6 +39,8 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertEqual(runtime.today_execution(company_id)["schema"], "binario.marketing.today-execution.v1")
             self.assertEqual(runtime.evidence_observability(company_id)["schema"], "binario.marketing.evidence-observability.v1")
             self.assertEqual(runtime.portfolio_cadence()["schema"], "binario.marketing.portfolio-cadence.v2")
+            self.assertTrue(callable(runtime.update_opportunity))
+            self.assertTrue(callable(runtime.create_activity))
         finally:
             if runtime.social_scheduler is not None:
                 runtime.social_scheduler.shutdown()
@@ -69,7 +71,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
     def test_docs_preserve_w99_release_boundary(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_contextual_control_handoff_app", entrypoint)
+        self.assertIn("service_post_w99_opportunity_followup_control_app", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
@@ -82,10 +84,12 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         self.assertIn("Evidence Observability", doc)
         self.assertIn("Portfolio Cadence", doc)
         self.assertIn("Contextual Control Handoff", doc)
+        self.assertIn("Opportunity Follow-up Control", doc)
         self.assertIn("service_post_w99_portfolio_cadence_app", doc)
         self.assertIn("service_post_w99_contextual_control_handoff_app", doc)
+        self.assertIn("service_post_w99_opportunity_followup_control_app", doc)
         self.assertIn(
-            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff",
+            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control",
             doc,
         )
 
