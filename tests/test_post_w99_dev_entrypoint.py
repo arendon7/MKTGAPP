@@ -21,53 +21,24 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         with patch("binario_marketing.service_post_w99_dev_app.serve") as dev_serve:
             rc = cli.main(["serve-dev", "--host", "127.0.0.1", "--port", "9988"])
         self.assertEqual(rc, 0)
-        dev_serve.assert_called_once_with(
-            "127.0.0.1",
-            9988,
-            allow_network=False,
-            open_browser=False,
-        )
+        dev_serve.assert_called_once_with("127.0.0.1", 9988, allow_network=False, open_browser=False)
 
     def test_dev_runtime_contains_full_post_w99_chain(self):
         runtime = AppRuntime.create(ROOT, ROOT / "tmp-test-dev-entrypoint")
         try:
             company = runtime.create_company({"name": "Dev Company"})
             company_id = company["id"]
-            self.assertEqual(
-                runtime.action_center(company_id)["schema"],
-                "binario.marketing.action-center.v1",
-            )
+            self.assertEqual(runtime.action_center(company_id)["schema"], "binario.marketing.action-center.v1")
             with self.assertRaises(ValueError):
                 runtime.navigator(company_id, "x")
             self.assertTrue(callable(runtime.commercial_pipeline))
-            self.assertEqual(
-                runtime.commercial_outcomes(company_id)["schema"],
-                "binario.marketing.commercial-outcomes.v1",
-            )
-            self.assertEqual(
-                runtime.decision_review(company_id)["schema"],
-                "binario.marketing.decision-review.v1",
-            )
-            self.assertEqual(
-                runtime.portfolio_control_tower()["schema"],
-                "binario.marketing.portfolio-control-tower.v1",
-            )
-            self.assertEqual(
-                runtime.executive_cockpit(company_id)["schema"],
-                "binario.marketing.executive-cockpit.v1",
-            )
-            self.assertEqual(
-                runtime.today_execution(company_id)["schema"],
-                "binario.marketing.today-execution.v1",
-            )
-            self.assertEqual(
-                runtime.evidence_observability(company_id)["schema"],
-                "binario.marketing.evidence-observability.v1",
-            )
-            self.assertEqual(
-                runtime.portfolio_cadence()["schema"],
-                "binario.marketing.portfolio-cadence.v2",
-            )
+            self.assertEqual(runtime.commercial_outcomes(company_id)["schema"], "binario.marketing.commercial-outcomes.v1")
+            self.assertEqual(runtime.decision_review(company_id)["schema"], "binario.marketing.decision-review.v1")
+            self.assertEqual(runtime.portfolio_control_tower()["schema"], "binario.marketing.portfolio-control-tower.v1")
+            self.assertEqual(runtime.executive_cockpit(company_id)["schema"], "binario.marketing.executive-cockpit.v1")
+            self.assertEqual(runtime.today_execution(company_id)["schema"], "binario.marketing.today-execution.v1")
+            self.assertEqual(runtime.evidence_observability(company_id)["schema"], "binario.marketing.evidence-observability.v1")
+            self.assertEqual(runtime.portfolio_cadence()["schema"], "binario.marketing.portfolio-cadence.v2")
         finally:
             if runtime.social_scheduler is not None:
                 runtime.social_scheduler.shutdown()
@@ -96,7 +67,9 @@ class PostW99DevEntrypointTests(unittest.TestCase):
                 server.server_close()
 
     def test_docs_preserve_w99_release_boundary(self):
+        entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
+        self.assertIn("service_post_w99_contextual_control_handoff_app", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
@@ -108,9 +81,11 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         self.assertIn("Contextual Deep Linking", doc)
         self.assertIn("Evidence Observability", doc)
         self.assertIn("Portfolio Cadence", doc)
+        self.assertIn("Contextual Control Handoff", doc)
         self.assertIn("service_post_w99_portfolio_cadence_app", doc)
+        self.assertIn("service_post_w99_contextual_control_handoff_app", doc)
         self.assertIn(
-            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence",
+            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff",
             doc,
         )
 

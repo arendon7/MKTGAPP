@@ -74,11 +74,9 @@ class PostW99EvidenceObservabilityIntegrationTests(unittest.TestCase):
                 self._shutdown_runtime(runtime)
 
     def test_docs_and_entrypoint_preserve_frozen_release_boundary(self):
-        entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text(encoding="utf-8")
         cadence_terminal = (ROOT / "src" / "binario_marketing" / "service_post_w99_portfolio_cadence_app.py").read_text(encoding="utf-8")
         docs = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text(encoding="utf-8")
         evidence_docs = (ROOT / "docs" / "POST_W99_EVIDENCE_OBSERVABILITY.md").read_text(encoding="utf-8")
-        self.assertIn("service_post_w99_portfolio_cadence_app", entrypoint)
         self.assertIn("service_post_w99_evidence_observability_integrated_app as base", cadence_terminal)
         self.assertIn("service_post_w99_evidence_observability_integrated_app", docs)
         self.assertIn("Today → Execution Return → Contextual Deep Linking → Evidence Observability", docs)
