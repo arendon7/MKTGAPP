@@ -26,6 +26,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertEqual(runtime.decision_review(company['id'])['schema'],'binario.marketing.decision-review.v1')
             self.assertEqual(runtime.portfolio_control_tower()['schema'],'binario.marketing.portfolio-control-tower.v1')
             self.assertEqual(runtime.executive_cockpit(company['id'])['schema'],'binario.marketing.executive-cockpit.v1')
+            self.assertEqual(runtime.today_execution(company['id'])['schema'],'binario.marketing.today-execution.v1')
         finally:
             if runtime.social_scheduler is not None:runtime.social_scheduler.shutdown()
             runtime.proxies.shutdown();runtime.transcriptions.shutdown();runtime.renders.shutdown()
@@ -41,7 +42,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
                 runtime.proxies.shutdown();runtime.transcriptions.shutdown();runtime.renders.shutdown();server.server_close()
 
     def test_docs_preserve_w99_release_boundary(self):
-        doc=(ROOT/'docs'/'POST_W99_DEV_ENTRYPOINT.md').read_text();self.assertIn('serve-dev',doc);self.assertIn('60ef38aa01c841c60f98b7dc79fcc9bb5d676e53',doc);self.assertIn('No debe interpretarse como W100',doc);self.assertIn('Decision Review',doc);self.assertIn('Portfolio Control Tower',doc);self.assertIn('Executive Marketing Cockpit',doc);self.assertIn('service_post_w99_integrated_cockpit_app',doc)
+        doc=(ROOT/'docs'/'POST_W99_DEV_ENTRYPOINT.md').read_text();self.assertIn('serve-dev',doc);self.assertIn('60ef38aa01c841c60f98b7dc79fcc9bb5d676e53',doc);self.assertIn('No debe interpretarse como W100',doc);self.assertIn('Decision Review',doc);self.assertIn('Portfolio Control Tower',doc);self.assertIn('Executive Marketing Cockpit',doc);self.assertIn('Today / Operator Execution',doc);self.assertIn('service_post_w99_today_execution_app',doc)
 
 
 if __name__=='__main__':unittest.main()
