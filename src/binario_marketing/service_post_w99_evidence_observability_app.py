@@ -95,13 +95,14 @@ def _results_snapshot_domain(results: dict, *, projected_at: str) -> dict:
     campaigns = int(summary.get("campaigns") or 0)
     if snapshot:
         created_at = snapshot.get("created_at")
-        timestamp_ok = _parse_timestamp(created_at) is not None
-        status = "OBSERVED" if timestamp_ok else "PARTIAL"
+        timestamp_state = _freshness(created_at, projected_at=projected_at)["classification"]
+        chronology_ok = timestamp_state == "AGE_OBSERVED"
+        status = "OBSERVED" if chronology_ok else "PARTIAL"
         headline = "Existe un snapshot local de resultados"
         detail = (
             "El snapshot conserva evidencia ya capturada. Esta vista no consulta al proveedor para actualizarla."
-            if timestamp_ok else
-            "Existe el snapshot, pero su timestamp no permite calcular antigüedad de forma confiable."
+            if chronology_ok else
+            "Existe el snapshot, pero su timestamp o relación temporal no permite calcular antigüedad de forma confiable."
         )
     elif campaigns:
         created_at = None
@@ -158,7 +159,7 @@ def _campaign_evidence_domain(results: dict, *, projected_at: str) -> dict:
             f"{len(observed_rows)} de {len(rows)} campaña(s) tienen señal local; "
             f"{len(explicitly_observed)} incluyen métricas observadas."
         ),
-        observed_at=snapshot.get("created_at") if observed_rows else None,
+        observed_at=snapshot.get("created_at") if explicitly_observed else None,
         projected_at=projected_at,
         coverage={
             "campaigns": len(rows),
@@ -171,7 +172,7 @@ def _campaign_evidence_domain(results: dict, *, projected_at: str) -> dict:
         action={"label": "Revisar cobertura", "view": "analytics"},
         caveats=[
             "Sin señal local no significa cero impresiones, cero clics, cero conversiones ni mal desempeño.",
-            "La fecha del snapshot es global; no se inventa una fecha de observación por campaña.",
+            "La fecha del snapshot es global y solo se usa cuando existe marketing observado; la señal de atribución por sí sola no hereda esa fecha.",
         ],
     )
 
