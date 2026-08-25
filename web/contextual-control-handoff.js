@@ -44,7 +44,9 @@ function controlHandoffResolveControl(row,targetInfo){
     return controlHandoffSingle(controlHandoffButton(target,text=>text==='Completar'),meta('COMPLETE_ACTIVITY','Completar seguimiento','BUTTON','Control existente en CRM. Resaltarlo no significa que deba completarse: la decisión sigue siendo humana.'));
   }
   if(targetKind==='PUBLICATION'&&['publication_failed','publication_overdue','publication_today'].includes(kind)){
-    return controlHandoffSingle(controlHandoffButton(target,text=>text==='Gestionar'),meta('MANAGE_PUBLICATION','Gestionar publicación','BUTTON','Abre la gestión editorial existente; no guarda, reprograma ni cancela por sí solo.'));
+    const selectedMatches=typeof editorialState!=='undefined'&&String(editorialState.selectedId||'')===String(deep.target_id||'');
+    const panels=selectedMatches?[...document.querySelectorAll('#marketing-ops-view .editorial-panel')]:[];
+    return controlHandoffSingle(panels,meta('MANAGE_PUBLICATION_PANEL','Editar, reprogramar o cancelar publicación','CONTROL_GROUP','Contextual Deep Linking ya abrió el panel editorial del publication ID exacto. El usuario conserva copy, fecha y elección explícita de guardar o cancelar.'));
   }
   if(targetKind==='LEAD'&&kind==='lead_conflict'){
     const groups=[...target.querySelectorAll('.w61-actions')].filter(group=>group.querySelectorAll('select').length===1&&controlHandoffButton(group,text=>text==='Resolver conflicto exacto').length===1);
