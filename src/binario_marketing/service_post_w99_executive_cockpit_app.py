@@ -39,6 +39,18 @@ def _state_from_counts(*, blocking: int = 0, critical: int = 0, attention: int =
     return "STABLE"
 
 
+def _source_attention(queue: list[dict], source: str) -> dict:
+    rows = [row for row in queue if str(row.get("source") or "").upper() == source]
+    return {
+        "total": len(rows),
+        "blocking": sum(1 for row in rows if row.get("blocking")),
+        "critical": sum(1 for row in rows if str(row.get("urgency") or "").upper() == "CRITICAL"),
+        "high": sum(1 for row in rows if str(row.get("urgency") or "").upper() == "HIGH"),
+        "medium": sum(1 for row in rows if str(row.get("urgency") or "").upper() == "MEDIUM"),
+        "low": sum(1 for row in rows if str(row.get("urgency") or "").upper() == "LOW"),
+    }
+
+
 def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: dict,
                               outcomes: dict, results: dict, review: dict,
                               generated_at: str | None = None) -> dict:
@@ -48,22 +60,35 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
     business-health score, probability of close, causal lift or blended-currency value.
     """
     action_summary = action_center.get("summary") or {}
+    action_queue = list(action_center.get("queue") or [])
     pipeline_summary = pipeline.get("summary") or {}
     outcome_summary = outcomes.get("summary") or {}
     results_summary = results.get("summary") or {}
     review_summary = review.get("summary") or {}
 
+    operations_source = _source_attention(action_queue, "OPERATIONS")
+    commercial_source = _source_attention(action_queue, "COMMERCIAL")
+    campaign_source = _source_attention(action_queue, "CAMPAIGN")
+
     operations_state = _state_from_counts(
-        blocking=_count(action_summary.get("blocking")),
-        critical=_count(action_summary.get("critical")),
-        attention=_count(action_summary.get("high")),
+        blocking=operations_source["blocking"],
+        critical=operations_source["critical"],
+        attention=operations_source["high"],
     )
     commercial_attention = _count(pipeline_summary.get("requires_attention")) + _count(
         outcome_summary.get("attention")
     )
-    commercial_state = _state_from_counts(attention=commercial_attention)
+    commercial_state = _state_from_counts(
+        blocking=commercial_source["blocking"],
+        critical=commercial_source["critical"],
+        attention=commercial_source["high"] + commercial_attention,
+    )
     campaign_attention = _count(results_summary.get("requires_attention"))
-    campaign_state = _state_from_counts(attention=campaign_attention)
+    campaign_state = _state_from_counts(
+        blocking=campaign_source["blocking"],
+        critical=campaign_source["critical"],
+        attention=campaign_source["high"] + campaign_attention,
+    )
     decision_attention = _count(review_summary.get("ready_for_review")) + _count(
         review_summary.get("follow_through_required")
     )
@@ -75,20 +100,21 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
             headline=("Hay bloqueos operativos" if operations_state == "BLOCKED" else
                       "Hay prioridades operativas" if operations_state == "ATTENTION" else
                       "Operación sin bloqueos detectados"),
-            detail=(f"{_count(action_summary.get('critical'))} críticas · "
-                    f"{_count(action_summary.get('high'))} altas · "
-                    f"{_count(action_summary.get('blocking'))} bloqueantes"),
+            detail=(f"{operations_source['critical']} críticas · "
+                    f"{operations_source['high']} altas · "
+                    f"{operations_source['blocking']} bloqueantes"),
             view="action-center", action_label="Abrir prioridades",
             metrics={
-                "queue_total": _count(action_summary.get("queue_total")),
-                "critical": _count(action_summary.get("critical")),
-                "high": _count(action_summary.get("high")),
-                "blocking": _count(action_summary.get("blocking")),
+                "queue_total": operations_source["total"],
+                "critical": operations_source["critical"],
+                "high": operations_source["high"],
+                "blocking": operations_source["blocking"],
             },
         ),
         _lane(
             key="COMMERCIAL", label="Comercial", state=commercial_state,
-            headline=("El pipeline requiere atención" if commercial_state == "ATTENTION" else
+            headline=("Hay bloqueos comerciales" if commercial_state == "BLOCKED" else
+                      "El pipeline requiere atención" if commercial_state == "ATTENTION" else
                       "Pipeline sin alertas determinísticas"),
             detail=(f"{_count(pipeline_summary.get('open_opportunities'))} abiertas · "
                     f"{_count(pipeline_summary.get('requires_attention'))} requieren atención · "
@@ -100,11 +126,14 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
                 "captured_leads": _count(outcome_summary.get("captured_leads")),
                 "attributed_opportunities": _count(outcome_summary.get("attributed_opportunities")),
                 "attributed_won": _count(outcome_summary.get("attributed_won")),
+                "critical_actions": commercial_source["critical"],
+                "blocking_actions": commercial_source["blocking"],
             },
         ),
         _lane(
             key="CAMPAIGNS", label="Campañas", state=campaign_state,
-            headline=("Hay campañas que requieren intervención" if campaign_state == "ATTENTION" else
+            headline=("Hay bloqueos de campaña" if campaign_state == "BLOCKED" else
+                      "Hay campañas que requieren intervención" if campaign_state == "ATTENTION" else
                       "Campañas sin alertas de resultados"),
             detail=(f"{_count(results_summary.get('active_campaigns'))} activas · "
                     f"{_count(results_summary.get('requires_attention'))} requieren atención · "
@@ -116,6 +145,8 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
                 "with_observed_evidence": _count(results_summary.get("with_observed_evidence")),
                 "with_attributed_opportunities": _count(results_summary.get("with_attributed_opportunities")),
                 "with_human_decision": _count(results_summary.get("with_human_decision")),
+                "critical_actions": campaign_source["critical"],
+                "blocking_actions": campaign_source["blocking"],
             },
         ),
         _lane(
@@ -147,7 +178,7 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
     else:
         headline = "No se detectan bloqueos ni alertas determinísticas"
 
-    top_actions = list(action_center.get("queue") or [])[:8]
+    top_actions = action_queue[:8]
     executive_points: list[dict] = []
     if action_center.get("next_action"):
         executive_points.append({
@@ -157,7 +188,7 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
             "detail": action_center["next_action"].get("detail"),
             "view": (action_center["next_action"].get("action") or {}).get("view"),
         })
-    if commercial_attention:
+    if commercial_attention or commercial_source["critical"] or commercial_source["high"]:
         executive_points.append({
             "code": "COMMERCIAL_ATTENTION",
             "label": "Atención comercial",
@@ -173,7 +204,7 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
             "detail": "La evidencia posterior habilita revisión, pero no prueba causalidad ni ejecuta la decisión.",
             "view": "decision-review",
         })
-    if campaign_attention:
+    if campaign_attention or campaign_source["critical"] or campaign_source["high"]:
         executive_points.append({
             "code": "CAMPAIGN_ATTENTION",
             "label": "Campañas",
@@ -184,10 +215,11 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
     executive_points = executive_points[:4]
 
     latest_snapshot = results.get("latest_snapshot")
+    projected_at = generated_at or datetime.now(timezone.utc).isoformat()
     return {
         "schema": "binario.marketing.executive-cockpit.v1",
         "company": {"id": company.get("id"), "name": company.get("name")},
-        "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+        "generated_at": projected_at,
         "status": {
             "state": overall_state,
             "headline": headline,
@@ -228,7 +260,7 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
         },
         "evidence": {
             "latest_snapshot": latest_snapshot,
-            "local_projection_generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+            "local_projection_generated_at": projected_at,
             "provider_refresh_performed": False,
             "provider_freshness_assumed": False,
         },
@@ -236,6 +268,7 @@ def compose_executive_cockpit(*, company: dict, action_center: dict, pipeline: d
             "single_executive_read_model": True,
             "canonical_modules_remain_authoritative": True,
             "action_center_order_preserved": True,
+            "lane_state_uses_authoritative_source": True,
             "no_business_health_score": True,
             "no_probability_of_close": True,
             "no_causal_inference": True,
