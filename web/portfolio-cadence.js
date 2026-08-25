@@ -50,11 +50,17 @@ async function cadenceLoad(){
   finally{postW99CadenceState.loading=false;cadenceRender()}
 }
 
+function cadenceResolvedItem(item){
+  if(item?.action)return item;
+  const queue=postW99CadenceState.payload?.queue||[];
+  return queue.find(row=>(item?.portfolio_id&&row.portfolio_id===item.portfolio_id)||(item?.id&&row.id===item.id))||item;
+}
 async function cadenceNavigate(item){
-  const companyId=item?.company?.id;
+  const target=cadenceResolvedItem(item);
+  const companyId=target?.company?.id;
   if(!companyId){opsToast('La acción no tiene empresa asociada.');return}
   if(typeof portfolioNavigate==='function'){
-    await portfolioNavigate(companyId,item.action||{view:'home'});
+    await portfolioNavigate(companyId,target.action||{view:'home'});
     cadenceClose();
     return;
   }
@@ -64,7 +70,7 @@ async function cadenceNavigate(item){
   if(typeof fillCompanyFilter==='function')fillCompanyFilter();
   if(typeof globalThis.refreshMarketingOps==='function')await globalThis.refreshMarketingOps(false);
   cadenceClose();
-  if(typeof opsShowView==='function')opsShowView(item?.action?.view||'home');
+  if(typeof opsShowView==='function')opsShowView(target?.action?.view||'home');
 }
 
 function cadenceAt(timing){
@@ -75,7 +81,7 @@ function cadenceAt(timing){
 function cadenceTimingMeta(timing){
   const pieces=[timing?.kind||'SIN SEMÁNTICA'];
   if(timing?.timestamp_quality&&timing.timestamp_quality!=='NOT_APPLICABLE')pieces.push(timing.timestamp_quality);
-  if(Number.isFinite(Number(timing?.age_hours)))pieces.push(`${Number(timing.age_hours).toLocaleString()} h`);
+  if(timing?.age_hours!==null&&timing?.age_hours!==undefined&&Number.isFinite(Number(timing.age_hours)))pieces.push(`${Number(timing.age_hours).toLocaleString()} h`);
   return pieces.join(' · ');
 }
 function cadenceSection(title,items,explanation){
@@ -93,7 +99,8 @@ function cadenceSection(title,items,explanation){
     );
     head.append(left,opsEl('span','cadence-state',timing.state||timing.kind||''));
     card.append(head,opsEl('div','cadence-sub',timing.explanation||''));
-    const b=opsEl('button','',item.action?.label||'Abrir');
+    const resolved=cadenceResolvedItem(item);
+    const b=opsEl('button','',resolved?.action?.label||'Abrir');
     b.type='button';
     b.addEventListener('click',()=>cadenceNavigate(item));
     card.append(b);
