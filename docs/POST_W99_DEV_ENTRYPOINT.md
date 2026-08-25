@@ -52,15 +52,11 @@ Que una capa deje de ser el terminal directo no elimina su contrato: las capas p
 
 ## Browser bootstrap
 
-Campaign Coordinate State Decomposition continúa sin JavaScript propio. El browser chain anterior se conserva como prefijo exacto:
+Campaign Coordinate State Decomposition continúa sin JavaScript propio. El browser chain completo y canónico es:
 
-`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → Campaign Creative Creation Intent Handoff`
+`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → Campaign Creative Creation Intent Handoff → Campaign Execution Owner Cardinality Hardening`
 
-y el nuevo terminal añade después:
-
-`→ Campaign Execution Owner Cardinality Hardening`
-
-No cambia la autoridad de mutación de ninguno de los módulos propietarios.
+El prefijo histórico hasta Campaign Creative Creation Intent Handoff se conserva intacto y el hardening se carga únicamente después. No cambia la autoridad de mutación de ninguno de los módulos propietarios.
 
 ## Defaults
 
