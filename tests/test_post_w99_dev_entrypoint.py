@@ -51,12 +51,10 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             runtime.transcriptions.shutdown()
             runtime.renders.shutdown()
             import shutil
-
             shutil.rmtree(ROOT / "tmp-test-dev-entrypoint", ignore_errors=True)
 
     def test_dev_http_server_is_loopback_capable(self):
         import tempfile
-
         with tempfile.TemporaryDirectory() as tmp:
             runtime = AppRuntime.create(ROOT, Path(tmp) / "data")
             runtime.create_company({"name": "Dev HTTP"})
@@ -74,31 +72,39 @@ class PostW99DevEntrypointTests(unittest.TestCase):
     def test_docs_preserve_w99_release_boundary(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_campaign_execution_owner_relay_app", entrypoint)
+        self.assertIn("service_post_w99_campaign_execution_candidate_selector_app", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
-        self.assertIn("Decision Review", doc)
-        self.assertIn("Portfolio Control Tower", doc)
-        self.assertIn("Executive Marketing Cockpit", doc)
-        self.assertIn("Today / Operator Execution", doc)
-        self.assertIn("Execution Return Flow", doc)
-        self.assertIn("Contextual Deep Linking", doc)
-        self.assertIn("Evidence Observability", doc)
-        self.assertIn("Portfolio Cadence", doc)
-        self.assertIn("Contextual Control Handoff", doc)
-        self.assertIn("Opportunity Follow-up Control", doc)
-        self.assertIn("Existing Activity Reschedule Control", doc)
-        self.assertIn("Campaign Results Owner Handoff", doc)
-        self.assertIn("Campaign Execution Owner Relay", doc)
-        self.assertIn("service_post_w99_portfolio_cadence_app", doc)
-        self.assertIn("service_post_w99_contextual_control_handoff_app", doc)
-        self.assertIn("service_post_w99_opportunity_followup_control_app", doc)
-        self.assertIn("service_post_w99_existing_activity_reschedule_control_app", doc)
-        self.assertIn("service_post_w99_campaign_results_owner_handoff_app", doc)
-        self.assertIn("service_post_w99_campaign_execution_owner_relay_app", doc)
+        for label in (
+            "Decision Review",
+            "Portfolio Control Tower",
+            "Executive Marketing Cockpit",
+            "Today / Operator Execution",
+            "Execution Return Flow",
+            "Contextual Deep Linking",
+            "Evidence Observability",
+            "Portfolio Cadence",
+            "Contextual Control Handoff",
+            "Opportunity Follow-up Control",
+            "Existing Activity Reschedule Control",
+            "Campaign Results Owner Handoff",
+            "Campaign Execution Owner Relay",
+            "Campaign Execution Candidate Selector",
+        ):
+            self.assertIn(label, doc)
+        for module in (
+            "service_post_w99_portfolio_cadence_app",
+            "service_post_w99_contextual_control_handoff_app",
+            "service_post_w99_opportunity_followup_control_app",
+            "service_post_w99_existing_activity_reschedule_control_app",
+            "service_post_w99_campaign_results_owner_handoff_app",
+            "service_post_w99_campaign_execution_owner_relay_app",
+            "service_post_w99_campaign_execution_candidate_selector_app",
+        ):
+            self.assertIn(module, doc)
         self.assertIn(
-            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay",
+            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector",
             doc,
         )
 
