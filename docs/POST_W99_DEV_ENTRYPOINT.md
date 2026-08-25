@@ -7,7 +7,7 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence + Contextual Control Handoff + Opportunity Follow-up Control + Existing Activity Reschedule Control + Campaign Results Owner Handoff + Campaign Execution Owner Relay.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Today / Operator Execution + Execution Return Flow + Contextual Deep Linking + Evidence Observability + Portfolio Cadence + Contextual Control Handoff + Opportunity Follow-up Control + Existing Activity Reschedule Control + Campaign Results Owner Handoff + Campaign Execution Owner Relay + Campaign Execution Owner Cardinality Hardening.
 
 Las superficies superiores son deliberadamente complementarias:
 
@@ -23,16 +23,17 @@ Las superficies superiores son deliberadamente complementarias:
 - **Existing Activity Reschedule Control** no añade una mutación nueva: integra la reprogramación canónica ya existente de Wave 45. Enruta atención de pipeline al `activity_id` causal exacto cuando es inequívoco y expone `followupRescheduleOpen` dentro de la fila CRM; Wave 45 conserva el único store, endpoint `POST .../reschedule`, validación de fecha futura y timeline.
 - **Campaign Results Owner Handoff** cierra el recorrido de resultados por `campaign_id`: añade un GET local read-only para probar identidad exacta incluso antes del primer snapshot, aterriza `CAPTURE_RESULTS / REVIEW_COVERAGE / RECORD_DECISION / REVIEW_RESULTS` en un contexto exacto de campaña dentro de Learning Loop y señala los controles canónicos W52. Para `OPTIONAL_AI`, señala el `Analizar con IA` de W65 en vez del `Ir` genérico. No sustituye refresh, decisiones ni AI owners existentes.
 - **Campaign Execution Owner Relay** conserva Wave 64 como autoridad de siguiente acción y resuelve el owner final solo cuando existe un ID canónico único. Cierra `FIX_EXECUTION → publicación`, borrador/programación editorial y `REVIEW_PAID`, repara el target `MEDIA` sobre el Creative Studio W49 real y falla cerrado cuando existen múltiples publicaciones o planes candidatos. No ejecuta ninguna acción final.
+- **Campaign Execution Owner Cardinality Hardening** impide que el `media_id` que W64 obtuvo por posición sea elevado a identidad exacta cuando existen varios creativos semánticamente elegibles. También preserva el invariant fuerte de `CONTROL_GROUP` para W49 `Guardar ficha creativa` y W35 `Guardar cambios`: exactamente un submit canónico y habilitado.
 
-`service_post_w99_campaign_execution_owner_relay_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
+`service_post_w99_campaign_execution_owner_cardinality_hardening_app` es ahora el terminal de composición de `serve-dev`. Hereda a `service_post_w99_campaign_execution_owner_relay_app`, que sigue siendo el resolver propietario de campaña. La ascendencia explícita de las capas superiores es:
 
-`service_post_w99_campaign_execution_owner_relay_app` → `service_post_w99_campaign_results_owner_handoff_app` → `service_post_w99_existing_activity_reschedule_control_app` → `service_post_w99_opportunity_followup_control_app` → `service_post_w99_contextual_control_handoff_app` → `service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
+`service_post_w99_campaign_execution_owner_cardinality_hardening_app` → `service_post_w99_campaign_execution_owner_relay_app` → `service_post_w99_campaign_results_owner_handoff_app` → `service_post_w99_existing_activity_reschedule_control_app` → `service_post_w99_opportunity_followup_control_app` → `service_post_w99_contextual_control_handoff_app` → `service_post_w99_portfolio_cadence_app` → `service_post_w99_evidence_observability_integrated_app` → `service_post_w99_contextual_deep_linking_app` → `service_post_w99_execution_return_app` → Today.
 
 Que una capa deje de ser el terminal directo no elimina su contrato: cada capa posterior hereda la anterior y las pruebas deben verificar esa composición acumulativa, no una posición terminal histórica.
 
 La secuencia de browser bootstraps queda:
 
-`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay`
+`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Owner Cardinality Hardening`
 
 Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para la UAT del issue #113.
 
