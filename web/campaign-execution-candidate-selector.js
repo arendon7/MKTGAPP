@@ -4,13 +4,13 @@ const postW99CampaignExecutionCandidateSelectorState={active:null};
 function candidateSelectorText(value){return value===null||value===undefined?'':String(value).trim()}
 function candidateSelectorCompany(){return typeof opsSelectedCompany==='function'?opsSelectedCompany():null}
 function candidateSelectorResolution(item){const value=item?.owner_resolution;return value&&String(value.state||'')==='AMBIGUOUS_TARGET'?value:null}
-function candidateSelectorSupportedTarget(kind){return ['PUBLICATION','MEDIA','PAID_DRAFT','CAMPAIGN','CAMPAIGN_RESULTS'].includes(String(kind||'').toUpperCase())}
+function candidateSelectorSupportedTarget(kind){return ['PUBLICATION','PAID_DRAFT'].includes(String(kind||'').toUpperCase())}
 function candidateSelectorValidation(item){
   const resolution=candidateSelectorResolution(item);if(!resolution)return null;
   const ownerView=candidateSelectorText(resolution.owner_view),targetKind=candidateSelectorText(resolution.target_kind).toUpperCase(),candidates=Array.isArray(resolution.candidates)?resolution.candidates:[],ids=candidates.map(row=>candidateSelectorText(row?.id)),unique=new Set(ids);
   let reason=null;
   if(!ownerView)reason='El resolver no declaró owner_view.';
-  else if(!candidateSelectorSupportedTarget(targetKind))reason='El tipo de target ambiguo no tiene una ruta explícita certificada.';
+  else if(!candidateSelectorSupportedTarget(targetKind))reason='El tipo de target ambiguo no pertenece al contrato seleccionable actual.';
   else if(candidates.length<2)reason='AMBIGUOUS_TARGET requiere al menos dos candidatos.';
   else if(ids.some(id=>!id))reason='Existe un candidato sin ID canónico.';
   else if(unique.size!==ids.length)reason='La lista contiene IDs duplicados y no representa opciones distintas.';
@@ -29,24 +29,18 @@ function candidateSelectorFromToday(item){
 function candidateSelectorCandidateTitle(validation,candidate,index){
   if(validation.targetKind==='PUBLICATION')return `Publicación ${candidateSelectorText(candidate?.channel)||index+1}`;
   if(validation.targetKind==='PAID_DRAFT')return candidateSelectorText(candidate?.campaign_name)||`Plan de pauta ${index+1}`;
-  if(validation.targetKind==='MEDIA')return candidateSelectorText(candidate?.name)||`Creativo ${index+1}`;
-  if(validation.targetKind==='CAMPAIGN')return `Campaña ${index+1}`;
-  if(validation.targetKind==='CAMPAIGN_RESULTS')return `Resultados de campaña ${index+1}`;
   return `Candidato ${index+1}`;
 }
-function candidateSelectorCandidateMeta(validation,candidate){
+function candidateSelectorCandidateMeta(_validation,candidate){
   const values=[];
-  for(const [key,label] of [['status','Estado'],['stage','Etapa'],['scheduled_for','Fecha'],['channel','Canal']]){const value=candidateSelectorText(candidate?.[key]);if(value)values.push([label,value])}
+  for(const [key,label] of [['status','Estado'],['scheduled_for','Fecha'],['channel','Canal']]){const value=candidateSelectorText(candidate?.[key]);if(value)values.push([label,value])}
   return values;
 }
 function candidateSelectorExactItem(item,validation,candidate){
   const targetId=candidateSelectorText(candidate?.id);if(!validation?.valid||!targetId||!validation.candidates.some(row=>candidateSelectorText(row?.id)===targetId))return null;
   const action={...(item?.action||{})};action.view=validation.ownerView;action.tab=null;
   if(validation.targetKind==='PUBLICATION'){action.entity_id=targetId;action.label='Abrir publicación elegida'}
-  else if(validation.targetKind==='MEDIA'){action.media_id=targetId;action.label='Abrir creativo elegido'}
   else if(validation.targetKind==='PAID_DRAFT'){action.entity_id=targetId;action.label='Abrir plan de pauta elegido'}
-  else if(validation.targetKind==='CAMPAIGN'){action.campaign_id=targetId;action.label='Abrir campaña elegida'}
-  else if(validation.targetKind==='CAMPAIGN_RESULTS'){action.campaign_id=targetId;action.label='Abrir resultados elegidos'}
   else return null;
   return{...item,action,explicit_owner_selection:{schema:POST_W99_CAMPAIGN_EXECUTION_CANDIDATE_SELECTOR_SCHEMA,source_resolution_state:'AMBIGUOUS_TARGET',owner_view:validation.ownerView,target_kind:validation.targetKind,target_id:targetId,selected_by:'HUMAN_CLICK',persisted:false,selected_at:new Date().toISOString()}};
 }

@@ -73,6 +73,14 @@ class PostW99CampaignExecutionCandidateSelectorTests(unittest.TestCase):
             finally:
                 server.shutdown(); thread.join(timeout=5); server.server_close(); self._shutdown_runtime(runtime)
 
+    def test_selector_accepts_only_current_ambiguous_owner_types(self):
+        source = (ROOT / "web" / "campaign-execution-candidate-selector.js").read_text(encoding="utf-8")
+        self.assertIn("['PUBLICATION','PAID_DRAFT']", source)
+        self.assertNotIn("['PUBLICATION','MEDIA','PAID_DRAFT'", source)
+        self.assertNotIn("validation.targetKind==='CAMPAIGN'", source)
+        self.assertNotIn("validation.targetKind==='CAMPAIGN_RESULTS'", source)
+        self.assertNotIn("validation.targetKind==='MEDIA'", source)
+
     def test_selector_validates_cardinality_identity_and_company_before_navigation(self):
         source = (ROOT / "web" / "campaign-execution-candidate-selector.js").read_text(encoding="utf-8")
         for required in (
@@ -132,6 +140,9 @@ class PostW99CampaignExecutionCandidateSelectorTests(unittest.TestCase):
         entry = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text(encoding="utf-8")
         self.assertIn("AMBIGUOUS_TARGET", doc)
         self.assertIn("HUMAN_CLICK", doc)
+        self.assertIn("PUBLICATION", doc)
+        self.assertIn("PAID_DRAFT", doc)
+        self.assertIn("No se habilitan de forma preventiva", doc)
         self.assertIn("Action Center conserva prioridad y orden", doc)
         self.assertIn("main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         expected = "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector"

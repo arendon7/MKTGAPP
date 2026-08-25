@@ -2,7 +2,7 @@
 
 ## Propósito
 
-Campaign Execution Owner Relay resuelve un owner final solo cuando existe un único ID canónico. Cuando Wave 64 encuentra más de un objeto válido, conserva `AMBIGUOUS_TARGET` y falla cerrado. Este incremento añade la siguiente pieza mínima: permitir que una persona elija explícitamente uno de esos IDs sin convertir la aplicación en una heurística de selección.
+Campaign Execution Owner Relay solo resuelve un owner final cuando existe un único ID canónico. Cuando Wave 64 encuentra más de un objeto válido, conserva `AMBIGUOUS_TARGET` y falla cerrado. Este incremento añade la pieza mínima siguiente: permitir que una persona elija explícitamente uno de esos IDs sin convertir la aplicación en una heurística de selección.
 
 No cambia la prioridad de Action Center, no cambia Wave 64, no persiste una elección y no ejecuta ninguna mutación de negocio.
 
@@ -24,12 +24,21 @@ El selector no introduce endpoint de negocio ni vuelve a consultar el backend. C
 
 La ambigüedad sigue siendo verdad canónica del resolver. La elección humana se representa solo en la copia efímera usada para esa navegación mediante `explicit_owner_selection`.
 
+## Contrato seleccionable actual
+
+El selector admite únicamente las dos clases de ambigüedad que el resolver actual puede producir con IDs canónicos distintos y accionables:
+
+- `PUBLICATION`: varias publicaciones `FAILED`, `DRAFT` o `QUEUED` que satisfacen la condición W64;
+- `PAID_DRAFT`: varios planes de pauta `DRAFT` vinculados a la misma campaña.
+
+No se habilitan de forma preventiva `MEDIA`, `CAMPAIGN`, `CAMPAIGN_RESULTS` ni tipos futuros. Si el backend llegara a devolver `AMBIGUOUS_TARGET` para otro tipo, la UI muestra selección bloqueada y no navega. Ampliar el conjunto exige un incremento explícito y nuevas pruebas.
+
 ## Precondiciones fail-closed
 
 Una fila ambigua solo ofrece botones de elección cuando:
 
 1. existe `owner_view`;
-2. `target_kind` pertenece al conjunto explícitamente soportado;
+2. `target_kind` es exactamente `PUBLICATION` o `PAID_DRAFT`;
 3. hay al menos dos candidatos;
 4. todos los candidatos tienen ID canónico no vacío;
 5. todos los IDs son distintos;
@@ -37,15 +46,12 @@ Una fila ambigua solo ofrece botones de elección cuando:
 
 Si una precondición falla se muestra `Selección bloqueada` y no se abre ningún owner alternativo.
 
-## Target kinds soportados
+## Traducción del candidato elegido
 
-- `PUBLICATION` → `action.view = calendar`, `action.entity_id = candidate.id`;
-- `MEDIA` → `action.view = content`, `action.media_id = candidate.id`;
-- `PAID_DRAFT` → `action.view = pauta`, `action.entity_id = candidate.id`;
-- `CAMPAIGN` → `action.view = campaigns`, `action.campaign_id = candidate.id`;
-- `CAMPAIGN_RESULTS` → `action.view = analytics`, `action.campaign_id = candidate.id`.
+- `PUBLICATION` → conserva el `owner_view` declarado por el resolver y fija `action.entity_id = candidate.id`;
+- `PAID_DRAFT` → conserva el `owner_view` declarado por el resolver y fija `action.entity_id = candidate.id`.
 
-El soporte no significa que todos esos tipos deban producir ambigüedad hoy; significa que el adapter no necesita inferir campos si el resolver los produce en el futuro dentro del mismo contrato.
+El selector no inventa IDs, tabs ni owner views. Usa únicamente los valores certificados por Campaign Execution Owner Relay.
 
 ## Semántica de la elección
 
@@ -66,26 +72,25 @@ explicit_owner_selection.persisted = false
 
 ## Execution Return
 
-Existe una interacción específica con Today. Execution Return captura inicialmente la fila antes de que `actionCenterOpen()` llegue al selector. Esa captura contiene el owner genérico W64 y sería incorrecta si el usuario cancela o elige un owner final distinto.
+Today abre una acción a través de `todayOpen`. Execution Return envuelve esa función y captura la fila antes de que `actionCenterOpen()` llegue al selector. Para una fila ambigua esa captura inicial contiene el owner genérico W64 y sería incorrecta si el usuario cancela o elige un owner final distinto.
 
 Por eso:
 
-- si el selector se abre desde Today y la captura activa corresponde al mismo `action_id`, la captura provisional se elimina;
-- `Cancelar sin abrir` no deja recorrido activo;
+- si el selector se abre desde Today y la captura activa corresponde al mismo `action_id`, la captura provisional se elimina con `executionReturnForget()`;
+- `Cancelar sin abrir` no deja un recorrido genérico activo;
 - al elegir un candidato se ejecuta `executionReturnCapture(exactItem)` antes de delegar al `actionCenterOpen` previo;
-- el mismo `action_id`, posición y prioridad se conservan, pero `destination` ya contiene el owner/ID elegido.
-
-No se crea contexto Execution Return al seleccionar desde Action Center fuera de Today.
+- el mismo `action_id`, secuencia y prioridad se conservan, pero `destination` ya contiene el owner/ID elegido;
+- seleccionar desde Action Center fuera de Today no crea un nuevo contexto Execution Return.
 
 ## Delegación
 
-Después de una elección válida el selector no implementa navegación propia si existe la cadena canónica: delega al `actionCenterOpen` que ya estaba instalado antes de este adapter. Así se conservan:
+Después de una elección válida el selector delega al `actionCenterOpen` que ya estaba instalado antes de este adapter. Así se conservan:
 
 - Contextual Deep Linking;
-- la reparación W49 de `MEDIA`;
 - la identidad W48 de `PAID_DRAFT`;
+- el panel Wave 42 para publicaciones;
 - Contextual Control Handoff;
-- los owners reales W35/W42/W48/W49;
+- los owners reales de mutación;
 - cualquier regla anterior de retorno y render.
 
 ## Cierre por obsolescencia
@@ -113,7 +118,7 @@ El browser adapter no contiene:
 - `sendBeacon(`;
 - métodos POST/PATCH/PUT/DELETE.
 
-La selección no completa tareas, no modifica CRM, no programa/publica, no crea/cancela pauta, no guarda creativos y no modifica campañas. Es únicamente una decisión humana de navegación entre IDs que el backend ya declaró como candidatos canónicos.
+La selección no completa tareas, no modifica CRM, no programa/publica, no crea/cancela pauta y no modifica campañas. Es únicamente una decisión humana de navegación entre IDs que el backend ya declaró como candidatos canónicos.
 
 ## Autoridad
 
