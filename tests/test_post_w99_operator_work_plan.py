@@ -191,5 +191,5 @@ def test_dev_entrypoint_advances_to_operator_work_plan_without_touching_release_
     assert "service_post_w99_operator_work_plan_app" in dev
     assert "service_post_w99_integrated_cockpit_app" not in dev
     assert "service_post_w99_dev_app" in cli
-    assert 'RELEASE_TAG = "v0.9.0"' in version
+    assert 'RELEASE_TAG: str | None = "v0.9.0"' in version
     assert "RELEASE_READY = True" in version
