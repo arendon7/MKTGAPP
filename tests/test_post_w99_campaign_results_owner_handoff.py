@@ -160,7 +160,7 @@ class PostW99CampaignResultsOwnerHandoffTests(unittest.TestCase):
         self.assertIn("targetKind==='CAMPAIGN_INTELLIGENCE'&&kind==='optional_ai'", source)
         self.assertIn("W65_OPTIONAL_AI", source)
         self.assertIn("Analizar con IA", source)
-        self.assertIn("generation_requires_explicit_confirmation", (ROOT / "src" / "binario_marketing" / "service_wave65_app.py").read_text(encoding="utf-8"))
+        self.assertIn("generation_requires_explicit_user_action", (ROOT / "src" / "binario_marketing" / "service_wave65_app.py").read_text(encoding="utf-8"))
         self.assertIn("confirm(`Se enviará contexto marketing sanitizado", (ROOT / "web" / "results-intelligence.js").read_text(encoding="utf-8"))
 
     def test_action_center_preserves_campaign_id_for_results_owner_resolution(self):
