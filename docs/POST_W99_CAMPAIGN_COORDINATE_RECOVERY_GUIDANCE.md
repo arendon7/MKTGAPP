@@ -74,7 +74,7 @@ For cancelled distribution, it can highlight one existing W49 control if and onl
 - Campaign Coordinate State Decomposition remains the source of residual-state classification.
 - Existing Wave42/W47/W48/W49 mutation authority is preserved.
 - Exact navigation requires canonical IDs and canonical lineage.
-- Cancelled objects stay terminal and are never resurrected.
+- cancelled objects stay terminal and are never resurrected.
 - Recovery never triggers provider reads, provider writes, publish, paid activation or background polling.
 - Ambiguous owners and ambiguous controls fail closed.
 - Guidance never reprioritizes Action Center.
