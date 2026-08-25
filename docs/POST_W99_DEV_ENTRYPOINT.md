@@ -7,16 +7,17 @@ La rama `dev/post-w99-action-center` conserva dos runtimes deliberadamente disti
 - `binario-marketing serve` → runtime canónico/release existente; no cambia.
 - `binario-marketing serve-dev` → entrypoint estable de la cadena post-W99 de desarrollo.
 
-`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit.
+`serve-dev` resuelve `service_post_w99_dev_app`, que actualmente carga Action Center + Pipeline Priority + Global Navigator + Commercial Outcome Intelligence + Decision Review + Portfolio Control Tower + Executive Marketing Cockpit + Operator Work Plan.
 
-Las dos superficies superiores son deliberadamente complementarias:
+Las tres superficies superiores son deliberadamente complementarias:
 
 - **Portfolio Control Tower** responde qué empresa requiere atención primero y conserva el orden transversal de Action Center.
 - **Executive Marketing Cockpit** responde qué está pasando dentro de la empresa seleccionada en Operación, Comercial, Campañas y Decisiones.
+- **Operator Work Plan** muestra el orden exacto de Action Center como AHORA → DESPUÉS → MÁS TARDE, sin crear tareas, fechas, ownership ni una segunda autoridad de prioridad.
 
-`service_post_w99_integrated_cockpit_app` es el terminal de composición: hereda Portfolio y agrega Executive Cockpit, de modo que `serve-dev` conserva ambos endpoints y ambos bootstraps en la misma cadena.
+`service_post_w99_operator_work_plan_app` es el terminal de composición: hereda Portfolio + Executive Cockpit y agrega Work Plan, de modo que `serve-dev` conserva todos los endpoints y bootstraps previos.
 
-Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para la UAT del issue #113.
+Esto permite seguir construyendo producto mientras `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` y su candidato físico W99 permanecen congelados para UAT física.
 
 ## Defaults
 
