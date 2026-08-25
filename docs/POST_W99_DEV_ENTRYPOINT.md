@@ -20,7 +20,7 @@ Las superficies superiores son deliberadamente complementarias:
 - **Portfolio Cadence** describe la semántica temporal de la cola transversal: deadlines ya declarados por la fuente, incidentes, antigüedad observacional de leads, trabajo sin agenda y anomalías temporales. Nunca cambia el orden ni inventa vencimientos.
 - **Contextual Control Handoff** toma la acción Today y el target exacto ya resueltos y, solo cuando existe una regla inequívoca, señala el control canónico del owner. No ejecuta el control; si falta, está ambiguo o no corresponde, falla cerrado.
 - **Opportunity Follow-up Control** extiende el owner real de oportunidades de Wave 63 con controles separados para `next_action/next_action_at` y nueva actividad CRM. También corrige el deep link de oportunidades para apuntar a `.w63-card` y esperar la carga local de Wave 63. Toda mutación exige submit humano explícito.
-- **Existing Activity Reschedule Control** permite poner una nueva `due_at` únicamente sobre una actividad CRM pendiente exacta. Conserva el mismo `activity_id`, rechaza cualquier otro campo y enruta alertas de pipeline a una actividad solo cuando la fuente es canónica e inequívoca.
+- **Existing Activity Reschedule Control** no añade una mutación nueva: integra la reprogramación canónica ya existente de Wave 45. Enruta atención de pipeline al `activity_id` causal exacto cuando es inequívoco y expone `followupRescheduleOpen` dentro de la fila CRM; Wave 45 conserva el único store, endpoint `POST .../reschedule`, validación de fecha futura y timeline.
 
 `service_post_w99_existing_activity_reschedule_control_app` es ahora el terminal de composición de `serve-dev`. La ascendencia explícita de las capas superiores es:
 

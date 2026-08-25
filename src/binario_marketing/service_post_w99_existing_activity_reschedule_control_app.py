@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .post_w99_crm_activity_store import PostW99ActivityCRMStore
 from . import service_post_w99_opportunity_followup_control_app as base
 
 
@@ -42,30 +40,7 @@ def _copy_routed_rows(payload: dict, routed: dict[str, dict]) -> None:
 
 
 class AppRuntime(base.AppRuntime):
-    """Post-W99 terminal adding exact rescheduling of existing CRM activities."""
-
-    @classmethod
-    def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
-        runtime = super().create(repo_root, data_root)
-        runtime.crm = PostW99ActivityCRMStore(runtime.crm.root)
-        return runtime
-
-    def reschedule_activity(self, company_id: str, activity_id: str, payload: dict) -> dict:
-        company = self.companies.get(company_id)
-        before = self.crm.get_activity(activity_id)
-        if before.company_id != company.id:
-            raise KeyError(activity_id)
-        row = self.crm.reschedule_activity(company.id, activity_id, payload)
-        if before.due_at != row.due_at:
-            self.workspace.registries.timeline.append("crm.activity.rescheduled", {
-                "company_id": company.id,
-                "activity_id": row.id,
-                "contact_id": row.contact_id,
-                "opportunity_id": row.opportunity_id,
-                "due_at_from": before.due_at,
-                "due_at_to": row.due_at,
-            })
-        return asdict(row)
+    """Route activity-derived pipeline attention to the existing Wave 45 owner."""
 
     def _exact_pending_activity(self, company_id: str, opportunity_id: str, activity_id: object):
         activity_id = _text(activity_id)
@@ -97,8 +72,8 @@ class AppRuntime(base.AppRuntime):
         if not due_at:
             return None
         # DUE_SOON can originate from next_action_at, an activity, or both. Route
-        # to ACTIVITY only when the local CRM proves one unique pending activity
-        # owns that timestamp and next_action_at does not share it.
+        # to ACTIVITY only when one unique pending activity owns the timestamp and
+        # the opportunity next_action_at does not share it.
         if _text(card.get("next_action_at")) == due_at:
             return None
         matches = [
@@ -129,6 +104,7 @@ class AppRuntime(base.AppRuntime):
                     "target_kind": "ACTIVITY",
                     "activity_id": activity.id,
                     "method": "EXACT_LOCAL_ID",
+                    "mutation_owner": "WAVE45_FOLLOWUP_RESCHEDULE",
                 }
             if action_id:
                 routed[action_id] = row
@@ -139,6 +115,7 @@ class AppRuntime(base.AppRuntime):
             "pipeline_activity_owner_requires_exact_id": True,
             "pipeline_due_soon_activity_owner_requires_unique_source": True,
             "activity_owner_routing_does_not_reprioritize": True,
+            "activity_reschedule_mutation_remains_wave45_authority": True,
         })
         payload["contracts"] = contracts
         return payload
@@ -148,15 +125,7 @@ MarketingHTTPServer = base.MarketingHTTPServer
 
 
 class MarketingHandler(base.MarketingHandler):
-    """Adds one narrow local PATCH and the corresponding browser owner control."""
-
-    def _activity_reschedule_error(self, exc: Exception) -> None:
-        if isinstance(exc, KeyError):
-            self._error(HTTPStatus.NOT_FOUND, f"not found: {exc.args[0]}")
-        elif isinstance(exc, (ValueError, TypeError)):
-            self._error(HTTPStatus.BAD_REQUEST, str(exc))
-        else:
-            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
+    """Load an adapter to the existing Wave 45 reschedule UI; no business route."""
 
     def _static(self, path: str) -> None:
         if path == "/opportunity-followup-control.js":
@@ -196,18 +165,6 @@ class MarketingHandler(base.MarketingHandler):
             return
         super().do_GET()
 
-    def do_PATCH(self) -> None:
-        parts = self._segments()
-        try:
-            if len(parts) == 5 and parts[:2] == ["api", "companies"] and parts[3] == "activities":
-                with self.server.mutation_lock:
-                    self._json(self.server.runtime.reschedule_activity(parts[2], parts[4], self._body()))
-                return
-        except Exception as exc:
-            self._activity_reschedule_error(exc)
-            return
-        super().do_PATCH()
-
 
 def create_server(runtime: AppRuntime, host: str = "127.0.0.1", port: int = 8765) -> MarketingHTTPServer:
     return MarketingHTTPServer((host, port), MarketingHandler, runtime)
@@ -238,10 +195,4 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
         server.server_close()
 
 
-__all__ = [
-    "AppRuntime",
-    "MarketingHandler",
-    "MarketingHTTPServer",
-    "create_server",
-    "serve",
-]
+__all__ = ["AppRuntime", "MarketingHandler", "MarketingHTTPServer", "create_server", "serve"]

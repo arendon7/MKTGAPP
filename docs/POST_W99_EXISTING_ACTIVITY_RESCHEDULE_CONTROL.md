@@ -2,110 +2,129 @@
 
 ## Purpose
 
-Este incremento completa el owner de seguimientos CRM existentes sin crear actividades sustitutas.
+Este incremento no crea una nueva mutación CRM. Integra en el recorrido post-W99 la capacidad canónica de **reprogramar una actividad existente** que ya fue implementada y certificada en Wave 45.
 
-Cuando una actividad pendiente exacta necesita una fecha nueva, el operador puede reprogramar **esa misma actividad**. La única propiedad modificable por este contrato es `due_at`.
+El problema que resuelve es de ownership y navegación: Action Center podía detectar atención de pipeline causada por una actividad, pero el recorrido Today terminaba en la oportunidad y no siempre en el seguimiento causal exacto. La nueva capa transporta el `activity_id` exacto cuando la fuente es inequívoca y expone dentro de la fila CRM el control Wave 45 ya existente.
 
-Schema de navegador: `binario.marketing.activity-reschedule-control.v1`.
+Schema del adapter de navegador: `binario.marketing.activity-reschedule-control.v2`.
 
-## Narrow mutation contract
+## Existing authority: Wave 45
 
-Se incorpora una extensión post-W99 de `CRMStore` llamada `PostW99ActivityCRMStore` con una sola operación adicional:
+La autoridad de escritura permanece en:
 
-`reschedule_activity(company_id, activity_id, {"due_at": timestamp})`
+- `CRMStoreWave45.reschedule_activity(...)`;
+- `service_wave45_app.AppRuntime.reschedule_activity(...)`;
+- `POST /api/companies/{company_id}/activities/{activity_id}/reschedule`;
+- `web/followup-reschedule.js` y `followupRescheduleOpen(...)`.
 
-Reglas:
+Este incremento **no crea un segundo endpoint**, no instala otro CRM store y no redefine `reschedule_activity`.
+
+Wave 45 conserva sus reglas:
 
 - `activity_id` debe existir y pertenecer a la empresa exacta;
-- la actividad debe seguir pendiente (`completed_at == null`);
-- el payload debe ser un objeto;
-- `due_at` es obligatorio y debe ser un timestamp válido;
-- cualquier campo distinto de `due_at` es rechazado;
-- no se puede limpiar la fecha mediante este endpoint;
-- una fecha idéntica es idempotente;
-- una actividad completada no se puede reprogramar.
+- la actividad debe seguir pendiente;
+- el payload acepta únicamente `due_at`;
+- `due_at` es obligatorio, válido y debe quedar en el futuro;
+- una actividad completada no se puede reprogramar;
+- solo cambian `due_at` y `updated_at`;
+- no se modifican `contact_id`, `opportunity_id`, `kind`, `summary`, `completed_at` ni `created_at`;
+- la mutación registra `crm.activity.rescheduled` con `due_from` y `due_to` en el timeline local.
 
-No se modifican `company_id`, `contact_id`, `opportunity_id`, `kind`, `summary`, `completed_at` ni `created_at`.
+El handler Wave 45 heredado mantiene `mutation_lock`. No existe una ruta PATCH post-W99 para esta operación.
 
-## HTTP owner route
+## Browser integration
 
-El terminal post-W99 expone únicamente:
+`product-bootstrap.js` ya carga `/followup-reschedule.js` antes de las capas post-W99. Por ello `activity-reschedule-control.js` es un adapter y no un segundo formulario de negocio.
 
-`PATCH /api/companies/{company_id}/activities/{activity_id}`
+En `CRM → Seguimientos` el adapter:
 
-El handler usa el `mutation_lock` existente. No se agrega POST alternativo ni se cambia el endpoint de completar actividad.
+1. empareja la fila visible con el `activity_id` canónico de `crmState.activities`;
+2. conserva el botón `Completar` existente;
+3. añade `Reprogramar` únicamente para actividades pendientes;
+4. al click explícito llama `followupRescheduleOpen({entity:'crm_activity', entityId, companyId}, rowNode)`;
+5. Wave 45 abre su editor `.followup-reschedule-inline` y mantiene su validación y POST canónicos;
+6. tras la actualización de Marketing Ops, si CRM quedó invalidado, el adapter hace únicamente una relectura local y vuelve a renderizar Seguimientos.
 
-Una mutación efectiva agrega al timeline local:
-
-`crm.activity.rescheduled`
-
-con `activity_id`, relaciones canónicas y `due_at_from` / `due_at_to`.
-
-## CRM browser owner
-
-En `Seguimientos`, cada actividad pendiente conserva el botón canónico `Completar` y recibe `Reprogramar`.
-
-`Reprogramar` solo abre un panel local. El cambio ocurre únicamente al submit humano `Guardar nueva fecha`.
-
-Después del submit se releen CRM, Wave 63 y Marketing Ops. La alerta cambia o desaparece solo si las proyecciones canónicas lo determinan a partir del nuevo estado persistido.
+El adapter no contiene `opsApi`, no construye payloads de escritura y no puede ejecutar la mutación por sí mismo. Si `followupRescheduleOpen` no está cargado, falla cerrado y no inventa un fallback.
 
 ## Exact pipeline-to-activity routing
 
-Wave 63 ya expone `followup.next_activity_id`. Este incremento usa ese ID cuando el motivo de atención pertenece inequívocamente a una actividad.
+Wave 63 ya expone `followup.next_activity_id`. La capa post-W99 usa esa identidad cuando la condición del pipeline pertenece inequívocamente a una actividad pendiente.
 
-- `pipeline_overdue_followup` → actividad pendiente exacta `next_activity_id`.
-- `pipeline_unscheduled_followup` → actividad pendiente exacta `next_activity_id`.
-- `pipeline_due_soon` → actividad únicamente si:
-  1. `due_at` no coincide con `next_action_at`; y
-  2. existe exactamente una actividad pendiente de esa oportunidad con ese `due_at`.
+### Direct activity-derived codes
 
-Si `DUE_SOON` puede pertenecer a `next_action_at`, a más de una actividad o a ambas fuentes, el Action Center conserva el owner de oportunidad y el handoff falla cerrado cuando no puede resolver un control inequívoco.
+- `pipeline_overdue_followup` → `followup.next_activity_id` exacto.
+- `pipeline_unscheduled_followup` → `followup.next_activity_id` exacto.
 
-Al resolver una actividad exacta, la acción conserva el mismo `id`, rank, urgency y orden; solo cambia el owner de navegación a:
+El ID solo se acepta si la actividad:
 
-- `view = crm`
-- `tab = followups`
-- `entity_id = activity_id`
+- existe;
+- pertenece a la empresa actual;
+- pertenece a la oportunidad exacta;
+- sigue pendiente.
 
-También se corrige `due_at` de la fila para que corresponda a la actividad causal cuando el código de atención es de seguimiento.
+### `pipeline_due_soon`
 
-## Handoff semantics
+`DUE_SOON` puede originarse en `opportunity.next_action_at`, en una actividad o en ambas. Por tanto solo se enruta a `ACTIVITY` cuando:
 
-Para target `ACTIVITY`:
+1. la acción tiene `due_at` explícito;
+2. `due_at` **no** coincide con `next_action_at`; y
+3. existe exactamente una actividad pendiente de esa oportunidad con ese mismo `due_at`.
 
-- `crm_unscheduled` → `Reprogramar` / formulario de fecha.
-- `pipeline_unscheduled_followup` → `Reprogramar` / formulario de fecha.
-- `crm_overdue` y `crm_today` → grupo `Completar o reprogramar`.
-- `pipeline_overdue_followup` → grupo `Completar o reprogramar`.
-- `pipeline_due_soon` cuando fue resuelto a actividad exacta → grupo `Completar o reprogramar`.
+Si hay dos actividades con el mismo timestamp, si `next_action_at` comparte el timestamp o si no existe una actividad exacta, la capa no elige por similitud: conserva el owner anterior.
 
-No se presupone que una actividad vencida deba completarse: si todavía está pendiente, el operador puede reprogramarla. Tampoco se presupone que deba reprogramarse si realmente ya ocurrió.
+## No reprioritization
+
+Cuando se resuelve una actividad causal, la fila mantiene:
+
+- el mismo `id` estable;
+- el mismo `rank`;
+- la misma `urgency`;
+- la misma posición relativa en la cola.
+
+Solo cambia el destino propietario:
+
+- `view = crm`;
+- `tab = followups`;
+- `entity_id = activity_id`;
+- `label = Abrir seguimiento exacto`.
+
+`owner_resolution` declara `target_kind = ACTIVITY`, `method = EXACT_LOCAL_ID` y `mutation_owner = WAVE45_FOLLOWUP_RESCHEDULE`.
+
+## Contextual Control Handoff
+
+Con un target `ACTIVITY` ya confirmado por Contextual Deep Linking:
+
+- `crm_unscheduled` y `pipeline_unscheduled_followup` → control `Reprogramar` o editor Wave 45 ya abierto;
+- `crm_overdue`, `crm_today`, `pipeline_overdue_followup` y un `pipeline_due_soon` resuelto a actividad → grupo humano `Completar o reprogramar seguimiento`.
+
+Esto es deliberado: una actividad vencida no implica que deba marcarse completada. Puede haber ocurrido y requerir `Completar`, o seguir pendiente y requerir `Reprogramar`. El sistema señala ambas decisiones válidas sin tomar ninguna.
 
 ## Safety
 
-- mutación local únicamente;
+- una sola autoridad de mutación: Wave 45;
+- 0 endpoints de negocio nuevos;
+- 0 stores CRM alternativos;
 - 0 provider reads/writes;
-- 0 mensajes automáticos;
-- 0 IA o fuzzy matching;
+- 0 mensajes, correos o respuestas automáticas;
+- 0 IA, score o fuzzy matching;
 - 0 creación de actividad sustituta;
 - 0 auto-completion;
-- 0 cambio de oportunidad o etapa;
+- 0 cambio de etapa de oportunidad;
 - 0 polling/background work;
-- 0 `.click()` / `dispatchEvent` sintéticos;
-- timestamp obligatorio y explícito;
-- actividad completada inmutable para este contrato;
-- toda escritura requiere submit humano explícito.
+- 0 `.click()` o `dispatchEvent()` sintéticos;
+- toda escritura sigue exigiendo interacción humana explícita en el editor Wave 45.
 
 ## Runtime composition
 
-`service_post_w99_existing_activity_reschedule_control_app` hereda `service_post_w99_opportunity_followup_control_app` y se convierte en terminal de `serve-dev`.
+`service_post_w99_existing_activity_reschedule_control_app` hereda `service_post_w99_opportunity_followup_control_app` y es el terminal de `serve-dev` para este incremento.
 
-Secuencia superior:
+La cadena superior queda:
 
 `Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control`
 
 ## Frozen release boundary
 
-Este incremento vive exclusivamente en el trunk post-W99 de desarrollo. No modifica `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53`, tree `53d1cf04a67da4308b37ac03c0be4546a04f36eb`, candidato físico W99, tag intent `v0.9.0`, builders ni autoridad de publicación.
+Este trabajo vive exclusivamente en el trunk post-W99 de desarrollo. No modifica `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53`, tree `53d1cf04a67da4308b37ac03c0be4546a04f36eb`, candidato físico W99, issue #113, tag intent `v0.9.0`, builders ni autoridad de publicación.
 
 No constituye W100, physical-UAT PASS, release candidate ni production-ready.
