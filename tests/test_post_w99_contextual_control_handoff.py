@@ -69,6 +69,15 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
         self.assertIn("No se sustituye por el selector de etapa", source)
         self.assertNotIn("querySelector('select')", source)
 
+    def test_publication_mapping_requires_exact_selected_editorial_panel(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("MANAGE_PUBLICATION_PANEL", source)
+        self.assertIn("editorialState.selectedId", source)
+        self.assertIn("String(deep.target_id||'')", source)
+        self.assertIn("#marketing-ops-view .editorial-panel", source)
+        self.assertIn("Editar, reprogramar o cancelar publicación", source)
+        self.assertNotIn("meta('MANAGE_PUBLICATION','Gestionar publicación'", source)
+
     def test_runtime_preserves_cadence_evidence_and_today(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = AppRuntime.create(ROOT, Path(tmp) / "data")
@@ -108,6 +117,8 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
         self.assertIn("OWNER_CONTROL_GAP", docs)
         self.assertIn("CONTROL_AMBIGUOUS", docs)
         self.assertIn("nunca dispara `.click()`", docs)
+        self.assertIn("editorialState.selectedId", docs)
+        self.assertIn("panel editorial exacto", docs)
         self.assertIn("pipeline_*", docs)
         self.assertIn("main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", docs)
         self.assertIn("No constituye W100", docs)
