@@ -128,7 +128,7 @@ class PostW99CommercialOutcomesTests(unittest.TestCase):
             with urlopen(base + "/navigator.js", timeout=5) as response: bootstrap = response.read().decode("utf-8")
             self.assertIn("commercial-outcomes.js", bootstrap); self.assertIn("data-post-w99-commercial-outcomes", bootstrap)
             with urlopen(base + "/commercial-outcomes.js", timeout=5) as response: ui = response.read().decode("utf-8")
-            self.assertIn("Resultados comerciales", ui); self.assertIn("Link de tracking", ui)
+            self.assertIn("Resultados comerciales", ui); self.assertIn("link de tracking", ui)
             with urlopen(base + f"/api/companies/{self.company['id']}/commercial-outcomes", timeout=5) as response: payload = json.loads(response.read().decode("utf-8"))
             self.assertEqual(payload["schema"], "binario.marketing.commercial-outcomes.v1")
         finally:
