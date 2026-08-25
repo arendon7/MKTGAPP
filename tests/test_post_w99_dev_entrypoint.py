@@ -44,6 +44,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertTrue(callable(runtime.reschedule_activity))
             self.assertTrue(callable(runtime.campaign_results_owner_context))
             self.assertTrue(callable(runtime.campaign_execution_owner_context))
+            self.assertTrue(callable(runtime.campaign_coordinate_state))
         finally:
             if runtime.social_scheduler is not None:
                 runtime.social_scheduler.shutdown()
@@ -72,7 +73,8 @@ class PostW99DevEntrypointTests(unittest.TestCase):
     def test_docs_preserve_w99_release_boundary(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_campaign_creative_creation_intent_handoff_app", entrypoint)
+        self.assertIn("service_post_w99_campaign_coordinate_state_decomposition_app", entrypoint)
+        self.assertNotIn("service_post_w99_campaign_creative_creation_intent_handoff_app import", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
@@ -92,6 +94,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Campaign Execution Owner Relay",
             "Campaign Execution Candidate Selector",
             "Campaign Creative Creation Intent Handoff",
+            "Campaign Coordinate State Decomposition",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -103,12 +106,18 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_campaign_execution_owner_relay_app",
             "service_post_w99_campaign_execution_candidate_selector_app",
             "service_post_w99_campaign_creative_creation_intent_handoff_app",
+            "service_post_w99_campaign_coordinate_state_decomposition_app",
         ):
             self.assertIn(module, doc)
-        self.assertIn(
-            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → Campaign Creative Creation Intent Handoff",
-            doc,
+        browser_chain = (
+            "Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → "
+            "Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → "
+            "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
+            "Campaign Creative Creation Intent Handoff"
         )
+        self.assertIn(browser_chain, doc)
+        self.assertIn("no cambia", doc)
+        self.assertNotIn(browser_chain + " → Campaign Coordinate State Decomposition", doc)
 
 
 if __name__ == "__main__":
