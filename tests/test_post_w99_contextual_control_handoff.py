@@ -52,6 +52,7 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
         for value in (
             "crm_overdue",
             "crm_today",
+            "crm_unscheduled",
             "publication_failed",
             "publication_overdue",
             "publication_today",
@@ -61,13 +62,74 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
             "lead_unidentified",
             "needs_opportunity",
             "needs_followup",
+            "define_channels",
             "CAMPAIGN_EXECUTION",
             "CAMPAIGN_INTELLIGENCE",
+            "optional_ai",
+            "MEDIA",
         ):
             self.assertIn(value, source)
         self.assertIn("kind.startsWith('pipeline_')", source)
         self.assertIn("No se sustituye por el selector de etapa", source)
         self.assertNotIn("querySelector('select')", source)
+
+    def test_control_groups_require_one_available_canonical_submit(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("function controlHandoffSingleGroup", source)
+        self.assertIn("controls.length===0", source)
+        self.assertIn("controls.length>1", source)
+        self.assertIn("controls[0].disabled", source)
+        self.assertIn("El submit canónico está deshabilitado en el owner", source)
+        for label in ("Resolver conflicto exacto", "Crear oportunidad", "Programar seguimiento", "Guardar cambios"):
+            self.assertIn(label, source)
+
+    def test_unscheduled_activity_never_substitutes_complete_or_cross_owner_reschedule(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("targetKind==='ACTIVITY'&&kind==='crm_unscheduled'", source)
+        self.assertIn("esa card no expone Reprogramar", source)
+        self.assertIn("no se sustituye por Completar", source)
+        self.assertIn("no se cruza a otro owner", source)
+        reschedule = (ROOT / "web" / "followup-reschedule.js").read_text(encoding="utf-8")
+        self.assertIn("dailyActionButtons", reschedule)
+        self.assertIn("Reprogramar", reschedule)
+        crm = (ROOT / "web" / "crm.js").read_text(encoding="utf-8")
+        self.assertIn("crmRenderFollowups", crm)
+        self.assertIn("opsEl('button','','Completar')", crm)
+
+    def test_define_channels_requires_exact_selected_campaign_form(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("targetKind==='CAMPAIGN'&&kind==='define_channels'", source)
+        self.assertIn("campaignState.selectedId", source)
+        self.assertIn("String(deep.target_id||'')", source)
+        self.assertIn("#marketing-ops-view form.campaign-form", source)
+        self.assertIn("DEFINE_CAMPAIGN_CHANNELS", source)
+        self.assertIn("Seleccionar canales + guardar cambios", source)
+        campaigns = (ROOT / "web" / "campaigns.js").read_text(encoding="utf-8")
+        self.assertIn("Guardar cambios", campaigns)
+        self.assertIn("Cambiar una campaña a “En curso” sólo organiza el trabajo", campaigns)
+
+    def test_optional_ai_maps_to_explicit_confirmed_ai_not_self_navigation(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("targetKind==='CAMPAIGN_INTELLIGENCE'&&kind==='optional_ai'", source)
+        self.assertIn("REQUEST_OPTIONAL_AI_ANALYSIS", source)
+        self.assertIn("Analizar con IA", source)
+        self.assertIn("confirmación", source)
+        self.assertIn("No se usa el botón Ir como sustituto", source)
+        self.assertNotIn("OPEN_INTELLIGENCE_NEXT_OWNER", source)
+        intelligence = (ROOT / "web" / "results-intelligence.js").read_text(encoding="utf-8")
+        self.assertIn("function wave65Analyze", intelligence)
+        self.assertIn("if(!confirm(", intelligence)
+        self.assertIn("Analizar con IA", intelligence)
+
+    def test_media_action_never_promotes_delete_or_channel_specific_reel(self):
+        source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
+        self.assertIn("targetKind==='MEDIA'", source)
+        self.assertIn("Usar como Reel y Eliminar no equivalen", source)
+        self.assertIn("No se promueve un control destructivo", source)
+        self.assertNotIn("control_key:'DELETE", source)
+        media = (ROOT / "web" / "company-content.js").read_text(encoding="utf-8")
+        self.assertIn("Usar como Reel", media)
+        self.assertIn("Eliminar", media)
 
     def test_publication_mapping_requires_exact_selected_editorial_panel(self):
         source = (ROOT / "web" / "contextual-control-handoff.js").read_text(encoding="utf-8")
@@ -120,6 +182,10 @@ class PostW99ContextualControlHandoffTests(unittest.TestCase):
         self.assertIn("editorialState.selectedId", docs)
         self.assertIn("panel editorial exacto", docs)
         self.assertIn("pipeline_*", docs)
+        self.assertIn("crm_unscheduled", docs)
+        self.assertIn("DEFINE_CHANNELS", docs)
+        self.assertIn("OPTIONAL_AI", docs)
+        self.assertIn("MEDIA", docs)
         self.assertIn("main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", docs)
         self.assertIn("No constituye W100", docs)
         self.assertIn("Contextual Control Handoff", dev)
