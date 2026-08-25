@@ -1,203 +1,197 @@
-# Post-W99 · Campaign Coordinate State Decomposition
-
-## Purpose
-
-`Campaign Coordinate State Decomposition` makes the final Wave 64 `COORDINATE` fallback explainable before any new UX or control handoff is attempted.
-
-The layer does **not** replace `COORDINATE`, choose a different next action, or infer a mutation. W64 remains the next-action authority. The new projection only describes which canonical local lifecycle state caused the deterministic W64 cascade to fall through to `COORDINATE`.
-
-This is intentionally a backend/read-only increment. It adds no browser adapter and the existing browser bootstrap chain remains unchanged.
-
-## Why decomposition is required first
-
-The Wave 64 cascade already has explicit branches for:
-
-- terminal campaign → `COMPLETE`;
-- no channels → `DEFINE_CHANNELS`;
-- publication `FAILED` → `FIX_PUBLICATION`;
-- no linked creative → `CREATE_CREATIVE`;
-- no ready creative → `FINISH_CREATIVE`;
-- empty selected organic distribution → `PREPARE_DISTRIBUTION`;
-- publication `QUEUED` → `CALENDAR`;
-- publication `DRAFT` → `SCHEDULE_OR_PUBLISH`;
-- paid media `DRAFT` → `REVIEW_PAID`;
-- planned-only channels without paid execution → `PLANNED_ONLY`;
-- publication `PUBLISHED` or paid `REMOTE_PAUSED` → `REVIEW_RESULTS`.
-
-Anything else reaches `COORDINATE`.
-
-Treating that fallback as one owner/control would therefore be unsafe. The canonical lifecycle stores show that it currently contains a small set of materially different states.
-
-## Canonical lifecycle ontology
-
-### Publications
-
-`social_store.STATUSES`:
-
-- `DRAFT`
-- `QUEUED`
-- `PUBLISHING`
-- `PUBLISHED`
-- `FAILED`
-- `CANCELLED`
-
-`PUBLISHING` is a real transition state. On restart, interrupted publishing is recovered to `FAILED`; while it is actively present, however, W64 has no dedicated next-action branch and therefore reaches `COORDINATE`.
-
-### Paid media
-
-`paid_media_store.STATUSES`:
-
-- `DRAFT`
-- `REMOTE_PAUSED`
-- `CANCELLED`
-
-Wave 64 already handles `DRAFT` and `REMOTE_PAUSED`; linked `CANCELLED` plans can therefore remain inside the final fallback.
-
-## Schema
-
-`binario.marketing.campaign-coordinate-state.v1`
-
-The projection contains:
-
-- exact campaign identity;
-- the untouched W64 `source_next_action`;
-- diagnostic `state`;
-- `route_scope`;
-- observed creative/publication/paid counts;
-- invariant violations;
-- unknown lifecycle statuses;
-- explicit authority and safety contracts.
-
-## Diagnostic states
-
-### `PUBLICATION_IN_FLIGHT`
-
-At least one linked publication is canonically `PUBLISHING`, no unknown statuses exist, and no earlier W64 predicate is currently true.
-
-This state is observational. It does not authorize retry, cancellation, refresh polling, provider read, or a new Control Handoff.
-
-### `ONLY_CANCELLED_DISTRIBUTION_REMAINS`
-
-All linked publication and/or paid-media objects are canonically `CANCELLED`, at least one such object exists, and no earlier W64 predicate is currently true.
-
-The projection does not infer that the operator should recreate, retry, delete, archive, or switch channels.
-
-### `COORDINATE_INVARIANT_DRIFT`
-
-Wave 64 reports `COORDINATE`, but the same card simultaneously satisfies an earlier predicate in the certified Wave 64 cascade or contains an internal count inconsistency.
-
-Examples:
-
-- a `DRAFT` publication is visible even though W64 should have emitted `SCHEDULE_OR_PUBLISH`;
-- a paid `REMOTE_PAUSED` row exists even though W64 should have emitted `REVIEW_RESULTS`;
-- publication count histogram does not equal `organic.publications`;
-- ready creative count exceeds total creatives.
-
-This state has precedence over other classifications. A contradiction must be investigated, not papered over with a UI handoff.
-
-### `UNCLASSIFIED_COORDINATION_STATE`
-
-The fallback contains:
-
-- a future/unknown publication or paid-media lifecycle status; or
-- a known combination not covered by the certified in-flight/cancelled-only rules.
-
-No behavior is inferred from an unknown state.
-
-## Route scope
-
-`route_scope` is descriptive only:
-
-- `ORGANIC` → linked publications exist and no paid rows exist;
-- `PAID` → linked paid rows exist and no publications exist;
-- `MIXED` → both exist;
-- `NONE` → neither exists.
-
-It is not a channel recommendation or routing command.
-
-## Invariant mirror
-
-For a card whose W64 next action is `COORDINATE`, the projection checks the predicates that should have been consumed earlier:
-
-- terminal campaign;
-- missing channels;
-- publication `FAILED`;
-- zero linked creatives;
-- linked creatives but zero ready creatives;
-- selected organic route with no publication and no paid plan;
-- publication `QUEUED`;
-- publication `DRAFT`;
-- paid `DRAFT`;
-- planned-only channels, no organic selection, and no paid plan;
-- publication `PUBLISHED`;
-- paid `REMOTE_PAUSED`.
-
-It also validates histogram totals for creatives, publications and paid media, plus the `ready <= total` creative invariant.
-
-The mirror is not a second decision engine. It only detects that `COORDINATE` and the observed card disagree.
-
-## API
-
-New local GET-only diagnostic:
-
-`GET /api/companies/{company_id}/campaigns/{campaign_id}/coordinate-state`
-
-The endpoint rejects a campaign whose actual current Wave 64 next action is not `COORDINATE`. It does not synthesize a `NOT_COORDINATE` state.
-
-## Action Center / Today
-
-For an existing Action Center row with `kind = coordinate` and exact `campaign_id`, the layer adds:
-
-`coordinate_state: <diagnostic payload>`
-
-It preserves unchanged:
-
-- row `id`;
-- `kind`;
-- `action`;
-- rank;
-- urgency;
-- blocking;
-- due date;
-- reason;
-- canonical queue order.
-
-The same annotated row is copied into `next_action`/focus lanes when applicable. Today already deep-copies canonical Action Center rows, so it receives the same metadata without a second priority system.
-
-## Authority split
-
-- **W64 remains the next-action authority.**
-- Action Center remains cross-module priority authority.
-- This projection is diagnostic only.
-- It does not rewrite `action`.
-- It does not authorize Control Handoff.
-- It does not create a new owner.
-- Publication and paid-media stores remain lifecycle authorities.
-
-## Safety
-
-The layer is local and read-only:
-
-- no provider reads;
-- no provider writes;
-- no business mutation;
-- no AI generation;
-- no automatic execution;
-- no background polling;
-- no forecast or causal inference.
-
-Unknown or contradictory states fail closed.
-
-## Composition
-
-`service_post_w99_campaign_coordinate_state_decomposition_app` inherits `service_post_w99_campaign_creative_creation_intent_handoff_app` and becomes the terminal backend composition for `serve-dev`.
-
-Because this increment adds no browser asset, the browser chain remains:
-
-`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → Campaign Creative Creation Intent Handoff`
-
-## Frozen W99 boundary
-
-`main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` / tree `53d1cf04a67da4308b37ac03c0be4546a04f36eb` remains frozen for Physical UAT issue #113.
-
-This increment is not W100, Physical UAT PASS, release authority, publication authority, or production-ready.
+import unittest
+from copy import deepcopy
+from pathlib import Path
+from unittest.mock import patch
+
+from binario_marketing import service_post_w99_campaign_creative_creation_intent_handoff_app as parent
+from binario_marketing.service_post_w99_campaign_coordinate_state_decomposition_app import (
+    AppRuntime,
+    _coordinate_state_from_card,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def coordinate_card(*, publication_counts=None, publication_total=None, paid_counts=None, paid_total=None, channels=None, planned_only=None):
+    publication_counts = dict(publication_counts or {})
+    paid_counts = dict(paid_counts or {})
+    if publication_total is None:
+        publication_total = sum(publication_counts.values())
+    if paid_total is None:
+        paid_total = sum(paid_counts.values())
+    return {
+        "campaign": {
+            "id": "campaign_1234567890abcdef12345678",
+            "name": "Coordinate campaign",
+            "status": "ACTIVE",
+            "channels": list(channels or ["facebook_page"]),
+        },
+        "creative": {"total": 1, "ready": 1, "counts": {"READY": 1}, "items": []},
+        "organic": {
+            "selected": bool(set(channels or ["facebook_page"]) & {"facebook_page", "instagram"}),
+            "counts": publication_counts,
+            "publications": publication_total,
+            "failed": publication_counts.get("FAILED", 0),
+        },
+        "paid": {
+            "plans": paid_total,
+            "counts": paid_counts,
+            "remote_paused": paid_counts.get("REMOTE_PAUSED", 0),
+        },
+        "planned_only_channels": list(planned_only or []),
+        "next_action": {"code": "COORDINATE", "label": "Coordinar distribución", "view": "content"},
+        "priority": 4,
+        "requires_action": False,
+    }
+
+
+class PostW99CampaignCoordinateStateDecompositionTests(unittest.TestCase):
+    def test_publication_in_flight_is_observed_without_inventing_control(self):
+        payload = _coordinate_state_from_card(coordinate_card(publication_counts={"PUBLISHING": 1}))
+        self.assertEqual(payload["schema"], "binario.marketing.campaign-coordinate-state.v1")
+        self.assertEqual(payload["state"], "PUBLICATION_IN_FLIGHT")
+        self.assertEqual(payload["route_scope"], "ORGANIC")
+        self.assertEqual(payload["invariant_violations"], [])
+        self.assertEqual(payload["unknown_statuses"], {"publications": [], "paid": []})
+        self.assertTrue(payload["contracts"]["w64_remains_next_action_authority"])
+        self.assertTrue(payload["contracts"]["diagnostic_does_not_authorize_control_handoff"])
+
+    def test_publication_in_flight_can_coexist_with_cancelled_paid_route(self):
+        payload = _coordinate_state_from_card(coordinate_card(
+            publication_counts={"PUBLISHING": 1},
+            paid_counts={"CANCELLED": 1},
+        ))
+        self.assertEqual(payload["state"], "PUBLICATION_IN_FLIGHT")
+        self.assertEqual(payload["route_scope"], "MIXED")
+
+    def test_only_cancelled_organic_distribution_is_distinct(self):
+        payload = _coordinate_state_from_card(coordinate_card(publication_counts={"CANCELLED": 2}))
+        self.assertEqual(payload["state"], "ONLY_CANCELLED_DISTRIBUTION_REMAINS")
+        self.assertEqual(payload["route_scope"], "ORGANIC")
+
+    def test_only_cancelled_paid_distribution_is_distinct(self):
+        payload = _coordinate_state_from_card(coordinate_card(
+            publication_counts={},
+            paid_counts={"CANCELLED": 1},
+            channels=["paid_media"],
+            planned_only=["paid_media"],
+        ))
+        self.assertEqual(payload["state"], "ONLY_CANCELLED_DISTRIBUTION_REMAINS")
+        self.assertEqual(payload["route_scope"], "PAID")
+        self.assertEqual(payload["invariant_violations"], [])
+
+    def test_cancelled_organic_and_paid_routes_report_mixed_scope(self):
+        payload = _coordinate_state_from_card(coordinate_card(
+            publication_counts={"CANCELLED": 1},
+            paid_counts={"CANCELLED": 1},
+        ))
+        self.assertEqual(payload["state"], "ONLY_CANCELLED_DISTRIBUTION_REMAINS")
+        self.assertEqual(payload["route_scope"], "MIXED")
+
+    def test_unknown_lifecycle_status_fails_closed(self):
+        payload = _coordinate_state_from_card(coordinate_card(publication_counts={"FUTURE_REMOTE_WAIT": 1}))
+        self.assertEqual(payload["state"], "UNCLASSIFIED_COORDINATION_STATE")
+        self.assertEqual(payload["unknown_statuses"]["publications"], ["FUTURE_REMOTE_WAIT"])
+        self.assertEqual(payload["invariant_violations"], [])
+
+    def test_an_earlier_w64_predicate_beats_leftover_classification(self):
+        payload = _coordinate_state_from_card(coordinate_card(publication_counts={"DRAFT": 1}))
+        self.assertEqual(payload["state"], "COORDINATE_INVARIANT_DRIFT")
+        self.assertIn("DRAFT_PUBLICATION_SHOULD_SCHEDULE_OR_PUBLISH", payload["invariant_violations"])
+
+    def test_histogram_mismatch_is_invariant_drift(self):
+        payload = _coordinate_state_from_card(coordinate_card(
+            publication_counts={"CANCELLED": 1},
+            publication_total=2,
+        ))
+        self.assertEqual(payload["state"], "COORDINATE_INVARIANT_DRIFT")
+        self.assertIn("PUBLICATION_COUNT_HISTOGRAM_MISMATCH", payload["invariant_violations"])
+
+    def test_non_coordinate_cards_are_rejected_not_relabelled(self):
+        card = coordinate_card(publication_counts={"PUBLISHING": 1})
+        card["next_action"] = {"code": "CALENDAR", "view": "calendar"}
+        with self.assertRaisesRegex(ValueError, "not COORDINATE"):
+            _coordinate_state_from_card(card)
+
+    def test_action_center_annotation_preserves_action_priority_and_order(self):
+        coordinate = {
+            "id": "campaign:coordinate:one",
+            "kind": "coordinate",
+            "rank": 74,
+            "urgency": "LOW",
+            "blocking": False,
+            "due_at": None,
+            "reason": {"code": "CAMPAIGN_COORDINATE", "explanation": "W64 fallback"},
+            "action": {
+                "label": "Coordinar distribución",
+                "view": "content",
+                "campaign_id": "campaign_1234567890abcdef12345678",
+                "media_id": None,
+            },
+        }
+        other = {
+            "id": "operations:first",
+            "kind": "crm_today",
+            "rank": 35,
+            "urgency": "HIGH",
+            "action": {"label": "Abrir", "view": "crm"},
+        }
+        original_coordinate = deepcopy(coordinate)
+        parent_payload = {
+            "schema": "binario.marketing.action-center.v1",
+            "queue": [other, coordinate],
+            "next_action": other,
+            "focus": {"now": [other], "next": [], "later": [coordinate]},
+            "contracts": {"existing": True},
+        }
+        diagnostic = _coordinate_state_from_card(coordinate_card(publication_counts={"PUBLISHING": 1}))
+        runtime = AppRuntime.__new__(AppRuntime)
+        with patch.object(parent.AppRuntime, "action_center", return_value=deepcopy(parent_payload)), patch.object(
+            AppRuntime, "campaign_coordinate_state", return_value=diagnostic
+        ):
+            result = runtime.action_center("company-1")
+        self.assertEqual([row["id"] for row in result["queue"]], ["operations:first", "campaign:coordinate:one"])
+        annotated = result["queue"][1]
+        self.assertEqual(annotated["action"], original_coordinate["action"])
+        self.assertEqual(annotated["rank"], original_coordinate["rank"])
+        self.assertEqual(annotated["urgency"], original_coordinate["urgency"])
+        self.assertEqual(annotated["blocking"], original_coordinate["blocking"])
+        self.assertEqual(annotated["reason"], original_coordinate["reason"])
+        self.assertEqual(annotated["coordinate_state"]["state"], "PUBLICATION_IN_FLIGHT")
+        self.assertEqual(result["focus"]["later"][0]["coordinate_state"]["state"], "PUBLICATION_IN_FLIGHT")
+        self.assertNotIn("coordinate_state", result["next_action"])
+
+    def test_service_is_get_only_and_contains_no_provider_or_business_mutation(self):
+        source = (ROOT / "src" / "binario_marketing" / "service_post_w99_campaign_coordinate_state_decomposition_app.py").read_text(encoding="utf-8")
+        self.assertIn('parts[5] == "coordinate-state"', source)
+        self.assertIn("def do_GET", source)
+        for forbidden in (
+            "def do_POST",
+            "def do_PATCH",
+            "def do_PUT",
+            "def do_DELETE",
+            "MetaGraphClient",
+            "create_company_publication",
+            "create_company_paid_media",
+            "wave49SaveCreative",
+        ):
+            self.assertNotIn(forbidden, source)
+        self.assertIn('"provider_read_performed": False', source)
+        self.assertIn('"business_mutation_performed": False', source)
+
+    def test_docs_preserve_diagnostic_only_scope_and_w99_boundary(self):
+        doc = (ROOT / "docs" / "POST_W99_CAMPAIGN_COORDINATE_STATE_DECOMPOSITION.md").read_text(encoding="utf-8")
+        for required in (
+            "PUBLICATION_IN_FLIGHT",
+            "ONLY_CANCELLED_DISTRIBUTION_REMAINS",
+            "COORDINATE_INVARIANT_DRIFT",
+            "UNCLASSIFIED_COORDINATION_STATE",
+            "W64 remains the next-action authority",
+            "does not authorize Control Handoff",
+            "main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53",
+        ):
+            self.assertIn(required, doc)
+
+
+if __name__ == "__main__":
+    unittest.main()
