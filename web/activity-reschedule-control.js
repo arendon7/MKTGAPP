@@ -66,7 +66,7 @@ function activityRescheduleResolveActivity(row,targetInfo){
   const decisionKinds=['crm_overdue','crm_today','pipeline_overdue_followup','pipeline_due_soon'];
   if(rescheduleKinds.includes(kind)){
     const editors=[...target.querySelectorAll('.followup-reschedule-inline')];
-    if(editors.length)return controlHandoffSingle(editors,activityRescheduleMeta('WAVE45_RESCHEDULE_EDITOR','Definir nueva fecha del seguimiento','CONTROL_GROUP',kind,'Editor canónico de Wave 45 sobre la actividad exacta. Guardar conserva su validación de fecha futura y su POST /reschedule.'));
+    if(editors.length)return controlHandoffSingleGroup(editors,text=>text==='Guardar fecha',activityRescheduleMeta('WAVE45_RESCHEDULE_EDITOR','Definir nueva fecha del seguimiento','CONTROL_GROUP',kind,'Editor canónico de Wave 45 sobre la actividad exacta. Solo se resuelve cuando existe un único Guardar fecha habilitado; ese control conserva la validación de fecha futura y el POST /reschedule de Wave 45.'));
     const triggers=[...target.querySelectorAll('button[data-post-w99-activity-reschedule-trigger]')];
     return controlHandoffSingle(triggers,activityRescheduleMeta('OPEN_WAVE45_RESCHEDULE','Reprogramar seguimiento existente','BUTTON',kind,'Abre el editor Wave 45 de la actividad exacta; abrirlo no modifica estado.'))
   }

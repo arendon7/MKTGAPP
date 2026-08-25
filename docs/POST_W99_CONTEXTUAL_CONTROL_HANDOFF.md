@@ -1,97 +1,125 @@
 # Post-W99 · Contextual Control Handoff
 
-## Purpose
+## Propósito
 
-Contextual Control Handoff responde una pregunta después de que Today y Contextual Deep Linking ya resolvieron una acción y un registro exactos:
+Contextual Control Handoff responde, después de que Today y Contextual Deep Linking ya resolvieron una acción y un registro exactos, si el owner actual ofrece un control canónico inequívoco para que el operador continúe.
 
-> ¿Existe en este owner un control canónico inequívoco que el operador pueda usar para continuar?
+La capa base es de presentación: no ejecuta el control, no crea una mutación paralela y no elige por similitud. Schema de navegador: `binario.marketing.contextual-control-handoff.v1`.
 
-La capa es exclusivamente de presentación. Nunca ejecuta el control, nunca crea una mutación paralela y nunca elige por similitud.
+## Precondiciones fail-closed
 
-Schema de navegador: `binario.marketing.contextual-control-handoff.v1`.
-
-## Preconditions
-
-Para resolver un control deben cumplirse simultáneamente:
+Para declarar `CONTROL_RESOLVED` deben cumplirse simultáneamente:
 
 1. existe un contexto activo de Execution Return originado en Today;
-2. el mismo `action_id` aparece exactamente una vez en el plan Today ya cargado;
-3. la empresa activa coincide con el contexto;
+2. el mismo `action_id` aparece exactamente una vez en el plan Today local;
+3. la empresa activa coincide con ese contexto;
 4. Contextual Deep Linking reporta `FOUND_EXACT`;
 5. existe exactamente un nodo DOM marcado como target exacto;
-6. la combinación `action.kind + target_kind` tiene una regla explícita;
-7. la regla produce exactamente un control o grupo canónico disponible.
+6. `action.kind + target_kind` tiene una regla explícita;
+7. la regla obtiene exactamente el control o grupo canónico permitido y disponible.
 
-Si cualquiera falla, la capa falla cerrada.
+Estados: `CONTROL_RESOLVED`, `OWNER_CONTROL_GAP`, `CONTROL_NOT_AVAILABLE`, `CONTROL_AMBIGUOUS`, `TARGET_NOT_EXACT` y `ACTION_CONTEXT_NOT_RESOLVED`.
 
-## States
+## Invariant de CONTROL_GROUP
 
-- `CONTROL_RESOLVED`: existe exactamente un control/grupo permitido y se resalta visualmente.
-- `OWNER_CONTROL_GAP`: el registro exacto existe, pero el owner no ofrece un control específico responsable para esa acción.
-- `CONTROL_NOT_AVAILABLE`: existe una regla, pero el control esperado no está disponible en el render actual.
-- `CONTROL_AMBIGUOUS`: la regla encontró más de un candidato; no elige ninguno.
-- `TARGET_NOT_EXACT`: Deep Linking no confirmó un único target exacto.
-- `ACTION_CONTEXT_NOT_RESOLVED`: no existe una única acción Today local que corresponda al recorrido.
+`controlHandoffSingleGroup` se usa cuando un grupo representa una mutación/formulario con un submit canónico. Exige:
 
-## Explicit mappings
+- un solo grupo candidato;
+- exactamente un control canónico dentro del grupo;
+- el control canónico habilitado.
 
-- `crm_overdue` / `crm_today` + `ACTIVITY` → botón existente `Completar` en CRM. El handoff aclara que señalarlo no obliga a completar; la decisión sigue siendo humana.
-- `publication_failed` / `publication_overdue` / `publication_today` + `PUBLICATION` → panel editorial exacto ya abierto por Contextual Deep Linking. Se exige que `editorialState.selectedId` coincida con el `target_id` exacto y que exista un solo `.editorial-panel`; el grupo conserva copy, fecha, `Guardar nueva versión` y `Cancelar publicación` bajo decisión humana.
-- `lead_conflict` + `LEAD` → grupo exacto selección de contacto + `Resolver conflicto exacto`.
-- `lead_matched` + `LEAD` → botón `Vincular · …` de la coincidencia exacta ya calculada por el owner.
-- `lead_new` / `lead_unidentified` + `LEAD` → `Crear contacto`.
-- `needs_opportunity` + `HANDOFF` → formulario canónico `Crear oportunidad`.
-- `needs_followup` + `HANDOFF` → formulario canónico `Programar seguimiento`.
-- `CAMPAIGN_EXECUTION` → botón `Ir` del bloque `w64-next` de la campaña exacta.
-- `CAMPAIGN_INTELLIGENCE` → botón `Ir` del bloque `w65-next` de la campaña exacta.
+Cero candidatos produce `CONTROL_NOT_AVAILABLE`; más de uno produce `CONTROL_AMBIGUOUS`; un control `disabled` produce `CONTROL_NOT_AVAILABLE`. Solo el caso único y habilitado puede ser `CONTROL_RESOLVED` y conserva `canonical_node`.
 
-### Publication exactness
+Este invariant cubre actualmente:
 
-El row de publicación sigue siendo el target que Deep Linking localiza por `publication_id`. Sin embargo, Deep Linking también establece `editorialState.selectedId` antes del render, por lo que el owner ya abre el panel editorial correspondiente. Contextual Control Handoff no vuelve a señalar `Gestionar`: valida la igualdad exacta del ID y señala el panel ya abierto. Si el panel no existe, hay más de uno o el `selectedId` no coincide, la capa falla cerrada.
+- `lead_conflict` → `Resolver conflicto exacto`;
+- `needs_opportunity` → `Crear oportunidad`;
+- `needs_followup` → `Programar seguimiento`;
+- `DEFINE_CHANNELS` → `Guardar cambios` de la campaña exacta;
+- editor Wave 45 abierto → `Guardar fecha` de la actividad exacta;
+- formulario W52 preparado → `Registrar decisión local` de la campaña exacta.
 
-### Intentional owner gap
+Un grupo de decisión puede contener más de una alternativa humana por diseño. `Completar o reprogramar seguimiento` es un único contenedor de decisión exacto, no un formulario con submit único.
 
-Las acciones `pipeline_*` sobre `OPPORTUNITY` no se sustituyen por el selector de etapa CRM. Hoy ese selector muta `stage`, mientras varias alertas de pipeline requieren programar o editar seguimiento/próxima acción. La capa declara `OWNER_CONTROL_GAP` hasta que exista un control canónico responsable en el owner.
+## Mappings base endurecidos
 
-Otros targets no mapeados también quedan como `OWNER_CONTROL_GAP`; no hay fuzzy matching por texto, título, fecha o cercanía visual.
+- `crm_overdue` / `crm_today` + `ACTIVITY`: fallback base `Completar`. Existing Activity Reschedule Control puede asumir ownership terminal y ofrecer ambas decisiones humanas cuando Wave 45 está disponible.
+- `crm_unscheduled` + `ACTIVITY`: fallback base `OWNER_CONTROL_GAP`; nunca sustituye `Reprogramar` por `Completar`. Existing Activity Reschedule Control asume ownership cuando puede demostrar la actividad exacta y Wave 45.
+- publicación fallida/vencida/de hoy: requiere `editorialState.selectedId === target_id` y un único panel editorial exacto.
+- leads y handoffs: solo controles explícitos del owner; no fuzzy matching.
+- `define_channels` + `CAMPAIGN`: formulario exacto de campaña + único `Guardar cambios` habilitado.
+- `CAMPAIGN_EXECUTION`: `Ir` solo navega al siguiente owner; no ejecuta negocio.
+- `optional_ai` + `CAMPAIGN_INTELLIGENCE`: el fallback endurecido usa `Analizar con IA`, nunca el `Ir` genérico. Campaign Results Owner Handoff tiene ownership terminal equivalente sobre W65.
+- `CAMPAIGN_INTELLIGENCE` sin control explícito: `OWNER_CONTROL_GAP`.
+- `MEDIA` para crear/terminar creativo o preparar/coordinar distribución: `OWNER_CONTROL_GAP`; `Eliminar` y `Usar como Reel` no son sustitutos semánticos.
+- `OPPORTUNITY + pipeline_*`: fallback base fail-closed; Opportunity Follow-up Control decide los casos que puede demostrar exactamente.
 
-## UX contract
+## Opportunity Follow-up Control
 
-El control resuelto recibe únicamente una clase visual y un `data-*` efímero. La capa:
+La extensión carga después del handoff base y envuelve `controlHandoffResolveControl` para `OPPORTUNITY + pipeline_*`.
 
-- no registra un listener sobre el control;
-- nunca dispara `.click()`;
-- no usa `dispatchEvent`;
-- no cambia `disabled`, valores, selects, formularios o inputs;
-- no hace focus automático;
-- no persiste el control;
-- no considera el resaltado como completitud.
+Puede resolver:
 
-Execution Return continúa siendo responsable de regresar a Today y releer Action Center después de una ejecución humana real.
+- `pipeline_overdue_next_action` / `pipeline_unscheduled_next_action` → próxima acción exacta;
+- `pipeline_no_followup` → elección entre próxima acción o nueva actividad, sin preselección;
+- `pipeline_due_soon` → próxima acción solo cuando la fuente temporal es inequívoca.
 
-## Runtime composition
+Permanece fail-closed para actividad existente o ambigüedad temporal. Nunca sustituye seguimiento por el selector de etapa.
 
-`service_post_w99_contextual_control_handoff_app` hereda `service_post_w99_portfolio_cadence_app` y solo agrega un asset estático.
+## Existing Activity Reschedule Control
 
-Secuencia de browser bootstraps:
+La extensión siguiente asume únicamente targets `ACTIVITY` demostrados exactamente y reutiliza Wave 45 como única autoridad de reprogramación:
 
-`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff`
+- `CRMStoreWave45.reschedule_activity`;
+- `service_wave45_app.AppRuntime.reschedule_activity`;
+- `POST /api/companies/{company_id}/activities/{activity_id}/reschedule`;
+- `followupRescheduleOpen` / `followup-reschedule.js`.
 
-## Safety
+Semántica:
 
-- 0 endpoints de negocio nuevos;
-- 0 `opsApi` / `fetch` en el adaptador;
-- 0 POST/PATCH/PUT/DELETE;
-- 0 provider reads/writes;
-- 0 business mutations;
-- 0 `.click()` o eventos sintéticos;
-- 0 polling/background work;
-- 0 IA o fuzzy matching;
-- 0 auto-completion;
-- 0 nueva autoridad de prioridad.
+- `crm_unscheduled` / `pipeline_unscheduled_followup` → `Reprogramar` sobre la actividad exacta;
+- si el editor Wave 45 ya está abierto, el handoff exige un único `Guardar fecha` habilitado antes de reportar `CONTROL_RESOLVED`;
+- `crm_overdue` / `crm_today` / `pipeline_overdue_followup` / `pipeline_due_soon` derivado inequívocamente de actividad → grupo `Completar o reprogramar seguimiento`;
+- actividad ausente, completada, cross-company, Wave 45 ausente o fuente temporal ambigua → fail-closed.
+
+No crea una actividad sustituta, no cambia oportunidad y no duplica el endpoint de Wave 45.
+
+## Campaign Results Owner Handoff
+
+La extensión terminal actual agrega contexto exacto por `campaign_id` y conserva Wave 52 / Wave 65 como autoridades propietarias.
+
+Acciones:
+
+- `capture_results` → `Actualizar resultados desde Meta`; el click humano conserva la confirmación W52 antes de consultar providers.
+- `review_coverage` → superficie read-only de campaña exacta.
+- `record_decision` → primero `Preparar decisión para esta campaña`; solo después de ese click humano el formulario W52 queda ligado al `campaign_id` exacto. El handoff considera el formulario listo únicamente cuando contiene exactamente un `Registrar decisión local` habilitado. El usuario conserva decisión, rationale y submit final.
+- `review_results` → superficie read-only de resultados exactos.
+- `optional_ai` → `Analizar con IA` W65, no `Ir`; la confirmación y el contexto sanitizado siguen perteneciendo a W65.
+
+El GET `/api/companies/{company_id}/campaigns/{campaign_id}/results-owner-context` es contexto local read-only. No genera IA ni ejecuta decisiones.
+
+## Composición terminal
+
+`Today → Execution Return → Contextual Deep Linking → Evidence Observability → Portfolio Cadence → Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → Campaign Results Owner Handoff`
+
+Cada extensión envuelve la anterior y conserva su fallback. Action Center sigue siendo autoridad de prioridad; los stores/servicios propietarios siguen siendo autoridad de mutación.
+
+## UX y seguridad
+
+El handoff base:
+
+- nunca dispara `.click()` ni `dispatchEvent`;
+- no contiene `opsApi` / `fetch`;
+- no registra POST/PATCH/PUT/DELETE;
+- no modifica valores, selects, formularios ni `disabled`;
+- no hace polling ni background work;
+- no hace fuzzy matching ni auto-completion;
+- no interpreta resaltado como completitud.
+
+Las extensiones pueden preparar o exponer controles ya certificados, pero las mutaciones ocurren únicamente en el owner y después de una acción humana explícita.
 
 ## Frozen release boundary
 
-Este incremento vive únicamente en el trunk post-W99 de desarrollo. No modifica `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53`, `service.py`, `version.py`, builders, workflows, el candidato físico W99, `v0.9.0`, signing/notarization ni autoridad de release/publicación.
+Este hardening vive únicamente en el trunk post-W99 de desarrollo. No modifica `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53`, el tree W99, `service.py`, `version.py`, builders, workflows, el candidato físico, `v0.9.0`, signing/notarization ni autoridad de release/publicación.
 
 No constituye W100, physical-UAT PASS, release candidate ni production-ready.
