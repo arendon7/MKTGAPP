@@ -49,12 +49,12 @@ Un grupo de decisión puede contener más de una alternativa humana por diseño.
 - leads y handoffs: solo controles explícitos del owner; no fuzzy matching.
 - `define_channels` + `CAMPAIGN`: formulario exacto de campaña + único `Guardar cambios` habilitado.
 - `CAMPAIGN_EXECUTION`: `Ir` solo navega al siguiente owner; no ejecuta negocio.
-- `optional_ai` + `CAMPAIGN_INTELLIGENCE`: el fallback endurecido usa `Analizar con IA`, nunca el `Ir` genérico. Campaign Results Owner Handoff tiene ownership terminal equivalente sobre W65.
+- `OPTIONAL_AI` / `optional_ai` + `CAMPAIGN_INTELLIGENCE`: el fallback endurecido usa `Analizar con IA`, nunca el `Ir` genérico. Campaign Results Owner Handoff tiene ownership terminal equivalente sobre W65.
 - `CAMPAIGN_INTELLIGENCE` sin control explícito: `OWNER_CONTROL_GAP`.
 - `MEDIA` para crear/terminar creativo o preparar/coordinar distribución: `OWNER_CONTROL_GAP`; `Eliminar` y `Usar como Reel` no son sustitutos semánticos.
 - `OPPORTUNITY + pipeline_*`: fallback base fail-closed; Opportunity Follow-up Control decide los casos que puede demostrar exactamente.
 
-## Opportunity Follow-up Control
+## Opportunity Follow-up Control extension
 
 La extensión carga después del handoff base y envuelve `controlHandoffResolveControl` para `OPPORTUNITY + pipeline_*`.
 
@@ -94,7 +94,7 @@ Acciones:
 - `review_coverage` → superficie read-only de campaña exacta.
 - `record_decision` → primero `Preparar decisión para esta campaña`; solo después de ese click humano el formulario W52 queda ligado al `campaign_id` exacto. El handoff considera el formulario listo únicamente cuando contiene exactamente un `Registrar decisión local` habilitado. El usuario conserva decisión, rationale y submit final.
 - `review_results` → superficie read-only de resultados exactos.
-- `optional_ai` → `Analizar con IA` W65, no `Ir`; la confirmación y el contexto sanitizado siguen perteneciendo a W65.
+- `OPTIONAL_AI` / `optional_ai` → `Analizar con IA` W65, no `Ir`; la confirmación y el contexto sanitizado siguen perteneciendo a W65.
 
 El GET `/api/companies/{company_id}/campaigns/{campaign_id}/results-owner-context` es contexto local read-only. No genera IA ni ejecuta decisiones.
 
