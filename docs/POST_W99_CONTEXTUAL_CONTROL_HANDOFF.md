@@ -36,7 +36,7 @@ Si cualquiera falla, la capa falla cerrada.
 ## Explicit mappings
 
 - `crm_overdue` / `crm_today` + `ACTIVITY` → botón existente `Completar` en CRM. El handoff aclara que señalarlo no obliga a completar; la decisión sigue siendo humana.
-- `publication_failed` / `publication_overdue` / `publication_today` + `PUBLICATION` → botón `Gestionar` del calendario editorial.
+- `publication_failed` / `publication_overdue` / `publication_today` + `PUBLICATION` → panel editorial exacto ya abierto por Contextual Deep Linking. Se exige que `editorialState.selectedId` coincida con el `target_id` exacto y que exista un solo `.editorial-panel`; el grupo conserva copy, fecha, `Guardar nueva versión` y `Cancelar publicación` bajo decisión humana.
 - `lead_conflict` + `LEAD` → grupo exacto selección de contacto + `Resolver conflicto exacto`.
 - `lead_matched` + `LEAD` → botón `Vincular · …` de la coincidencia exacta ya calculada por el owner.
 - `lead_new` / `lead_unidentified` + `LEAD` → `Crear contacto`.
@@ -44,6 +44,10 @@ Si cualquiera falla, la capa falla cerrada.
 - `needs_followup` + `HANDOFF` → formulario canónico `Programar seguimiento`.
 - `CAMPAIGN_EXECUTION` → botón `Ir` del bloque `w64-next` de la campaña exacta.
 - `CAMPAIGN_INTELLIGENCE` → botón `Ir` del bloque `w65-next` de la campaña exacta.
+
+### Publication exactness
+
+El row de publicación sigue siendo el target que Deep Linking localiza por `publication_id`. Sin embargo, Deep Linking también establece `editorialState.selectedId` antes del render, por lo que el owner ya abre el panel editorial correspondiente. Contextual Control Handoff no vuelve a señalar `Gestionar`: valida la igualdad exacta del ID y señala el panel ya abierto. Si el panel no existe, hay más de uno o el `selectedId` no coincide, la capa falla cerrada.
 
 ### Intentional owner gap
 
