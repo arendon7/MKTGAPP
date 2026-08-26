@@ -11,6 +11,20 @@ class OperatorSessionProgressTests(unittest.TestCase):
     def test_terminal_inherits_owner_drift_guard(self):
         self.assertTrue(issubclass(AppRuntime, parent.AppRuntime))
 
+    def test_dev_entrypoint_exports_session_progress_and_keeps_owner_drift_breadcrumb(self):
+        entrypoint = (
+            ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            entrypoint.count("from .service_post_w99_operator_session_progress_app import"),
+            1,
+        )
+        self.assertEqual(
+            entrypoint.count("from .service_post_w99_campaign_execution_owner_drift_guard_app import"),
+            1,
+        )
+        self.assertIn("AppRuntime as _OwnerDriftAppRuntime", entrypoint)
+
     def test_browser_progress_is_company_scoped_session_evidence(self):
         source = (ROOT / "web" / "operator-session-progress.js").read_text(encoding="utf-8")
         self.assertIn("binario.marketing.operator-session-progress.v1", source)
