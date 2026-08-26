@@ -32,12 +32,17 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertEqual(action_center["schema"], "binario.marketing.action-center.v1")
             self.assertIn("observations", action_center)
             self.assertIn("shadowed_actions", action_center)
+            self.assertIn("owner_drift_observations", action_center)
             self.assertTrue(action_center["contracts"]["planned_only_is_observational"])
             self.assertTrue(action_center["contracts"]["planned_only_excluded_from_action_queue"])
             self.assertTrue(action_center["contracts"]["planned_only_excluded_from_today"])
             self.assertTrue(action_center["contracts"]["setup_shadow_deduplication_fail_closed"])
             self.assertTrue(action_center["contracts"]["setup_shadow_requires_full_canonical_coverage"])
             self.assertTrue(action_center["contracts"]["specific_canonical_actions_are_never_removed"])
+            self.assertTrue(action_center["contracts"]["no_target_is_observable"])
+            self.assertTrue(action_center["contracts"]["no_target_preserves_w64_priority"])
+            self.assertTrue(action_center["contracts"]["no_target_does_not_select_replacement"])
+            self.assertTrue(action_center["contracts"]["malformed_no_target_fails_closed"])
             with self.assertRaises(ValueError):
                 runtime.navigator(company_id, "x")
             self.assertTrue(callable(runtime.commercial_pipeline))
@@ -85,16 +90,15 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py"
         ).read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_campaign_media_candidate_selection_handoff_app", entrypoint)
+        self.assertIn("service_post_w99_campaign_execution_owner_drift_guard_app", entrypoint)
         for breadcrumb in (
+            "service_post_w99_campaign_media_candidate_selection_handoff_app",
             "service_post_w99_setup_shadow_action_deduplication_app",
             "service_post_w99_planned_only_actionability_app",
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
         ):
             self.assertIn(breadcrumb, entrypoint)
-        self.assertNotIn("from .service_post_w99_setup_shadow_action_deduplication_app import", entrypoint)
-        self.assertNotIn("from .service_post_w99_planned_only_actionability_app import", entrypoint)
-        self.assertNotIn("from .service_post_w99_campaign_execution_owner_cardinality_hardening_app import", entrypoint)
+            self.assertNotIn(f"from .{breadcrumb} import", entrypoint)
         self.assertIn("serve-dev", doc)
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
@@ -108,6 +112,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Planned-Only Actionability Preservation",
             "Setup Shadow Action Deduplication",
             "Campaign MEDIA Candidate Selection Handoff",
+            "Campaign Execution Owner Drift Guard",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -120,6 +125,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_planned_only_actionability_app",
             "service_post_w99_setup_shadow_action_deduplication_app",
             "service_post_w99_campaign_media_candidate_selection_handoff_app",
+            "service_post_w99_campaign_execution_owner_drift_guard_app",
         ):
             self.assertIn(module, doc)
         browser_chain = (
@@ -128,7 +134,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
             "Campaign Creative Creation Intent Handoff → Campaign Coordinate Recovery Guidance → "
             "Campaign Execution Owner Cardinality Hardening → Planned-Only Actionability Preservation → "
-            "Campaign MEDIA Candidate Selection Handoff"
+            "Campaign MEDIA Candidate Selection Handoff → Campaign Execution Owner Drift Guard"
         )
         self.assertIn(browser_chain, doc)
 
@@ -157,7 +163,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         for forbidden in ("def do_POST", "def do_PATCH", "def do_PUT", "def do_DELETE"):
             self.assertNotIn(forbidden, service)
 
-    def test_media_selection_adapter_is_terminal_after_setup_shadow(self):
+    def test_media_selection_adapter_remains_parent_after_setup_shadow(self):
         service = (
             ROOT
             / "src"
@@ -169,6 +175,19 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         self.assertIn("loadPostW99CampaignMediaCandidateSelectionHandoff", service)
         self.assertIn("script.src='/campaign-media-candidate-selection-handoff.js'", service)
         self.assertIn("data-post-w99-campaign-media-candidate-selection-handoff", service)
+
+    def test_owner_drift_guard_is_terminal_after_media_selection(self):
+        service = (
+            ROOT
+            / "src"
+            / "binario_marketing"
+            / "service_post_w99_campaign_execution_owner_drift_guard_app.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("service_post_w99_campaign_media_candidate_selection_handoff_app", service)
+        self.assertIn('path == "/campaign-media-candidate-selection-handoff.js"', service)
+        self.assertIn("loadPostW99CampaignExecutionOwnerDriftGuard", service)
+        self.assertIn("script.src='/campaign-execution-owner-drift-guard.js'", service)
+        self.assertIn("data-post-w99-campaign-execution-owner-drift-guard", service)
 
 
 if __name__ == "__main__":
