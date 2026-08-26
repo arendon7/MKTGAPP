@@ -8,7 +8,8 @@ advance this alias rather than teaching the CLI about every individual feature.
 # service_post_w99_campaign_execution_owner_cardinality_hardening_app
 # service_post_w99_planned_only_actionability_app
 # service_post_w99_setup_shadow_action_deduplication_app
-from .service_post_w99_campaign_media_candidate_selection_handoff_app import (
+# service_post_w99_campaign_media_candidate_selection_handoff_app
+from .service_post_w99_campaign_coordinate_actionability_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
