@@ -5,8 +5,8 @@ advance this alias rather than teaching the CLI about every individual feature.
 """
 
 # Previous terminal retained explicitly for cumulative-chain auditability:
-# service_post_w99_campaign_execution_owner_cardinality_hardening_app
-from .service_post_w99_planned_only_actionability_app import (
+# service_post_w99_planned_only_actionability_app
+from .service_post_w99_setup_shadow_action_deduplication_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
