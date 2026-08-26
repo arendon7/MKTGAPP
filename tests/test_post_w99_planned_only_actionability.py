@@ -146,7 +146,7 @@ class PlannedOnlyRuntimeTests(unittest.TestCase):
                 )
                 runtime.upsert_company_creative(company["id"], media["id"], {
                     "title": "Ready", "stage": "READY", "purpose": "LEADS",
-                    "campaign_id": campaign.id, "channels": ["email"],
+                    "campaign_id": campaign.id, "channels": ["facebook_page"],
                 })
 
                 execution = runtime.campaign_execution_workspace(company["id"])
