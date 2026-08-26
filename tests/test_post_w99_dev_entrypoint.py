@@ -61,14 +61,15 @@ class PostW99DevEntrypointTests(unittest.TestCase):
     def test_docs_preserve_w99_release_boundary_and_accumulated_composition(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
-        self.assertIn("service_post_w99_campaign_execution_owner_cardinality_hardening_app", entrypoint)
-        self.assertNotIn("service_post_w99_campaign_coordinate_recovery_guidance_app import", entrypoint)
+        self.assertIn("service_post_w99_campaign_media_candidate_selection_handoff_app", entrypoint)
+        self.assertNotIn("service_post_w99_campaign_execution_owner_cardinality_hardening_app import", entrypoint)
         self.assertIn("serve-dev", doc); self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
         for label in (
             "Campaign Execution Owner Relay", "Campaign Execution Candidate Selector",
             "Campaign Creative Creation Intent Handoff", "Campaign Coordinate State Decomposition",
             "Campaign Coordinate Recovery Guidance", "Campaign Execution Owner Cardinality Hardening",
+            "Campaign MEDIA Candidate Selection Handoff",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -78,6 +79,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_campaign_coordinate_state_decomposition_app",
             "service_post_w99_campaign_coordinate_recovery_guidance_app",
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
+            "service_post_w99_campaign_media_candidate_selection_handoff_app",
         ):
             self.assertIn(module, doc)
         browser_chain = (
@@ -85,16 +87,16 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → "
             "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
             "Campaign Creative Creation Intent Handoff → Campaign Coordinate Recovery Guidance → "
-            "Campaign Execution Owner Cardinality Hardening"
+            "Campaign Execution Owner Cardinality Hardening → Campaign MEDIA Candidate Selection Handoff"
         )
         self.assertIn(browser_chain, doc)
 
-    def test_cardinality_adapter_is_bootstrapped_after_recovery_guidance(self):
-        service = (ROOT / "src" / "binario_marketing" / "service_post_w99_campaign_execution_owner_cardinality_hardening_app.py").read_text(encoding="utf-8")
-        self.assertIn('path == "/campaign-coordinate-recovery-guidance.js"', service)
-        self.assertIn("loadPostW99CampaignExecutionOwnerCardinalityHardening", service)
-        self.assertIn("script.src='/campaign-execution-owner-cardinality-hardening.js'", service)
-        self.assertIn("data-post-w99-campaign-execution-owner-cardinality-hardening", service)
+    def test_media_selection_adapter_is_bootstrapped_after_cardinality_hardening(self):
+        service = (ROOT / "src" / "binario_marketing" / "service_post_w99_campaign_media_candidate_selection_handoff_app.py").read_text(encoding="utf-8")
+        self.assertIn('path == "/campaign-execution-owner-cardinality-hardening.js"', service)
+        self.assertIn("loadPostW99CampaignMediaCandidateSelectionHandoff", service)
+        self.assertIn("script.src='/campaign-media-candidate-selection-handoff.js'", service)
+        self.assertIn("data-post-w99-campaign-media-candidate-selection-handoff", service)
 
 
 if __name__ == "__main__": unittest.main()
