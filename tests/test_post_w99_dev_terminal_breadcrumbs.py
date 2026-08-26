@@ -6,27 +6,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PostW99DevTerminalBreadcrumbTests(unittest.TestCase):
-    def test_terminal_keeps_cumulative_historical_breadcrumbs_without_importing_old_terminal(self):
+    def test_terminal_keeps_cumulative_historical_breadcrumbs_without_importing_old_terminals(self):
         entrypoint = (
             ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn(
+        for breadcrumb in (
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
-            entrypoint,
-        )
-        self.assertIn("service_post_w99_planned_only_actionability_app", entrypoint)
-        self.assertIn("service_post_w99_setup_shadow_action_deduplication_app", entrypoint)
-        self.assertNotIn(
-            "from .service_post_w99_campaign_execution_owner_cardinality_hardening_app import",
-            entrypoint,
-        )
-        self.assertNotIn(
-            "from .service_post_w99_planned_only_actionability_app import",
-            entrypoint,
-        )
+            "service_post_w99_planned_only_actionability_app",
+            "service_post_w99_setup_shadow_action_deduplication_app",
+            "service_post_w99_campaign_media_candidate_selection_handoff_app",
+        ):
+            self.assertIn(breadcrumb, entrypoint)
+
+        for old_terminal in (
+            "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
+            "service_post_w99_planned_only_actionability_app",
+            "service_post_w99_setup_shadow_action_deduplication_app",
+        ):
+            self.assertNotIn(f"from .{old_terminal} import", entrypoint)
+
         self.assertEqual(
-            entrypoint.count("from .service_post_w99_setup_shadow_action_deduplication_app import"),
+            entrypoint.count(
+                "from .service_post_w99_campaign_media_candidate_selection_handoff_app import"
+            ),
             1,
         )
 
