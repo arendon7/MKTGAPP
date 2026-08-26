@@ -32,6 +32,8 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertEqual(action_center["schema"], "binario.marketing.action-center.v1")
             self.assertIn("observations", action_center)
             self.assertTrue(action_center["contracts"]["planned_only_is_observational"])
+            self.assertTrue(action_center["contracts"]["planned_only_excluded_from_action_queue"])
+            self.assertTrue(action_center["contracts"]["planned_only_excluded_from_today"])
             with self.assertRaises(ValueError): runtime.navigator(company_id, "x")
             self.assertTrue(callable(runtime.commercial_pipeline))
             self.assertEqual(runtime.commercial_outcomes(company_id)["schema"], "binario.marketing.commercial-outcomes.v1")
@@ -64,15 +66,18 @@ class PostW99DevEntrypointTests(unittest.TestCase):
     def test_docs_preserve_w99_release_boundary_and_accumulated_composition(self):
         entrypoint = (ROOT / "src" / "binario_marketing" / "service_post_w99_dev_app.py").read_text()
         doc = (ROOT / "docs" / "POST_W99_DEV_ENTRYPOINT.md").read_text()
+        self.assertIn("service_post_w99_campaign_media_candidate_selection_handoff_app", entrypoint)
+        self.assertNotIn("from .service_post_w99_planned_only_actionability_app import", entrypoint)
+        self.assertNotIn("from .service_post_w99_campaign_execution_owner_cardinality_hardening_app import", entrypoint)
         self.assertIn("service_post_w99_planned_only_actionability_app", entrypoint)
-        self.assertNotIn("service_post_w99_campaign_execution_owner_cardinality_hardening_app import", entrypoint)
+        self.assertIn("service_post_w99_campaign_execution_owner_cardinality_hardening_app", entrypoint)
         self.assertIn("serve-dev", doc); self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", doc)
         self.assertIn("No debe interpretarse como W100", doc)
         for label in (
             "Campaign Execution Owner Relay", "Campaign Execution Candidate Selector",
             "Campaign Creative Creation Intent Handoff", "Campaign Coordinate State Decomposition",
             "Campaign Coordinate Recovery Guidance", "Campaign Execution Owner Cardinality Hardening",
-            "Planned-Only Actionability Preservation",
+            "Planned-Only Actionability Preservation", "Campaign MEDIA Candidate Selection Handoff",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -83,6 +88,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_campaign_coordinate_recovery_guidance_app",
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
             "service_post_w99_planned_only_actionability_app",
+            "service_post_w99_campaign_media_candidate_selection_handoff_app",
         ):
             self.assertIn(module, doc)
         browser_chain = (
@@ -90,7 +96,8 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Contextual Control Handoff → Opportunity Follow-up Control → Existing Activity Reschedule Control → "
             "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
             "Campaign Creative Creation Intent Handoff → Campaign Coordinate Recovery Guidance → "
-            "Campaign Execution Owner Cardinality Hardening → Planned-Only Actionability Preservation"
+            "Campaign Execution Owner Cardinality Hardening → Planned-Only Actionability Preservation → "
+            "Campaign MEDIA Candidate Selection Handoff"
         )
         self.assertIn(browser_chain, doc)
 
@@ -100,6 +107,14 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         self.assertIn("loadPostW99PlannedOnlyActionabilityPreservation", service)
         self.assertIn("script.src='/planned-only-actionability.js'", service)
         self.assertIn("data-post-w99-planned-only-actionability", service)
+
+    def test_media_selection_adapter_is_bootstrapped_after_planned_only(self):
+        service = (ROOT / "src" / "binario_marketing" / "service_post_w99_campaign_media_candidate_selection_handoff_app.py").read_text(encoding="utf-8")
+        self.assertIn("service_post_w99_planned_only_actionability_app", service)
+        self.assertIn('path == "/planned-only-actionability.js"', service)
+        self.assertIn("loadPostW99CampaignMediaCandidateSelectionHandoff", service)
+        self.assertIn("script.src='/campaign-media-candidate-selection-handoff.js'", service)
+        self.assertIn("data-post-w99-campaign-media-candidate-selection-handoff", service)
 
 
 if __name__ == "__main__": unittest.main()
