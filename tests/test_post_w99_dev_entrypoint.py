@@ -72,6 +72,29 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             self.assertTrue(
                 action_center["contracts"]["unknown_coordinate_states_fail_closed"]
             )
+            self.assertTrue(
+                action_center["contracts"][
+                    "campaign_passive_attention_uses_exact_source_lineage"
+                ]
+            )
+            self.assertTrue(
+                action_center["contracts"][
+                    "calendar_requires_w64_and_w65_non_action_truth"
+                ]
+            )
+            self.assertTrue(
+                action_center["contracts"][
+                    "results_review_and_optional_ai_follow_w65_attention_truth"
+                ]
+            )
+            self.assertTrue(
+                action_center["contracts"]["passive_campaign_states_excluded_from_today"]
+            )
+            self.assertTrue(
+                action_center["contracts"][
+                    "passive_lineage_mismatch_preserves_existing_action"
+                ]
+            )
             with self.assertRaises(ValueError):
                 runtime.navigator(company_id, "x")
             self.assertTrue(callable(runtime.commercial_pipeline))
@@ -152,7 +175,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         ).read_text()
 
         self.assertIn(
-            "service_post_w99_campaign_coordinate_actionability_app",
+            "service_post_w99_campaign_attention_actionability_app",
             entrypoint,
         )
         for breadcrumb in (
@@ -160,6 +183,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_planned_only_actionability_app",
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
             "service_post_w99_campaign_media_candidate_selection_handoff_app",
+            "service_post_w99_campaign_coordinate_actionability_app",
         ):
             self.assertIn(breadcrumb, entrypoint)
         for old_terminal in (
@@ -167,6 +191,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_planned_only_actionability_app",
             "service_post_w99_campaign_execution_owner_cardinality_hardening_app",
             "service_post_w99_campaign_media_candidate_selection_handoff_app",
+            "service_post_w99_campaign_coordinate_actionability_app",
         ):
             self.assertNotIn(
                 f"from .{old_terminal} import",
@@ -187,6 +212,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Setup Shadow Action Deduplication",
             "Campaign MEDIA Candidate Selection Handoff",
             "Campaign Coordinate Actionability Preservation",
+            "Campaign Attention Actionability Preservation",
         ):
             self.assertIn(label, doc)
         for module in (
@@ -200,6 +226,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "service_post_w99_setup_shadow_action_deduplication_app",
             "service_post_w99_campaign_media_candidate_selection_handoff_app",
             "service_post_w99_campaign_coordinate_actionability_app",
+            "service_post_w99_campaign_attention_actionability_app",
         ):
             self.assertIn(module, doc)
 
@@ -209,7 +236,8 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             "Campaign Results Owner Handoff → Campaign Execution Owner Relay → Campaign Execution Candidate Selector → "
             "Campaign Creative Creation Intent Handoff → Campaign Coordinate Recovery Guidance → "
             "Campaign Execution Owner Cardinality Hardening → Planned-Only Actionability Preservation → "
-            "Campaign MEDIA Candidate Selection Handoff → Campaign Coordinate Actionability Preservation"
+            "Campaign MEDIA Candidate Selection Handoff → Campaign Coordinate Actionability Preservation → "
+            "Campaign Attention Actionability Preservation"
         )
         self.assertIn(browser_chain, doc)
 
@@ -286,7 +314,7 @@ class PostW99DevEntrypointTests(unittest.TestCase):
             service,
         )
 
-    def test_coordinate_actionability_is_terminal_after_media_selection(self):
+    def test_coordinate_actionability_remains_after_media_selection(self):
         service = (
             ROOT
             / "src"
@@ -311,6 +339,34 @@ class PostW99DevEntrypointTests(unittest.TestCase):
         )
         self.assertIn(
             "data-post-w99-campaign-coordinate-actionability",
+            service,
+        )
+
+    def test_attention_actionability_is_terminal_after_coordinate(self):
+        service = (
+            ROOT
+            / "src"
+            / "binario_marketing"
+            / "service_post_w99_campaign_attention_actionability_app.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "service_post_w99_campaign_coordinate_actionability_app",
+            service,
+        )
+        self.assertIn(
+            'path == "/campaign-coordinate-actionability.js"',
+            service,
+        )
+        self.assertIn(
+            "loadPostW99CampaignAttentionActionabilityPreservation",
+            service,
+        )
+        self.assertIn(
+            "script.src='/campaign-attention-actionability.js'",
+            service,
+        )
+        self.assertIn(
+            "data-post-w99-campaign-attention-actionability",
             service,
         )
 

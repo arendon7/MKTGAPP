@@ -25,12 +25,13 @@ class PostW99DevTerminalBreadcrumbTests(unittest.TestCase):
             "service_post_w99_planned_only_actionability_app",
             "service_post_w99_setup_shadow_action_deduplication_app",
             "service_post_w99_campaign_media_candidate_selection_handoff_app",
+            "service_post_w99_campaign_coordinate_actionability_app",
         ):
             self.assertNotIn(f"from .{old_terminal} import", entrypoint)
 
         self.assertEqual(
             entrypoint.count(
-                "from .service_post_w99_campaign_coordinate_actionability_app import"
+                "from .service_post_w99_campaign_attention_actionability_app import"
             ),
             1,
         )
