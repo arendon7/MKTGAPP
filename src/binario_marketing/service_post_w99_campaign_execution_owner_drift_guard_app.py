@@ -24,10 +24,11 @@ def _text(value: object) -> str:
 def _zero_candidate_count(value: object) -> bool:
     if isinstance(value, bool):
         return False
-    try:
-        return int(value) == 0
-    except (TypeError, ValueError):
-        return False
+    if isinstance(value, int):
+        return value == 0
+    if isinstance(value, str):
+        return value.strip() == "0"
+    return False
 
 
 def _owner_drift(row: dict) -> dict | None:
@@ -88,7 +89,7 @@ def annotate_campaign_execution_owner_drift(payload: dict) -> dict:
     for row in result.get("queue") or []:
         action_id = _text(row.get("id"))
         current = row
-        drift = _owner_drift(row)
+        drift = _owner_drift(row) if action_id else None
         if drift is not None:
             current = deepcopy(row)
             current["owner_drift"] = drift
