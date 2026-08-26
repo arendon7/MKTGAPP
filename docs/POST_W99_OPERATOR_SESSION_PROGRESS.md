@@ -18,7 +18,7 @@ Solo registra estos estados exactos:
 
 `NO_LONGER_PENDING` **no significa tarea completada**. Puede reflejar cualquier cambio canónico que haya retirado esa action ID. El owner correspondiente continúa siendo la única autoridad sobre el estado de negocio.
 
-## Contexto exacto
+## Contexto exacto y frescura
 
 Un resultado de regreso solo puede incorporarse al historial cuando:
 
@@ -26,9 +26,12 @@ Un resultado de regreso solo puede incorporarse al historial cuando:
 2. la empresa activa coincide exactamente con ese `company_id`;
 3. `postW99ExecutionReturnState.lastResult.action_id` coincide exactamente con la acción del contexto;
 4. `checked_at` existe;
-5. el estado pertenece a los tres estados certificados anteriores.
+5. el estado pertenece a los tres estados certificados anteriores;
+6. el `checked_at` posterior es distinto del `checked_at` que existía antes de invocar la relectura.
 
-Esto impide que un resultado viejo de otra empresa o acción contamine la sesión actual.
+La última regla evita reutilizar un resultado viejo si una nueva relectura falla o no produce evidencia fresca. Un regreso fallido no puede transformarse en progreso de sesión a partir de un `lastResult` previo.
+
+Esto impide que un resultado viejo de otra empresa, otra acción o otra relectura contamine la sesión actual.
 
 ## Persistencia deliberadamente efímera
 
@@ -46,6 +49,8 @@ Solo contiene contexto de navegación/observación:
 - siguiente action ID observado, si existe.
 
 Se conservan como máximo 40 eventos. No se usa `localStorage`, no se sincroniza a backend y cerrar la pestaña elimina naturalmente esta memoria de sesión.
+
+La lectura de `sessionStorage` también falla cerrado. Se descartan eventos malformados: todo evento debe tener `action_id`; `ACTION_OPENED` requiere `observed_at`; y `RETURN_OBSERVED` requiere un `checked_at` no vacío y uno de los tres estados certificados. Un estado desconocido nunca cae por defecto en “ya no está en cola”.
 
 ## UX
 
@@ -74,7 +79,8 @@ La capa es presentation-only:
 - no reprioriza Action Center;
 - no altera Today;
 - no interpreta desaparición de cola como completitud;
-- no sustituye Execution Return, que sigue siendo quien realiza la relectura canónica.
+- no sustituye Execution Return, que sigue siendo quien realiza la relectura canónica;
+- no registra resultados stale ni eventos malformados.
 
 ## Composición
 
