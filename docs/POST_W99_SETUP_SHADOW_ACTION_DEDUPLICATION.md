@@ -30,12 +30,14 @@ El agregado `SETUP/paid_draft` sale de la cola únicamente cuando todos los IDs 
 
 La cobertura solo acepta:
 
+- `source_code=REVIEW_PAID` y `owner_view=pauta`;
 - `target_kind=PAID_DRAFT`;
-- `state=EXACT_TARGET` o `AMBIGUOUS_TARGET`;
-- candidatos con IDs no vacíos y únicos;
-- `candidate_count` exactamente igual al número de candidatos.
+- candidatos estructurados, todos con `status=DRAFT` e IDs no vacíos y únicos;
+- `candidate_count` exactamente igual al número real de candidatos;
+- `EXACT_TARGET` únicamente con un candidato y `target_id` idéntico a ese ID;
+- `AMBIGUOUS_TARGET` únicamente con dos o más candidatos y `target_id` vacío.
 
-Un draft huérfano, una cardinalidad incoherente o una resolución sin candidatos conserva el agregado.
+Un draft huérfano, una cardinalidad incoherente, un `target_id` contradictorio, un candidato no DRAFT, una forma de candidato inválida o una resolución sin candidatos conserva el agregado.
 
 ## Observabilidad
 
