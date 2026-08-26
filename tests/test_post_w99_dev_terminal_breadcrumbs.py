@@ -35,6 +35,13 @@ class PostW99DevTerminalBreadcrumbTests(unittest.TestCase):
             ),
             1,
         )
+        self.assertEqual(
+            entrypoint.count(
+                "from .service_post_w99_operator_session_progress_app import"
+            ),
+            1,
+        )
+        self.assertIn("AppRuntime as _OwnerDriftAppRuntime", entrypoint)
 
 
 if __name__ == "__main__":
