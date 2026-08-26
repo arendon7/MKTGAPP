@@ -34,14 +34,18 @@ class OperatorSessionProgressTests(unittest.TestCase):
         self.assertIn("POST_W99_OPERATOR_SESSION_PROGRESS_MAX_EVENTS=40", source)
         self.assertIn("ACTION_OPENED", source)
         self.assertIn("RETURN_OBSERVED", source)
+        self.assertIn("operatorSessionProgressValidEvent", source)
 
-    def test_only_canonical_execution_return_states_are_recorded(self):
+    def test_only_fresh_canonical_execution_return_states_are_recorded(self):
         source = (ROOT / "web" / "operator-session-progress.js").read_text(encoding="utf-8")
         for state in ("STILL_IN_TODAY", "STILL_PENDING", "NO_LONGER_PENDING"):
             self.assertIn(state, source)
         self.assertIn("executionReturnBackToToday", source)
         self.assertIn("String(result.action_id)!==String(actionId)", source)
         self.assertIn("String(company.id)!==String(companyId)", source)
+        self.assertIn("checkedAt===operatorSessionProgressText(previousCheckedAt)", source)
+        self.assertIn("operatorSessionProgressAllowedReturnState(event.observed_state)", source)
+        self.assertIn("operatorSessionProgressText(event.checked_at)", source)
         self.assertNotIn("COMPLETED", source)
         self.assertNotIn("MARK_DONE", source)
 
@@ -52,6 +56,7 @@ class OperatorSessionProgressTests(unittest.TestCase):
         self.assertIn("owner sigue siendo la única autoridad de negocio", source)
         self.assertIn("Reiniciar registro de sesión", source)
         self.assertIn("ninguna tarea ni dato de negocio cambió", source)
+        self.assertIn("Observación descartada por contrato fail-closed", source)
 
     def test_browser_layer_has_no_business_transport_or_execution(self):
         source = (ROOT / "web" / "operator-session-progress.js").read_text(encoding="utf-8")
@@ -89,6 +94,8 @@ class OperatorSessionProgressTests(unittest.TestCase):
         self.assertIn("sessionStorage", doc)
         self.assertIn("NO_LONGER_PENDING", doc)
         self.assertIn("no significa", doc.lower())
+        self.assertIn("checked_at", doc)
+        self.assertIn("malformados", doc.lower())
         self.assertIn("Physical-UAT PASS", doc)
 
 
