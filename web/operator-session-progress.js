@@ -34,13 +34,13 @@ function operatorSessionProgressRecordOpen(row){
   const company=operatorSessionProgressCompany(),actionId=operatorSessionProgressText(row?.id);if(!company?.id||!actionId)return;
   operatorSessionProgressAppend(company.id,{type:'ACTION_OPENED',action_id:actionId,title:operatorSessionProgressText(row?.title)||'Acción del plan',source:operatorSessionProgressText(row?.source)||'OTHER',urgency:operatorSessionProgressText(row?.urgency)||'LOW',sequence:Number(row?.operator?.sequence||0)||null,observed_at:new Date().toISOString()})
 }
-function operatorSessionProgressMaybeRecordReturn(){
-  if(typeof postW99ExecutionReturnState==='undefined')return;
-  const result=postW99ExecutionReturnState.lastResult,company=operatorSessionProgressCompany();
-  if(!result||!company?.id||!result.action_id||!result.checked_at||!operatorSessionProgressAllowedReturnState(result.state))return;
-  const fingerprint=`${company.id}:${result.action_id}:${result.checked_at}`;if(postW99OperatorSessionProgressState.lastRecordedReturn===fingerprint)return;
-  const current=operatorSessionProgressRead(company.id),already=(current?.events||[]).some(event=>event.type==='RETURN_OBSERVED'&&event.action_id===String(result.action_id)&&event.checked_at===String(result.checked_at));
-  if(!already)operatorSessionProgressAppend(company.id,{type:'RETURN_OBSERVED',action_id:String(result.action_id),title:operatorSessionProgressText(result.title)||'Acción observada',observed_state:String(result.state),checked_at:String(result.checked_at),today_sequence:result.today_sequence??null,canonical_position:result.canonical_position??null,next_action_id:operatorSessionProgressText(result.next_action?.id)||null});
+function operatorSessionProgressRecordReturn(companyId,actionId){
+  if(typeof postW99ExecutionReturnState==='undefined'||!companyId||!actionId)return;
+  const company=operatorSessionProgressCompany(),result=postW99ExecutionReturnState.lastResult;
+  if(!company?.id||String(company.id)!==String(companyId)||!result||String(result.action_id)!==String(actionId)||!result.checked_at||!operatorSessionProgressAllowedReturnState(result.state))return;
+  const fingerprint=`${companyId}:${actionId}:${result.checked_at}`;if(postW99OperatorSessionProgressState.lastRecordedReturn===fingerprint)return;
+  const current=operatorSessionProgressRead(companyId),already=(current?.events||[]).some(event=>event.type==='RETURN_OBSERVED'&&event.action_id===String(actionId)&&event.checked_at===String(result.checked_at));
+  if(!already)operatorSessionProgressAppend(companyId,{type:'RETURN_OBSERVED',action_id:String(actionId),title:operatorSessionProgressText(result.title)||'Acción observada',observed_state:String(result.state),checked_at:String(result.checked_at),today_sequence:result.today_sequence??null,canonical_position:result.canonical_position??null,next_action_id:operatorSessionProgressText(result.next_action?.id)||null});
   postW99OperatorSessionProgressState.lastRecordedReturn=fingerprint
 }
 function operatorSessionProgressLatestReturns(value){const latest=new Map();for(const event of value?.events||[]){if(event.type==='RETURN_OBSERVED')latest.set(event.action_id,event)}return [...latest.values()]}
@@ -58,9 +58,9 @@ function operatorSessionProgressStyles(){
 `;document.head.append(style)
 }
 function operatorSessionProgressStat(value,label){const node=opsEl('div','operator-session-progress-stat');node.append(opsEl('strong','',String(value||0)),opsEl('span','',label));return node}
-function operatorSessionProgressReset(companyId){try{sessionStorage.removeItem(operatorSessionProgressKey(companyId))}catch(_err){}postW99OperatorSessionProgressState.lastRecordedReturn=null;if(typeof opsToast==='function')opsToast('Se borró solo el historial local de esta sesión; ninguna tarea ni dato de negocio cambió.');operatorSessionProgressRender()}
+function operatorSessionProgressReset(companyId){try{sessionStorage.removeItem(operatorSessionProgressKey(companyId))}catch(_err){}if(typeof opsToast==='function')opsToast('Se borró solo el historial local de esta sesión; ninguna tarea ni dato de negocio cambió.');operatorSessionProgressRender()}
 function operatorSessionProgressRender(){
-  operatorSessionProgressMaybeRecordReturn();if(typeof marketingOpsState==='undefined'||marketingOpsState.view!=='today-execution')return;
+  if(typeof marketingOpsState==='undefined'||marketingOpsState.view!=='today-execution')return;
   const company=operatorSessionProgressCompany(),root=document.querySelector('#marketing-ops-view');if(!company?.id||!root)return;
   root.querySelector('#post-w99-operator-session-progress')?.remove();const value=operatorSessionProgressRead(company.id);if(!value)return;
   operatorSessionProgressStyles();const summary=operatorSessionProgressSummary(value),section=opsEl('section','operator-session-progress');section.id='post-w99-operator-session-progress';
@@ -72,5 +72,6 @@ function operatorSessionProgressRender(){
 }
 
 const operatorSessionProgressBaseTodayOpen=globalThis.todayOpen;if(typeof operatorSessionProgressBaseTodayOpen==='function')globalThis.todayOpen=function(row){operatorSessionProgressRecordOpen(row);return operatorSessionProgressBaseTodayOpen.apply(this,arguments)};
-const operatorSessionProgressBaseRender=globalThis.renderMarketingOps;if(typeof operatorSessionProgressBaseRender==='function')globalThis.renderMarketingOps=function(){const value=operatorSessionProgressBaseRender.apply(this,arguments);operatorSessionProgressMaybeRecordReturn();operatorSessionProgressRender();return value};
+const operatorSessionProgressBaseReturn=globalThis.executionReturnBackToToday;if(typeof operatorSessionProgressBaseReturn==='function')globalThis.executionReturnBackToToday=async function(context){const companyId=operatorSessionProgressText(context?.company_id),actionId=operatorSessionProgressText(context?.action_id),value=await operatorSessionProgressBaseReturn.apply(this,arguments);operatorSessionProgressRecordReturn(companyId,actionId);queueMicrotask(operatorSessionProgressRender);return value};
+const operatorSessionProgressBaseRender=globalThis.renderMarketingOps;if(typeof operatorSessionProgressBaseRender==='function')globalThis.renderMarketingOps=function(){const value=operatorSessionProgressBaseRender.apply(this,arguments);operatorSessionProgressRender();return value};
 window.addEventListener('marketing-ops-refreshed',operatorSessionProgressRender);window.addEventListener('pageshow',operatorSessionProgressRender);queueMicrotask(operatorSessionProgressRender);
