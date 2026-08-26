@@ -44,22 +44,36 @@ def _review_paid_candidate_ids(queue: list[dict]) -> set[str]:
         if _text(row.get("kind")).lower() != "review_paid":
             continue
         resolution = row.get("owner_resolution") or {}
+        if _text(resolution.get("source_code")).upper() != "REVIEW_PAID":
+            continue
+        if _text(resolution.get("owner_view")) != "pauta":
+            continue
         if _text(resolution.get("target_kind")).upper() != "PAID_DRAFT":
             continue
-        if _text(resolution.get("state")).upper() not in {"EXACT_TARGET", "AMBIGUOUS_TARGET"}:
+        state = _text(resolution.get("state")).upper()
+        if state not in {"EXACT_TARGET", "AMBIGUOUS_TARGET"}:
             continue
         candidates = list(resolution.get("candidates") or [])
-        ids = [_text(candidate.get("id")) for candidate in candidates if isinstance(candidate, dict)]
-        if not ids or any(not value for value in ids):
+        if not candidates or any(not isinstance(candidate, dict) for candidate in candidates):
             continue
-        if len(ids) != len(set(ids)):
+        ids = [_text(candidate.get("id")) for candidate in candidates]
+        if any(not value for value in ids) or len(ids) != len(set(ids)):
+            continue
+        if any(_text(candidate.get("status")).upper() != "DRAFT" for candidate in candidates):
             continue
         try:
             candidate_count = int(resolution.get("candidate_count"))
         except (TypeError, ValueError):
             continue
-        if candidate_count != len(ids):
+        if candidate_count != len(candidates):
             continue
+        target_id = _text(resolution.get("target_id"))
+        if state == "EXACT_TARGET":
+            if len(candidates) != 1 or target_id != ids[0]:
+                continue
+        else:
+            if len(candidates) < 2 or target_id:
+                continue
         result.update(ids)
     return result
 
