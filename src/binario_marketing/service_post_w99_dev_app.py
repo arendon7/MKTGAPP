@@ -11,11 +11,14 @@ advance this alias rather than teaching the CLI about every individual feature.
 # service_post_w99_campaign_media_candidate_selection_handoff_app
 # service_post_w99_campaign_coordinate_actionability_app
 # service_post_w99_campaign_attention_actionability_app
-# Immediate parent retained as an explicit compatibility import for cumulative audits.
+# Immediate parents retained as explicit compatibility imports for cumulative audits.
 from .service_post_w99_setup_readiness_owner_handoff_app import (
     AppRuntime as _SetupReadinessAppRuntime,
 )
 from .service_post_w99_campaign_execution_owner_drift_guard_app import (
+    AppRuntime as _OwnerDriftAppRuntime,
+)
+from .service_post_w99_operator_session_progress_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
