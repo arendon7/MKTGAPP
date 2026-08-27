@@ -19,6 +19,9 @@ from .service_post_w99_campaign_execution_owner_drift_guard_app import (
     AppRuntime as _OwnerDriftAppRuntime,
 )
 from .service_post_w99_operator_session_progress_app import (
+    AppRuntime as _OperatorSessionProgressAppRuntime,
+)
+from .service_post_w99_operator_current_priority_continuity_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
