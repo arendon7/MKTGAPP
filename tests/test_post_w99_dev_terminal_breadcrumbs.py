@@ -23,25 +23,26 @@ class PostW99DevTerminalBreadcrumbTests(unittest.TestCase):
         for old_terminal in historical:
             self.assertNotIn(f"from .{old_terminal} import", entrypoint)
 
-        self.assertEqual(
-            entrypoint.count(
-                "from .service_post_w99_setup_readiness_owner_handoff_app import"
-            ),
-            1,
+        compatibility_imports = (
+            "service_post_w99_setup_readiness_owner_handoff_app",
+            "service_post_w99_campaign_execution_owner_drift_guard_app",
+            "service_post_w99_operator_session_progress_app",
+            "service_post_w99_operator_current_priority_continuity_app",
+            "service_post_w99_operator_return_evidence_delta_app",
         )
-        self.assertEqual(
-            entrypoint.count(
-                "from .service_post_w99_campaign_execution_owner_drift_guard_app import"
-            ),
-            1,
-        )
-        self.assertEqual(
-            entrypoint.count(
-                "from .service_post_w99_operator_session_progress_app import"
-            ),
-            1,
-        )
+        for module in compatibility_imports:
+            self.assertEqual(entrypoint.count(f"from .{module} import"), 1)
+
         self.assertIn("AppRuntime as _OwnerDriftAppRuntime", entrypoint)
+        self.assertIn("AppRuntime as _OperatorSessionProgressAppRuntime", entrypoint)
+        self.assertIn("AppRuntime as _OperatorCurrentPriorityContinuityAppRuntime", entrypoint)
+        self.assertIn("AppRuntime as _OperatorReturnEvidenceDeltaAppRuntime", entrypoint)
+        self.assertEqual(
+            entrypoint.count(
+                "from .service_post_w99_operator_session_evidence_integration_app import"
+            ),
+            1,
+        )
 
 
 if __name__ == "__main__":

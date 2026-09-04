@@ -25,6 +25,9 @@ from .service_post_w99_operator_current_priority_continuity_app import (
     AppRuntime as _OperatorCurrentPriorityContinuityAppRuntime,
 )
 from .service_post_w99_operator_return_evidence_delta_app import (
+    AppRuntime as _OperatorReturnEvidenceDeltaAppRuntime,
+)
+from .service_post_w99_operator_session_evidence_integration_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
