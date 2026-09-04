@@ -77,20 +77,28 @@ class OperatorSessionEvidenceIntegrationTests(unittest.TestCase):
         browser = (
             ROOT / "web" / "operator-session-evidence-integration.js"
         ).read_text(encoding="utf-8")
+        state_decl = next(
+            line
+            for line in browser.splitlines()
+            if line.startswith("const POST_W99_OPERATOR_SESSION_EVIDENCE_STATES=")
+        )
         for state in (
             "FIELDS_CHANGED",
             "NO_WHITELISTED_CHANGE",
             "ACTION_NOT_PRESENT_AFTER_REREAD",
         ):
-            self.assertIn(f"'{state}'", browser)
-        for fail_closed_state in (
+            self.assertIn(f"'{state}'", state_decl)
+        for upstream_fail_closed_state in (
             "NO_OPEN_SNAPSHOT",
             "SNAPSHOT_SCOPE_MISMATCH",
             "RETURN_CONTEXT_MISMATCH",
             "RETURN_STATE_UNSUPPORTED",
             "CURRENT_ACTION_SHAPE_INVALID",
         ):
-            self.assertNotIn(f"'{fail_closed_state}'", browser)
+            self.assertNotIn(f"'{upstream_fail_closed_state}'", state_decl)
+        # The integration may use similarly named local fail-closed outcomes; those
+        # are diagnostics, not eligible persisted delta states.
+        self.assertIn("state:'RETURN_CONTEXT_MISMATCH'", browser)
 
     def test_exact_return_event_identity_and_write_confirmation_are_required(self):
         browser = (
