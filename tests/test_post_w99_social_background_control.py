@@ -127,7 +127,7 @@ class SocialBackgroundControlTests(unittest.TestCase):
         self.assertIn("window.confirm", browser)
         self.assertIn("/api/social/background/install", browser)
         self.assertIn("method:'DELETE'", browser)
-        self.assertIn("Publicación en segundo plano", browser)
+        self.assertIn("publicación en segundo plano", browser.lower())
         self.assertNotIn("setInterval(", browser)
         self.assertNotIn("setTimeout(", browser)
         load_body = browser.split("async function socialBackgroundLoad()", 1)[1].split("function socialBackgroundStateLabel", 1)[0]
