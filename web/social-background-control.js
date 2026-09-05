@@ -30,7 +30,8 @@ async function socialBackgroundLoad(){
 }
 
 function socialBackgroundStateLabel(agent){
-  if(!agent?.platform_supported)return ['Sólo macOS',''];
+  if(!agent)return ['Consultando',''];
+  if(!agent.platform_supported)return ['Sólo macOS',''];
   if(agent.stale)return ['Requiere reinstalar',''];
   if(agent.loaded)return ['Activa','active'];
   if(agent.installed)return ['Instalada · detenida',''];
@@ -38,7 +39,8 @@ function socialBackgroundStateLabel(agent){
 }
 
 function socialBackgroundCopy(agent){
-  if(!agent?.platform_supported)return 'La programación en segundo plano se habilita desde la aplicación empaquetada para macOS.';
+  if(!agent)return 'Consultando la integración local de programación…';
+  if(!agent.platform_supported)return 'La programación en segundo plano se habilita desde la aplicación empaquetada para macOS.';
   if(agent.stale)return 'La app fue movida o cambió su ruta. Reinstala este servicio desde la ubicación actual para evitar rutas antiguas.';
   if(agent.loaded)return 'Las publicaciones ya programadas pueden salir aunque cierres la interfaz, mientras este Mac esté disponible.';
   if(agent.installed)return 'La integración existe pero launchd no la reporta activa. Puedes reinstalarla de forma segura.';
@@ -92,8 +94,10 @@ async function socialBackgroundDisable(event){
 }
 
 const postW99SocialBackgroundBaseCalendar=globalThis.renderOpsCalendar;
-globalThis.renderOpsCalendar=function(root){
-  const host=opsEl('div','post-w99-bg-host');root.append(host);renderSocialBackgroundControl(host);
-  Promise.resolve(socialBackgroundLoad()).then(()=>{if(host.isConnected)renderSocialBackgroundControl(host)});
-  postW99SocialBackgroundBaseCalendar(root);
-};
+if(typeof postW99SocialBackgroundBaseCalendar==='function'){
+  globalThis.renderOpsCalendar=function(root){
+    const host=opsEl('div','post-w99-bg-host');root.append(host);renderSocialBackgroundControl(host);
+    Promise.resolve(socialBackgroundLoad()).then(()=>{if(host.isConnected)renderSocialBackgroundControl(host)});
+    postW99SocialBackgroundBaseCalendar(root);
+  };
+}
