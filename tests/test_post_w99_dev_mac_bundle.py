@@ -33,15 +33,12 @@ class PostW99DevMacBundleContractTests(unittest.TestCase):
         self.assertIn("w100", audit)
         self.assertIn("service_post_w99_social_background_control_app.py", audit)
 
-    def test_dedicated_workflow_does_not_modify_release_workflows(self):
-        workflow = (ROOT / ".github" / "workflows" / "post-w99-dev-mac.yml").read_text(encoding="utf-8")
-        self.assertIn("Post-W99 Dev Mac · arm64", workflow)
-        self.assertIn("build_post_w99_dev_mac_app.sh", workflow)
-        self.assertIn("test ! -f \"$PLIST\"", workflow)
-        self.assertIn("no automatic LaunchAgent install", workflow)
-        self.assertNotIn("publish_release_transaction", workflow)
-        self.assertNotIn("release_candidate_gate", workflow)
-        self.assertNotIn("v0.9.0", workflow)
+    def test_post_w99_builder_does_not_add_a_fourth_workflow(self):
+        workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+        self.assertEqual(len(workflows), 3)
+        self.assertFalse((ROOT / ".github" / "workflows" / "post-w99-dev-mac.yml").exists())
+        names = {path.name for path in workflows}
+        self.assertEqual(names, {"ci.yml", "full-mac-app.yml", "release-mac.yml"})
 
     def test_canonical_release_builder_is_not_post_w99_terminal(self):
         canonical = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
