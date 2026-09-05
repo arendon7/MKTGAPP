@@ -5,22 +5,14 @@ import hmac
 import json
 import re
 import time
-from dataclasses import asdict
 from typing import Protocol
 
-from .core import (
-    GatewayError,
-    MAX_CLOCK_SKEW_SECONDS,
-    TENANT_ID_RE,
-    Unauthorized,
-    canonical_json_bytes,
-    request_signature,
-)
+from .core import GatewayError, MAX_CLOCK_SKEW_SECONDS, TENANT_ID_RE, Unauthorized, request_signature
 from .social_queue import PUBLICATION_ID_RE, RemoteSocialQueueService
 
 
-SOCIAL_ENQUEUE_PATH = "/api/social-enqueue"
-SOCIAL_STATUS_PATH = "/api/social-status"
+SOCIAL_ENQUEUE_PATH = "/api/social_enqueue"
+SOCIAL_STATUS_PATH = "/api/social_status"
 SOCIAL_STATUS_SCHEMA = "binario.marketing.remote-social-status.v1"
 SOCIAL_SECRET_PURPOSE = "social"
 
@@ -96,7 +88,7 @@ def social_request_headers(
     timestamp: int,
     nonce: str,
 ) -> dict[str, str]:
-    """Test/provisioning helper. The returned secret is never included in headers."""
+    """Test/provisioning helper. The derived social secret is never emitted."""
     tenant = _tenant(tenant_id)
     clean_nonce = str(nonce or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{32}", clean_nonce):
@@ -127,7 +119,7 @@ def _status_body(raw_body: bytes) -> str:
 
 
 class SocialQueueGatewayService:
-    """Signed server-only enqueue/status facade. It has zero provider authority."""
+    """Signed enqueue/status facade with zero social-provider execution authority."""
 
     def __init__(self, storage: SocialReadableStorage, master_secret: str):
         self.storage = storage
