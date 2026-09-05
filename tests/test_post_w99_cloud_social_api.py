@@ -47,8 +47,9 @@ def job(publication_id=PUB):
 
 
 def signed(tenant, path, raw, *, nonce=NONCE, timestamp=NOW_EPOCH):
+    social_secret = derive_social_secret(MASTER, tenant)
     return social_request_headers(
-        MASTER,
+        social_secret,
         tenant,
         method="POST",
         path=path,
@@ -63,15 +64,23 @@ class SocialQueueSignedApiTests(unittest.TestCase):
         self.storage = MemorySocialQueueStorage()
         self.service = SocialQueueGatewayService(self.storage, MASTER)
 
-    def test_social_secret_is_tenant_and_purpose_separated(self):
+    def test_social_secret_is_tenant_and_purpose_separated_and_client_signer_never_needs_master(self):
         a = derive_social_secret(MASTER, TENANT_A)
         b = derive_social_secret(MASTER, TENANT_B)
         self.assertRegex(a, r"^[0-9a-f]{64}$")
         self.assertNotEqual(a, b)
         self.assertNotEqual(a, MASTER)
-        headers = signed(TENANT_A, SOCIAL_ENQUEUE_PATH, job())
+        headers = social_request_headers(
+            a, TENANT_A, method="POST", path=SOCIAL_ENQUEUE_PATH,
+            body=job(), timestamp=NOW_EPOCH, nonce=NONCE,
+        )
         self.assertNotIn(a, json.dumps(headers))
         self.assertNotIn(MASTER, json.dumps(headers))
+        with self.assertRaisesRegex(Unauthorized, "social signing secret"):
+            social_request_headers(
+                MASTER, TENANT_A, method="POST", path=SOCIAL_ENQUEUE_PATH,
+                body=job(), timestamp=NOW_EPOCH, nonce=NONCE,
+            )
 
     def test_signed_enqueue_then_signed_status_is_tenant_scoped_and_sanitized(self):
         raw = job()
