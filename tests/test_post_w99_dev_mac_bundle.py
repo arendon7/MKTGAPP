@@ -11,6 +11,8 @@ class PostW99DevMacBundleContractTests(unittest.TestCase):
         self.assertIn("Binario Marketing IA Post-W99 Dev.app", script)
         self.assertIn("com.sistemabinario.marketing.postw99dev", script)
         self.assertIn("service_post_w99_dev_app import serve", script)
+        self.assertIn("service_post_w99_today_portfolio_app.py", script)
+        self.assertIn("today-portfolio.js", script)
         self.assertIn('"release_authority": false', script)
         self.assertIn('"physical_uat_authority": false', script)
         self.assertIn('"w100": false', script)
@@ -25,21 +27,28 @@ class PostW99DevMacBundleContractTests(unittest.TestCase):
         self.assertNotIn("package_current_arm64_candidate.py", script)
         self.assertNotIn("publish_release_transaction.sh", script)
 
-    def test_audit_requires_development_identity_and_non_authority(self):
+    def test_audit_requires_development_identity_non_authority_and_current_terminal(self):
         audit = (ROOT / "scripts" / "audit_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
         self.assertIn("com.sistemabinario.marketing.postw99dev", audit)
         self.assertIn("release_authority", audit)
         self.assertIn("physical_uat_authority", audit)
         self.assertIn("w100", audit)
         self.assertIn("service_post_w99_social_background_control_app.py", audit)
+        self.assertIn("service_post_w99_today_portfolio_app.py", audit)
+        self.assertIn("today-portfolio.js", audit)
+        self.assertIn("/api/portfolio-control-tower", audit)
 
-    def test_controlled_smoke_is_read_only_for_launchagent_integration(self):
+    def test_controlled_smoke_is_read_only_and_exercises_today_portfolio(self):
         smoke = (ROOT / "scripts" / "smoke_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
         self.assertIn("com.sistemabinario.marketing.postw99dev", smoke)
         self.assertIn("/api/health", smoke)
         self.assertIn("/api/social/background", smoke)
+        self.assertIn("/api/portfolio-control-tower", smoke)
         self.assertIn("/primary-navigation.js", smoke)
         self.assertIn("/social-background-control.js", smoke)
+        self.assertIn("/today-portfolio.js", smoke)
+        self.assertIn("slice(0,5)", smoke)
+        self.assertIn("Volver a todas las empresas", smoke)
         self.assertIn("window.confirm", smoke)
         self.assertIn("test ! -e \"$AGENT\"", smoke)
         self.assertNotIn("/api/social/background/install", smoke)
