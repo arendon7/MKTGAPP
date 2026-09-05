@@ -60,6 +60,20 @@ def _save_run_status(result: BackgroundRunResult) -> None:
     write_json_atomic(_status_path(), asdict(result))
 
 
+def social_background_last_run() -> dict | None:
+    path = _status_path()
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    allowed = {"status", "ran_at", "processed", "published", "failed", "recovered", "busy", "error"}
+    return {key: payload.get(key) for key in allowed if key in payload}
+
+
 def _record_results(workspace: Workspace, rows: list[dict]) -> None:
     for row in rows:
         status = str(row.get("status") or "").lower()
@@ -250,18 +264,25 @@ def social_background_status(*, runner: Callable[[list[str]], subprocess.Complet
     if payload:
         args = payload.get("ProgramArguments") or []
         python_path = Path(args[0]).expanduser() if isinstance(args, list) and args else None
+        wrapper_path = Path(args[-1]).expanduser() if isinstance(args, list) and len(args) >= 2 else None
+        helper_value = str((payload.get("EnvironmentVariables") or {}).get("BINARIO_META_KEYCHAIN_HELPER") or "").strip()
+        helper_path = Path(helper_value).expanduser() if helper_value else None
         if python_path:
             for parent in python_path.parents:
                 if parent.name.endswith(".app"):
                     app_bundle = str(parent)
-                    stale = not python_path.is_file()
                     break
-            else:
-                stale = True
-        else:
-            stale = True
+        stale = not bool(
+            python_path
+            and python_path.is_file()
+            and wrapper_path
+            and wrapper_path.is_file()
+            and helper_path
+            and helper_path.is_file()
+            and app_bundle
+        )
     loaded = False
-    if supported and installed:
+    if supported:
         result = runner(["print", f"{_domain()}/{LAUNCH_AGENT_LABEL}"])
         loaded = result.returncode == 0
     return BackgroundAgentStatus(
@@ -273,6 +294,13 @@ def social_background_status(*, runner: Callable[[list[str]], subprocess.Complet
         app_bundle,
         LAUNCH_AGENT_INTERVAL_SECONDS,
     )
+
+
+def social_background_overview(*, runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = _launchctl) -> dict:
+    return {
+        "agent": asdict(social_background_status(runner=runner)),
+        "last_run": social_background_last_run(),
+    }
 
 
 def install_social_background(
@@ -315,9 +343,17 @@ def install_social_background(
     os.chmod(temp, 0o600)
     os.replace(temp, plist_path)
 
-    runner(["bootout", _domain(), str(plist_path)])
+    runner(["bootout", f"{_domain()}/{LAUNCH_AGENT_LABEL}"])
     result = runner(["bootstrap", _domain(), str(plist_path)])
     if result.returncode != 0:
+        try:
+            plist_path.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            wrapper.unlink()
+        except FileNotFoundError:
+            pass
         raise RuntimeError((result.stderr or result.stdout or "launchctl bootstrap failed").strip())
     runner(["kickstart", f"{_domain()}/{LAUNCH_AGENT_LABEL}"])
     return social_background_status(runner=runner)
@@ -328,8 +364,8 @@ def uninstall_social_background(
     runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = _launchctl,
 ) -> BackgroundAgentStatus:
     plist_path = launch_agent_plist_path()
-    if platform.system() == "Darwin" and plist_path.is_file():
-        runner(["bootout", _domain(), str(plist_path)])
+    if platform.system() == "Darwin":
+        runner(["bootout", f"{_domain()}/{LAUNCH_AGENT_LABEL}"])
     try:
         plist_path.unlink()
     except FileNotFoundError:
