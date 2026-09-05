@@ -33,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
     connect_parser = sub.add_parser("meta-connect", help="validate and save a Meta token in native Keychain")
     connect_parser.add_argument("--stdin", action="store_true", help="read the token from stdin instead of a hidden prompt")
     sub.add_parser("meta-disconnect", help="remove the app-managed Meta token from native Keychain")
+    sub.add_parser("social-worker-once", help="process due social publications once and exit")
+    bg_status_parser = sub.add_parser("social-background-status", help="show macOS background social scheduler state")
+    bg_install_parser = sub.add_parser("social-background-install", help="opt in to the macOS background social scheduler")
+    bg_install_parser.add_argument("--app-bundle", type=Path, help="path to Binario Marketing IA.app when not running inside the bundle")
+    sub.add_parser("social-background-uninstall", help="disable and remove the macOS background social scheduler")
     serve_parser = sub.add_parser("serve", help="run the local BINARIO Marketing web app")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8765)
@@ -63,6 +68,20 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "meta-disconnect":
         status = MetaCredentialStore().delete()
         print(json.dumps({"connected": status.configured, "source": status.source}, ensure_ascii=False, indent=2))
+    elif args.command == "social-worker-once":
+        from .social_background import run_social_background_once
+        result = run_social_background_once()
+        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+        return 0 if result.status in {"OK", "BUSY", "NO_CREDENTIALS"} else 1
+    elif args.command == "social-background-status":
+        from .social_background import social_background_status
+        print(json.dumps(asdict(social_background_status()), ensure_ascii=False, indent=2))
+    elif args.command == "social-background-install":
+        from .social_background import install_social_background
+        print(json.dumps(asdict(install_social_background(args.app_bundle)), ensure_ascii=False, indent=2))
+    elif args.command == "social-background-uninstall":
+        from .social_background import uninstall_social_background
+        print(json.dumps(asdict(uninstall_social_background()), ensure_ascii=False, indent=2))
     elif args.command == "serve":
         from .service import serve
         serve(args.host, args.port, allow_network=args.allow_network, open_browser=args.open_browser)
