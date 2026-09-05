@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .meta_graph import MetaGraphClient, MetaGraphError
+from .social_process_lock import SocialProcessLock
 from .social_store import Publication, SocialStore
 
 
@@ -164,7 +165,7 @@ class MetaSocialPublisher:
             return self.client.publish_page_reel_local(row.target_id, path, row.message)
         raise SocialPublishError("Facebook automation currently supports text, link, image and local Reel publications")
 
-    def publish(self, publication_id: str) -> Publication:
+    def _publish_unlocked(self, publication_id: str) -> Publication:
         row = self.store.get(publication_id)
         if row.status != "QUEUED":
             raise ValueError("publication must be QUEUED before publishing")
@@ -182,12 +183,27 @@ class MetaSocialPublisher:
         except Exception as exc:
             return self.store.transition(publication_id, "FAILED", error=f"{type(exc).__name__}: publication failed")
 
+    def publish(self, publication_id: str) -> Publication:
+        process_lock = SocialProcessLock(self.store.root)
+        if not process_lock.acquire():
+            raise SocialPublishError("social publication queue is busy in another process")
+        try:
+            return self._publish_unlocked(publication_id)
+        finally:
+            process_lock.release()
+
     def run_due(self, now: datetime | None = None, limit: int = 20) -> list[dict]:
-        moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        results = []
-        for row in self.store.due(moment, limit=limit):
-            results.append(asdict(self.publish(row.id)))
-        return results
+        process_lock = SocialProcessLock(self.store.root)
+        if not process_lock.acquire():
+            return []
+        try:
+            moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+            results = []
+            for row in self.store.due(moment, limit=limit):
+                results.append(asdict(self._publish_unlocked(row.id)))
+            return results
+        finally:
+            process_lock.release()
 
 
 class SocialScheduler:
@@ -220,8 +236,15 @@ class SocialScheduler:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            recovered = self.store.recover_interrupted()
-            self.recovered_on_start = len(recovered)
+            process_lock = SocialProcessLock(self.store.root)
+            if process_lock.acquire():
+                try:
+                    recovered = self.store.recover_interrupted()
+                    self.recovered_on_start = len(recovered)
+                finally:
+                    process_lock.release()
+            else:
+                self.recovered_on_start = 0
             self._stop.clear()
             if not MetaGraphClient.diagnose_env().configured:
                 return
