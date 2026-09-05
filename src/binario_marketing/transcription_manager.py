@@ -196,8 +196,9 @@ class TranscriptionManager:
             payload={'project_id':row.project_id,'asset_id':row.asset_id,'source_sha256':row.source_sha256,'engine':'whisper.cpp','language':language or row.requested_language,'model_sha256':row.model_sha256,'segments':[asdict(item) for item in segments]}
             write_json_atomic(target,payload)
             artifact=self.workspace.registries.record_artifact({'project_id':row.project_id,'asset_id':row.asset_id,'name':target.name,'kind':'transcript_json','relative_path':f'transcripts/{target.name}','source_sha256':row.source_sha256,'transcript_sha256':digest,'segments_count':len(segments),'duration':duration,'language':language or row.requested_language,'model_sha256':row.model_sha256})
-            current=self.get(*key) or row;done=replace(current,status='PASS',updated_at=_now(),language=language or row.requested_language,transcript_relative_path=f'transcripts/{target.name}',transcript_sha256=digest,segments_count=len(segments),duration=duration,artifact_ref=artifact.hash,error=None);self._replace(done)
+            current=self.get(*key) or row;done=replace(current,status='PASS',updated_at=_now(),language=language or row.requested_language,transcript_relative_path=f'transcripts/{target.name}',transcript_sha256=digest,segments_count=len(segments),duration=duration,artifact_ref=artifact.hash,error=None)
             self.workspace.registries.timeline.append('transcription.completed',{'project_id':row.project_id,'asset_id':row.asset_id,'artifact_ref':artifact.hash,'segments_count':len(segments),'duration':duration})
+            self._replace(done)
         except Exception as exc:self._fail(self.get(*key) or row,exc)
         finally:
             wav.unlink(missing_ok=True);json_output.unlink(missing_ok=True)
