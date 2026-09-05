@@ -51,17 +51,24 @@ done
 [[ "$READY" == "1" ]] || { cat "$LOG" >&2; echo 'POST-W99 DEV MAC SMOKE BLOCKED: health timeout' >&2; exit 4; }
 
 /usr/bin/curl --fail --silent "$BASE/api/social/background" > "$TMP/background.json"
+/usr/bin/curl --fail --silent "$BASE/api/portfolio-control-tower" > "$TMP/portfolio.json"
 /usr/bin/curl --fail --silent "$BASE/primary-navigation.js" > "$TMP/primary-navigation.js"
 /usr/bin/curl --fail --silent "$BASE/social-background-control.js" > "$TMP/social-background-control.js"
+/usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
+/usr/bin/grep -q 'binario.marketing.portfolio-control-tower.v1' "$TMP/portfolio.json"
 /usr/bin/grep -q 'POST_W99_PRIMARY_NAVIGATION' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Hoy' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Resultados' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Astra / IA' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Activar en este Mac' "$TMP/social-background-control.js"
 /usr/bin/grep -q 'window.confirm' "$TMP/social-background-control.js"
+/usr/bin/grep -q '/today-portfolio.js' "$TMP/social-background-control.js"
+/usr/bin/grep -q '/api/portfolio-control-tower' "$TMP/today-portfolio.js"
+/usr/bin/grep -q 'slice(0,5)' "$TMP/today-portfolio.js"
+/usr/bin/grep -q 'Volver a todas las empresas' "$TMP/today-portfolio.js"
 
 # Smoke is read-only with respect to launchd integration: no install/remove endpoint is invoked.
 test ! -e "$AGENT"
@@ -71,4 +78,4 @@ test ! -e "$AGENT"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + navigation + background status; no automatic LaunchAgent install'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today portfolio + background status; no automatic LaunchAgent install'
