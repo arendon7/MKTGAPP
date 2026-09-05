@@ -16,7 +16,8 @@ alter table public.binario_social_publish_queue
     );
 
 -- Replace the claim RPC so expired leases are recovered only when no provider effect
--- had started. Once provider_started_at exists, expiry is ambiguous and fails closed.
+-- had started. p_now remains in the signature for wire compatibility with the v1 adapter,
+-- but lease validity is decided exclusively by PostgreSQL clock_timestamp().
 create or replace function public.binario_claim_social_publish_jobs(
     p_tenant_id text,
     p_worker_id text,
@@ -41,6 +42,7 @@ declare
     candidate record;
     raw_token text;
     expiry timestamptz;
+    v_now timestamptz := clock_timestamp();
 begin
     if p_tenant_id !~ '^tenant_[0-9a-f]{24}$' then
         raise exception 'invalid tenant id';
@@ -61,7 +63,7 @@ begin
                when q.attempts >= 5 then 'FAILED'
                else 'PENDING'
            end,
-           available_at = p_now,
+           available_at = v_now,
            lease_worker_id = null,
            lease_sha256 = null,
            lease_expires_at = null,
@@ -73,17 +75,17 @@ begin
                else
                    'worker lease expired before provider effect began'
            end,
-           updated_at = p_now
+           updated_at = v_now
      where q.tenant_id = p_tenant_id
        and q.status = 'LEASED'
-       and q.lease_expires_at <= p_now;
+       and q.lease_expires_at <= v_now;
 
     for candidate in
         select q.tenant_id, q.publication_id
           from public.binario_social_publish_queue q
          where q.tenant_id = p_tenant_id
            and q.status = 'PENDING'
-           and q.available_at <= p_now
+           and q.available_at <= v_now
            and q.attempts < 5
            and q.provider_outcome_ambiguous = false
          order by q.available_at, q.scheduled_for, q.publication_id
@@ -91,7 +93,7 @@ begin
          limit p_limit
     loop
         raw_token := encode(gen_random_bytes(32), 'hex');
-        expiry := p_now + make_interval(secs => p_lease_seconds);
+        expiry := v_now + make_interval(secs => p_lease_seconds);
 
         update public.binario_social_publish_queue q
            set status = 'LEASED',
@@ -102,7 +104,7 @@ begin
                provider_started_at = null,
                provider_outcome_ambiguous = false,
                last_error = null,
-               updated_at = p_now
+               updated_at = v_now
          where q.tenant_id = candidate.tenant_id
            and q.publication_id = candidate.publication_id;
 
@@ -122,7 +124,8 @@ end;
 $$;
 
 -- This checkpoint must be committed before the first Meta request. Once it exists,
--- no automatic retry is allowed if the worker disappears.
+-- no automatic retry is allowed if the worker disappears. p_now is compatibility-only;
+-- the database clock owns lease validation.
 create or replace function public.binario_begin_social_provider_effect(
     p_tenant_id text,
     p_publication_id text,
@@ -136,19 +139,20 @@ set search_path = public
 as $$
 declare
     changed integer;
+    v_now timestamptz := clock_timestamp();
 begin
     if p_lease_token !~ '^[0-9a-f]{64}$' then
         raise exception 'invalid lease token';
     end if;
 
     update public.binario_social_publish_queue q
-       set provider_started_at = p_now,
-           updated_at = p_now
+       set provider_started_at = v_now,
+           updated_at = v_now
      where q.tenant_id = p_tenant_id
        and q.publication_id = p_publication_id
        and q.status = 'LEASED'
        and q.provider_started_at is null
-       and q.lease_expires_at > p_now
+       and q.lease_expires_at > v_now
        and q.lease_sha256 = encode(digest(p_lease_token, 'sha256'), 'hex');
     get diagnostics changed = row_count;
     if changed <> 1 then
@@ -172,6 +176,7 @@ set search_path = public
 as $$
 declare
     changed integer;
+    v_now timestamptz := clock_timestamp();
 begin
     if p_lease_token !~ '^[0-9a-f]{64}$' then
         raise exception 'invalid lease token';
@@ -189,12 +194,12 @@ begin
            lease_worker_id = null,
            lease_sha256 = null,
            lease_expires_at = null,
-           updated_at = p_now
+           updated_at = v_now
      where q.tenant_id = p_tenant_id
        and q.publication_id = p_publication_id
        and q.status = 'LEASED'
        and q.provider_started_at is not null
-       and q.lease_expires_at > p_now
+       and q.lease_expires_at > v_now
        and q.lease_sha256 = encode(digest(p_lease_token, 'sha256'), 'hex');
     get diagnostics changed = row_count;
     if changed <> 1 then
@@ -223,6 +228,7 @@ declare
     current_row public.binario_social_publish_queue%rowtype;
     retry_allowed boolean;
     backoff_seconds integer;
+    v_now timestamptz := clock_timestamp();
 begin
     if p_lease_token !~ '^[0-9a-f]{64}$' then
         raise exception 'invalid lease token';
@@ -236,7 +242,7 @@ begin
      where q.tenant_id = p_tenant_id
        and q.publication_id = p_publication_id
        and q.status = 'LEASED'
-       and q.lease_expires_at > p_now
+       and q.lease_expires_at > v_now
        and q.lease_sha256 = encode(digest(p_lease_token, 'sha256'), 'hex')
      for update;
     if not found then
@@ -246,18 +252,21 @@ begin
     retry_allowed := p_retryable
         and current_row.provider_started_at is null
         and current_row.attempts < 5;
-    backoff_seconds := least(3600, 30 * (2 ^ greatest(0, current_row.attempts - 1))::integer);
+    backoff_seconds := least(
+        3600,
+        30 * power(2, greatest(0, current_row.attempts - 1))::integer
+    );
 
     update public.binario_social_publish_queue q
        set status = case when retry_allowed then 'PENDING' else 'FAILED' end,
-           available_at = case when retry_allowed then p_now + make_interval(secs => backoff_seconds) else q.available_at end,
+           available_at = case when retry_allowed then v_now + make_interval(secs => backoff_seconds) else q.available_at end,
            last_error = trim(p_error),
            provider_outcome_ambiguous = (current_row.provider_started_at is not null),
            provider_started_at = null,
            lease_worker_id = null,
            lease_sha256 = null,
            lease_expires_at = null,
-           updated_at = p_now
+           updated_at = v_now
      where q.tenant_id = p_tenant_id
        and q.publication_id = p_publication_id;
 
@@ -278,8 +287,8 @@ grant execute on function public.binario_complete_social_publish_job(text,text,t
 grant execute on function public.binario_fail_social_publish_job(text,text,text,text,boolean,timestamptz) to service_role;
 
 comment on function public.binario_begin_social_provider_effect(text,text,text,timestamptz) is
-    'Marks the no-blind-retry boundary immediately before a cloud social provider call.';
+    'Marks the no-blind-retry boundary immediately before a cloud social provider call; lease time is database-owned.';
 comment on function public.binario_complete_social_publish_job(text,text,text,text,timestamptz) is
-    'Lease-bound successful completion for a cloud social provider call.';
+    'Lease-bound successful completion for a cloud social provider call; lease time is database-owned.';
 comment on function public.binario_fail_social_publish_job(text,text,text,text,boolean,timestamptz) is
-    'Lease-bound failure completion; provider-started failures are terminal and ambiguous.';
+    'Lease-bound failure completion; provider-started failures are terminal and ambiguous; lease time is database-owned.';
