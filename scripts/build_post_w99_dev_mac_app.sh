@@ -40,7 +40,9 @@ PLIST="$CONTENTS/Info.plist"
 [[ -x "$PYTHON" && -f "$LAUNCH" && -f "$PLIST" ]] || fail "copied bundle is incomplete"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py" ]] || fail "post-W99 dev terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/social_background.py" ]] || fail "post-W99 background worker is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_today_portfolio_app.py" ]] || fail "post-W99 Today portfolio terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]] || fail "post-W99 calendar control is missing from packaged source"
+[[ -f "$RESOURCES/source/web/today-portfolio.js" ]] || fail "post-W99 Today portfolio browser surface is missing from packaged source"
 
 cat > "$LAUNCH" <<'PY'
 from __future__ import annotations
