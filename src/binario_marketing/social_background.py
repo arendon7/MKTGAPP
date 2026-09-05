@@ -52,6 +52,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _status_path() -> Path:
+    return default_paths().state / "social-background" / "status.json"
+
+
+def _save_run_status(result: BackgroundRunResult) -> None:
+    write_json_atomic(_status_path(), asdict(result))
+
+
 def _record_results(workspace: Workspace, rows: list[dict]) -> None:
     for row in rows:
         status = str(row.get("status") or "").lower()
@@ -74,11 +82,18 @@ def run_social_background_once(*, limit: int = 20) -> BackgroundRunResult:
     paths = default_paths()
     social = SocialStore(paths.state / "social")
     workspace = Workspace(paths.state / "workspace")
-    status_path = social.root / "background-status.json"
-    connection = MetaGraphClient.diagnose_env()
+    try:
+        connection = MetaGraphClient.diagnose_env()
+    except Exception as exc:
+        result = BackgroundRunResult(
+            "ERROR", _now(), 0, 0, 0, 0, False,
+            f"{type(exc).__name__}: credential diagnostics failed",
+        )
+        _save_run_status(result)
+        return result
     if not connection.configured:
         result = BackgroundRunResult("NO_CREDENTIALS", _now(), 0, 0, 0, 0, False)
-        write_json_atomic(status_path, asdict(result))
+        _save_run_status(result)
         return result
 
     recovered = 0
@@ -101,7 +116,7 @@ def run_social_background_once(*, limit: int = 20) -> BackgroundRunResult:
             recovery_lock.release()
     else:
         result = BackgroundRunResult("BUSY", _now(), 0, 0, 0, 0, True)
-        write_json_atomic(status_path, asdict(result))
+        _save_run_status(result)
         return result
 
     try:
@@ -127,9 +142,9 @@ def run_social_background_once(*, limit: int = 20) -> BackgroundRunResult:
             0,
             recovered,
             False,
-            f"{type(exc).__name__}: {exc}",
+            f"{type(exc).__name__}: publication cycle failed",
         )
-    write_json_atomic(status_path, asdict(result))
+    _save_run_status(result)
     return result
 
 
@@ -154,7 +169,7 @@ def launch_agent_plist_path() -> Path:
 def _infer_app_bundle() -> Path | None:
     executable = Path(sys.executable).resolve()
     for parent in executable.parents:
-        if parent.name.endswith(".app") and parent.parent.name != "":
+        if parent.name.endswith(".app"):
             return parent
     return None
 
