@@ -33,6 +33,20 @@ class PostW99DevMacBundleContractTests(unittest.TestCase):
         self.assertIn("w100", audit)
         self.assertIn("service_post_w99_social_background_control_app.py", audit)
 
+    def test_controlled_smoke_is_read_only_for_launchagent_integration(self):
+        smoke = (ROOT / "scripts" / "smoke_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
+        self.assertIn("com.sistemabinario.marketing.postw99dev", smoke)
+        self.assertIn("/api/health", smoke)
+        self.assertIn("/api/social/background", smoke)
+        self.assertIn("/primary-navigation.js", smoke)
+        self.assertIn("/social-background-control.js", smoke)
+        self.assertIn("window.confirm", smoke)
+        self.assertIn("test ! -e \"$AGENT\"", smoke)
+        self.assertNotIn("/api/social/background/install", smoke)
+        self.assertNotIn("method=DELETE", smoke)
+        self.assertNotIn("launchctl bootstrap", smoke)
+        self.assertNotIn("launchctl bootout", smoke)
+
     def test_post_w99_builder_does_not_add_a_fourth_workflow(self):
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
         self.assertEqual(len(workflows), 3)
