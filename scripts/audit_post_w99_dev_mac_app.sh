@@ -25,8 +25,12 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/social_process_lock.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/social_background.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_social_background_control_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_today_portfolio_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
+[[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
+/usr/bin/grep -q 'service_post_w99_today_portfolio_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q '/api/portfolio-control-tower' "$RESOURCES/source/web/today-portfolio.js"
 
 "$PY" -I -B - "$PROVENANCE" <<'PY'
 import json,sys
