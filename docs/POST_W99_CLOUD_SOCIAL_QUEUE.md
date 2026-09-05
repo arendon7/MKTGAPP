@@ -34,6 +34,10 @@ Expired leases are recovered. After the attempt cap they fail closed instead of 
 
 The future runtime adapter must continue using server-side Supabase credentials only. The browser and durable publication payload must never receive the service-role key or Meta credentials.
 
+## Validation base
+
+Final PR validation is intentionally triggered after the isolated post-W99 macOS bundle landed in `dev/post-w99-action-center@f86a2a9fcb3ca04c808a32af2740d6f4daa88ed6`. This queue remains independent of that bundle but is certified against the same current development line.
+
 ## Next increment
 
 The next safe step is a Supabase storage adapter + signed server-only enqueue/status API. Only after that contract is proven should a worker be allowed to resolve Meta credentials and invoke `MetaSocialPublisher`-equivalent provider operations.
