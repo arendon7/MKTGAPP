@@ -79,7 +79,7 @@ def verify_social_request(
 
 
 def social_request_headers(
-    master_secret: str,
+    social_secret: str,
     tenant_id: str,
     *,
     method: str,
@@ -88,13 +88,15 @@ def social_request_headers(
     timestamp: int,
     nonce: str,
 ) -> dict[str, str]:
-    """Test/provisioning helper. The derived social secret is never emitted."""
+    """Sign with the tenant's derived social secret; never requires the master secret."""
     tenant = _tenant(tenant_id)
     clean_nonce = str(nonce or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{32}", clean_nonce):
         raise Unauthorized("invalid request nonce")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(social_secret or "")):
+        raise Unauthorized("invalid social signing secret")
     stamp = str(int(timestamp))
-    signature = request_signature(derive_social_secret(master_secret, tenant), stamp, clean_nonce, method, path, body)
+    signature = request_signature(social_secret, stamp, clean_nonce, method, path, body)
     return {
         "X-Binario-Tenant": tenant,
         "X-Binario-Timestamp": stamp,
