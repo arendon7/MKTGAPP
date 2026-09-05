@@ -22,11 +22,11 @@ The inherited native executable name remains an internal bundle implementation d
 
 ## Runtime
 
-The builder reuses the already-certified embedded runtime assembly for Python, FFmpeg, Whisper and the Meta Keychain helper, then replaces only the launch terminal with:
+The builder reuses the existing embedded runtime assembly for Python, FFmpeg, Whisper and the Meta Keychain helper, then replaces only the launch terminal with:
 
 `binario_marketing.service_post_w99_dev_app`
 
-This makes the packaged app exercise the actual cumulative post-W99 chain, including Primary Navigation and the Calendar background scheduler control.
+This makes the packaged app exercise the cumulative post-W99 chain, including Primary Navigation and the Calendar background scheduler control.
 
 ## Non-authority provenance
 
@@ -43,18 +43,25 @@ Every bundle contains `POST_W99_DEV_BUILD.json` with:
 
 This file exists specifically to prevent a development artifact from being interpreted as a release candidate.
 
-## Dedicated CI
+## Workflow boundary
 
-`.github/workflows/post-w99-dev-mac.yml` is independent of the canonical release workflows. On relevant pull requests it:
+The repository intentionally remains at the canonical three-workflow topology:
 
-1. builds the isolated arm64 development app;
-2. audits its development-only identity and provenance;
-3. launches the packaged post-W99 terminal on loopback;
-4. verifies health, Primary Navigation and Calendar background-status surfaces;
-5. verifies that merely launching/status-reading does not install a LaunchAgent;
-6. uploads a short-retention development ZIP for controlled testing.
+- `ci.yml`;
+- `full-mac-app.yml`;
+- `release-mac.yml`.
 
-It does not run publication transactions, release gates, tag creation or release publication.
+No fourth post-W99 workflow is added. This preserves the historical W99 workflow guard and avoids silently changing release topology.
+
+The development bundle is built through the explicit script:
+
+`scripts/build_post_w99_dev_mac_app.sh`
+
+and verified with:
+
+`scripts/audit_post_w99_dev_mac_app.sh`
+
+The source contracts for both scripts are covered by the canonical test suite. A controlled Mac execution can build and boot this development-only app without changing the release candidate or release workflows.
 
 ## Boundary
 
