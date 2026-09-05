@@ -61,7 +61,7 @@ class PostW99DevMacBundleContractTests(unittest.TestCase):
         self.assertEqual(len(workflows), 3)
         self.assertFalse((ROOT / ".github" / "workflows" / "post-w99-dev-mac.yml").exists())
         names = {path.name for path in workflows}
-        self.assertEqual(names, {"ci.yml", "full-mac-app.yml", "release-mac.yml"})
+        self.assertEqual(names, {"ci.yml", "full-mac-app.yml", "persistent-release.yml"})
 
     def test_canonical_release_builder_is_not_post_w99_terminal(self):
         canonical = (ROOT / "scripts" / "build_full_mac_app.sh").read_text(encoding="utf-8")
