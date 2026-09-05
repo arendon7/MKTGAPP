@@ -31,6 +31,9 @@ from .service_post_w99_operator_session_evidence_integration_app import (
     AppRuntime as _OperatorSessionEvidenceIntegrationAppRuntime,
 )
 from .service_post_w99_primary_navigation_app import (
+    AppRuntime as _PrimaryNavigationAppRuntime,
+)
+from .service_post_w99_social_background_control_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
