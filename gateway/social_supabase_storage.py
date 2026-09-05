@@ -12,14 +12,18 @@ from .social_queue import RemoteSocialJob
 
 TABLE = "binario_social_publish_queue"
 CLAIM_RPC = "binario_claim_social_publish_jobs"
+BEGIN_EFFECT_RPC = "binario_begin_social_provider_effect"
+COMPLETE_RPC = "binario_complete_social_publish_job"
+FAIL_RPC = "binario_fail_social_publish_job"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 class SupabaseSocialQueueStorage:
     """Server-only PostgREST adapter for the isolated outbound social queue.
 
-    Browser/desktop callers never receive the Supabase service-role credential. Atomic
-    distributed worker claiming is exposed only through the dedicated SQL RPC.
+    Browser/desktop callers never receive the Supabase service-role credential. All
+    distributed worker state changes use dedicated SQL RPCs bound to a one-time lease;
+    generic list-then-update mutations remain deliberately unavailable.
     """
 
     def __init__(self, url: str | None = None, secret_key: str | None = None, *, timeout: float = 10.0):
@@ -72,8 +76,8 @@ class SupabaseSocialQueueStorage:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
-            # Do not echo backend response bodies: future provider error text may be
-            # present in rows and the service-role credential must never be reflected.
+            # Never echo backend response bodies: worker diagnostics can contain remote
+            # provider text and the service-role credential must never be reflected.
             if exc.code == 409:
                 raise Conflict("remote social queue row conflict") from None
             raise RuntimeError(f"Supabase social queue HTTP {exc.code}") from None
@@ -173,8 +177,78 @@ class SupabaseSocialQueueStorage:
             raise RuntimeError("Supabase social claim response must be an array")
         return [row for row in data if isinstance(row, dict)]
 
+    def begin_provider_effect_atomic(
+        self,
+        tenant_id: str,
+        publication_id: str,
+        lease_token: str,
+        *,
+        now_iso: str,
+    ) -> None:
+        data = self._request(
+            "POST",
+            f"rpc/{BEGIN_EFFECT_RPC}",
+            payload={
+                "p_tenant_id": tenant_id,
+                "p_publication_id": publication_id,
+                "p_lease_token": lease_token,
+                "p_now": now_iso,
+            },
+        )
+        if data is not True:
+            raise RuntimeError("Supabase did not confirm provider-effect checkpoint")
+
+    def mark_published_atomic(
+        self,
+        tenant_id: str,
+        publication_id: str,
+        lease_token: str,
+        remote_id: str,
+        *,
+        now_iso: str,
+    ) -> None:
+        data = self._request(
+            "POST",
+            f"rpc/{COMPLETE_RPC}",
+            payload={
+                "p_tenant_id": tenant_id,
+                "p_publication_id": publication_id,
+                "p_lease_token": lease_token,
+                "p_remote_id": remote_id,
+                "p_now": now_iso,
+            },
+        )
+        if data is not True:
+            raise RuntimeError("Supabase did not confirm social publication completion")
+
+    def mark_failed_atomic(
+        self,
+        tenant_id: str,
+        publication_id: str,
+        lease_token: str,
+        error: str,
+        *,
+        retryable: bool,
+        now_iso: str,
+    ) -> dict:
+        data = self._request(
+            "POST",
+            f"rpc/{FAIL_RPC}",
+            payload={
+                "p_tenant_id": tenant_id,
+                "p_publication_id": publication_id,
+                "p_lease_token": lease_token,
+                "p_error": str(error),
+                "p_retryable": bool(retryable),
+                "p_now": now_iso,
+            },
+        )
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            raise RuntimeError("Supabase social failure response is invalid")
+        return data[0]
+
     # Deliberately refuse the non-atomic protocol methods. Production distributed
-    # workers must use claim_due_atomic() instead of list-then-update races.
+    # workers must use the dedicated lease-bound RPCs above.
     def list_due(self, tenant_id: str, now_iso: str, limit: int) -> list[RemoteSocialJob]:
         raise RuntimeError("distributed social workers must use claim_due_atomic")
 
@@ -185,4 +259,7 @@ class SupabaseSocialQueueStorage:
         raise RuntimeError("expired leases are recovered atomically by claim_due_atomic")
 
 
-__all__ = ["CLAIM_RPC", "MAX_RESPONSE_BYTES", "SupabaseSocialQueueStorage", "TABLE"]
+__all__ = [
+    "BEGIN_EFFECT_RPC", "CLAIM_RPC", "COMPLETE_RPC", "FAIL_RPC", "MAX_RESPONSE_BYTES",
+    "SupabaseSocialQueueStorage", "TABLE",
+]
