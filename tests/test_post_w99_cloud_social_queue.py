@@ -185,7 +185,7 @@ class RemoteSocialQueueSqlContractTests(unittest.TestCase):
 
     def test_remote_queue_does_not_add_a_fourth_github_workflow(self):
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
-        self.assertEqual({path.name for path in workflows}, {"ci.yml", "full-mac-app.yml", "release-mac.yml"})
+        self.assertEqual({path.name for path in workflows}, {"ci.yml", "full-mac-app.yml", "persistent-release.yml"})
         self.assertEqual(len(workflows), 3)
 
 
