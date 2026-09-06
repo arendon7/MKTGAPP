@@ -76,8 +76,6 @@ class SupabaseSocialQueueStorage:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
-            # Never echo backend response bodies: worker diagnostics can contain remote
-            # provider text and the service-role credential must never be reflected.
             if exc.code == 409:
                 raise Conflict("remote social queue row conflict") from None
             raise RuntimeError(f"Supabase social queue HTTP {exc.code}") from None
@@ -135,6 +133,22 @@ class SupabaseSocialQueueStorage:
         if not isinstance(data[0], dict):
             raise RuntimeError("Supabase social queue get response is invalid")
         return self._row(data[0])
+
+    def status_snapshot(self, tenant_id: str, publication_id: str) -> tuple[RemoteSocialJob, bool] | None:
+        """Read job state and ambiguity flag from one PostgREST row snapshot."""
+        query = "?" + urlencode({
+            "select": self._select() + ",provider_outcome_ambiguous",
+            "tenant_id": f"eq.{tenant_id}",
+            "publication_id": f"eq.{publication_id}",
+            "limit": "1",
+        })
+        data = self._request("GET", TABLE, query)
+        if not isinstance(data, list) or not data:
+            return None
+        payload = data[0]
+        if not isinstance(payload, dict):
+            raise RuntimeError("Supabase social status snapshot is invalid")
+        return self._row(payload), bool(payload.get("provider_outcome_ambiguous", False))
 
     def insert(self, row: RemoteSocialJob) -> None:
         payload = {
@@ -247,8 +261,6 @@ class SupabaseSocialQueueStorage:
             raise RuntimeError("Supabase social failure response is invalid")
         return data[0]
 
-    # Deliberately refuse the non-atomic protocol methods. Production distributed
-    # workers must use the dedicated lease-bound RPCs above.
     def list_due(self, tenant_id: str, now_iso: str, limit: int) -> list[RemoteSocialJob]:
         raise RuntimeError("distributed social workers must use claim_due_atomic")
 

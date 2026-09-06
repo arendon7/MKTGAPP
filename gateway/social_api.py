@@ -152,7 +152,24 @@ class SocialQueueGatewayService:
             now=clock,
         )
         publication_id = _status_body(raw_body)
-        row = self.storage.get(tenant, publication_id)
+        snapshot_reader = getattr(self.storage, "status_snapshot", None)
+        if callable(snapshot_reader):
+            snapshot = snapshot_reader(tenant, publication_id)
+            if snapshot is None:
+                row = None
+                ambiguous = False
+            elif isinstance(snapshot, tuple) and len(snapshot) == 2:
+                row, ambiguous = snapshot
+                ambiguous = bool(ambiguous)
+            else:
+                raise RuntimeError("remote social status snapshot is invalid")
+        else:
+            row = self.storage.get(tenant, publication_id)
+            metadata_reader = getattr(self.storage, "status_metadata", None)
+            metadata = metadata_reader(tenant, publication_id) if row is not None and callable(metadata_reader) else {}
+            if not isinstance(metadata, dict):
+                raise RuntimeError("remote social status metadata must be an object")
+            ambiguous = bool(metadata.get("provider_outcome_ambiguous", False))
         if row is None:
             return 404, {
                 "schema": SOCIAL_STATUS_SCHEMA,
@@ -169,6 +186,7 @@ class SocialQueueGatewayService:
             "available_at": row.available_at,
             "remote_id": row.remote_id,
             "updated_at": row.updated_at,
+            "provider_outcome_ambiguous": ambiguous,
             "provider_error_exposed": False,
             "lease_exposed": False,
         }

@@ -41,8 +41,11 @@ PLIST="$CONTENTS/Info.plist"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py" ]] || fail "post-W99 dev terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/social_background.py" ]] || fail "post-W99 background worker is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_today_portfolio_app.py" ]] || fail "post-W99 Today portfolio terminal is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py" ]] || fail "post-W99 cloud social bridge core is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_cloud_social_bridge_app.py" ]] || fail "post-W99 cloud social bridge terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]] || fail "post-W99 calendar control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]] || fail "post-W99 Today portfolio browser surface is missing from packaged source"
+[[ -f "$RESOURCES/source/web/cloud-social-bridge.js" ]] || fail "post-W99 cloud social browser control is missing from packaged source"
 
 cat > "$LAUNCH" <<'PY'
 from __future__ import annotations
@@ -82,8 +85,6 @@ cat > "$RESOURCES/POST_W99_DEV_BUILD.json" <<JSON
 }
 JSON
 
-# Preserve the native executable name expected by the inherited bundle while making
-# the product identity unmistakably development-only in Finder and bundle metadata.
 [[ -x "$MACOS/Binario Marketing IA" ]] || fail "native launcher is unavailable"
 /usr/bin/codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP"
 /usr/bin/codesign --verify --deep --strict "$APP"

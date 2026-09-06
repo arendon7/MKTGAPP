@@ -22,10 +22,7 @@ AGENT="$FAKE_HOME/Library/LaunchAgents/com.sistemabinario.marketing.social-sched
 BASE="http://127.0.0.1:$PORT"
 PID=""
 cleanup(){
-  if [[ -n "$PID" ]]; then
-    /bin/kill "$PID" 2>/dev/null || true
-    wait "$PID" 2>/dev/null || true
-  fi
+  if [[ -n "$PID" ]]; then /bin/kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
   /bin/rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -37,14 +34,9 @@ PID=$!
 
 READY=0
 for _ in $(seq 1 100); do
-  if /usr/bin/curl --fail --silent "$BASE/api/health" > "$TMP/health.json"; then
-    READY=1
-    break
-  fi
+  if /usr/bin/curl --fail --silent "$BASE/api/health" > "$TMP/health.json"; then READY=1; break; fi
   if ! /bin/kill -0 "$PID" 2>/dev/null; then
-    cat "$LOG" >&2
-    echo 'POST-W99 DEV MAC SMOKE BLOCKED: app exited before health became ready' >&2
-    exit 4
+    cat "$LOG" >&2; echo 'POST-W99 DEV MAC SMOKE BLOCKED: app exited before health became ready' >&2; exit 4
   fi
   sleep 0.2
 done
@@ -55,6 +47,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/primary-navigation.js" > "$TMP/primary-navigation.js"
 /usr/bin/curl --fail --silent "$BASE/social-background-control.js" > "$TMP/social-background-control.js"
 /usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
+/usr/bin/curl --fail --silent "$BASE/cloud-social-bridge.js" > "$TMP/cloud-social-bridge.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -69,8 +62,14 @@ done
 /usr/bin/grep -q '/api/portfolio-control-tower' "$TMP/today-portfolio.js"
 /usr/bin/grep -q 'slice(0,5)' "$TMP/today-portfolio.js"
 /usr/bin/grep -q 'Volver a todas las empresas' "$TMP/today-portfolio.js"
+/usr/bin/grep -q '/cloud-social-bridge.js' "$TMP/today-portfolio.js"
+/usr/bin/grep -q 'Delegar a cloud' "$TMP/cloud-social-bridge.js"
+/usr/bin/grep -q 'Estado cloud' "$TMP/cloud-social-bridge.js"
+/usr/bin/grep -q 'window.confirm' "$TMP/cloud-social-bridge.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/cloud-social-bridge.js"
 
-# Smoke is read-only with respect to launchd integration: no install/remove endpoint is invoked.
+# Smoke remains read-only for both scheduling mechanisms: it never installs launchd,
+# delegates a publication, retries remote enqueue or refreshes a remote provider status.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 
@@ -78,4 +77,4 @@ test ! -e "$AGENT"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today portfolio + background status; no automatic LaunchAgent install'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + explicit cloud social controls; no automatic scheduler mutation'

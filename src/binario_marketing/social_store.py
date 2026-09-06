@@ -14,7 +14,7 @@ from .atomic import write_json_atomic
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 CHANNELS = {"facebook_page", "instagram"}
 KINDS = {"text", "link", "image", "reel", "video"}
-STATUSES = {"DRAFT", "QUEUED", "PUBLISHING", "PUBLISHED", "FAILED", "CANCELLED"}
+STATUSES = {"DRAFT", "QUEUED", "DELEGATED", "PUBLISHING", "PUBLISHED", "FAILED", "CANCELLED"}
 _SECRET_KEYS = {
     "access_token",
     "token",
@@ -25,7 +25,10 @@ _SECRET_KEYS = {
 }
 _ALLOWED_TRANSITIONS = {
     "DRAFT": {"QUEUED", "CANCELLED"},
-    "QUEUED": {"PUBLISHING", "CANCELLED"},
+    # DELEGATED is an authority boundary: once entered, the local scheduler cannot
+    # start publication. Only explicit remote reconciliation may complete the row.
+    "QUEUED": {"DELEGATED", "PUBLISHING", "CANCELLED"},
+    "DELEGATED": {"PUBLISHED", "FAILED"},
     "PUBLISHING": {"PUBLISHED", "FAILED"},
     "FAILED": {"QUEUED", "CANCELLED"},
     "PUBLISHED": set(),
@@ -103,7 +106,10 @@ class SocialStore:
             raise ValueError("invalid publication payload")
         _assert_secret_free(payload)
         payload.setdefault("render_id", None)
-        return Publication(**payload)
+        row = Publication(**payload)
+        if row.status not in STATUSES:
+            raise ValueError("invalid persisted publication status")
+        return row
 
     def get(self, publication_id: str) -> Publication:
         with self._lock:
@@ -197,7 +203,7 @@ class SocialStore:
                 status=status,
                 scheduled_for=scheduled,
                 remote_id=(str(remote_id).strip() or None) if remote_id is not None else current.remote_id,
-                error=(str(error).strip()[:2000] or None) if error is not None else (None if status in {"QUEUED", "PUBLISHED"} else current.error),
+                error=(str(error).strip()[:2000] or None) if error is not None else (None if status in {"QUEUED", "DELEGATED", "PUBLISHED"} else current.error),
                 attempts=attempts,
                 updated_at=_now(),
             )
@@ -209,6 +215,31 @@ class SocialStore:
         if current.status not in {"DRAFT", "FAILED"}:
             raise ValueError("only draft or failed publications can be queued")
         return self.transition(publication_id, "QUEUED", scheduled_for=scheduled_for)
+
+    def delegate(self, publication_id: str) -> Publication:
+        """Withdraw local publication authority before a remote enqueue attempt."""
+        current = self.get(publication_id)
+        if current.status != "QUEUED":
+            raise ValueError("only queued publications can be delegated")
+        return self.transition(publication_id, "DELEGATED")
+
+    def mark_delegated_published(self, publication_id: str, remote_id: str) -> Publication:
+        current = self.get(publication_id)
+        if current.status != "DELEGATED":
+            raise ValueError("only delegated publications can be reconciled as published")
+        clean_remote = str(remote_id or "").strip()
+        if not clean_remote or len(clean_remote) > 256:
+            raise ValueError("remote_id is required for delegated publication reconciliation")
+        return self.transition(publication_id, "PUBLISHED", remote_id=clean_remote)
+
+    def mark_delegated_failed(self, publication_id: str, error: str) -> Publication:
+        current = self.get(publication_id)
+        if current.status != "DELEGATED":
+            raise ValueError("only delegated publications can be reconciled as failed")
+        clean_error = str(error or "").strip()
+        if not clean_error:
+            raise ValueError("delegated failure requires an explicit reconciliation reason")
+        return self.transition(publication_id, "FAILED", error=clean_error)
 
     def due(self, now: datetime | None = None, limit: int = 20) -> list[Publication]:
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
