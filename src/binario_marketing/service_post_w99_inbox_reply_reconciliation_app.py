@@ -16,39 +16,39 @@ _OUTCOMES = {"SENT", "NOT_SENT"}
 class AppRuntime(base.AppRuntime):
     """Post-W99 terminal: human reconciliation closes ambiguous Inbox reply attempts."""
 
+    def _decorate_interaction(self, company_id: str, kind: str, item: dict) -> None:
+        interaction_id = str(item.get("id") or "").strip()
+        if not interaction_id:
+            return
+        rows = self.inbox_replies.for_interaction(company_id, kind, interaction_id)
+        if any(row.stage == "RECONCILED_SENT" for row in rows):
+            item["reply_eligible"] = False
+            item["reply_reason"] = "Respuesta confirmada manualmente después de verificar Meta."
+            item["reply_reconciled_sent"] = True
+        candidates = [
+            {"stage": row.stage, "updated_at": row.updated_at}
+            for row in rows if row.stage in {"SENDING", "AMBIGUOUS"}
+        ]
+        if candidates:
+            item["reply_reconciliation"] = {
+                "required": True,
+                "candidates": candidates,
+                "provider_read_performed": False,
+                "checkpoint_key_exposed": False,
+                "text_hash_exposed": False,
+            }
+
     def _annotate_reply_reconciliation(self, company_id: str, payload: dict) -> dict:
         company = self.companies.get(company_id)
         for conversation in payload.get("conversations") or []:
             if not isinstance(conversation, dict):
                 continue
             for message in conversation.get("messages") or []:
-                if not isinstance(message, dict) or not message.get("id"):
-                    continue
-                candidates = self.inbox_replies.reconciliation_candidates(
-                    company.id, "facebook_message", str(message["id"])
-                )
-                if candidates:
-                    message["reply_reconciliation"] = {
-                        "required": True,
-                        "candidates": candidates,
-                        "provider_read_performed": False,
-                        "checkpoint_key_exposed": False,
-                        "text_hash_exposed": False,
-                    }
+                if isinstance(message, dict):
+                    self._decorate_interaction(company.id, "facebook_message", message)
         for comment in payload.get("comments") or []:
-            if not isinstance(comment, dict) or not comment.get("id"):
-                continue
-            candidates = self.inbox_replies.reconciliation_candidates(
-                company.id, "instagram_comment", str(comment["id"])
-            )
-            if candidates:
-                comment["reply_reconciliation"] = {
-                    "required": True,
-                    "candidates": candidates,
-                    "provider_read_performed": False,
-                    "checkpoint_key_exposed": False,
-                    "text_hash_exposed": False,
-                }
+            if isinstance(comment, dict):
+                self._decorate_interaction(company.id, "instagram_comment", comment)
         return payload
 
     def refresh_inbox_attention(self, company_id: str) -> dict:
