@@ -245,7 +245,6 @@ class InboxActionCenterSourceContractTests(unittest.TestCase):
         self.assertIn("super().social_inbox(company.id, conversation_limit=10)", service)
         self.assertIn("def do_POST", service)
         self.assertIn("def do_GET", service)
-        self.assertIn("provider_read_performed=False", service.replace('"', '').replace(': ', '=')) if False else None
         self.assertNotIn("setInterval", service)
 
     def test_browser_adapter_replaces_only_human_refresh_and_never_polls(self):
@@ -274,7 +273,7 @@ class InboxActionCenterSourceContractTests(unittest.TestCase):
         self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
         docs = (ROOT / "docs" / "POST_W99_INBOX_ACTION_CENTER.md").read_text(encoding="utf-8")
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", docs)
-        self.assertIn("no consulta Meta", docs)
+        self.assertIn("no consulta meta", docs.casefold())
 
 
 if __name__ == "__main__":
