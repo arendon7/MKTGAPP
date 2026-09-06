@@ -20,7 +20,20 @@ class AppRuntime(base.AppRuntime):
         interaction_id = str(item.get("id") or "").strip()
         if not interaction_id:
             return
-        rows = self.inbox_replies.for_interaction(company_id, kind, interaction_id)
+        try:
+            rows = self.inbox_replies.for_interaction(company_id, kind, interaction_id)
+        except (ValueError, OSError):
+            item["reply_eligible"] = False
+            item["reply_reason"] = "La evidencia local de respuestas requiere revisión de integridad antes de enviar."
+            item["reply_reconciliation"] = {
+                "required": True,
+                "candidates": [],
+                "integrity_error": True,
+                "provider_read_performed": False,
+                "checkpoint_key_exposed": False,
+                "text_hash_exposed": False,
+            }
+            return
         if any(row.stage == "RECONCILED_SENT" for row in rows):
             item["reply_eligible"] = False
             item["reply_reason"] = "Respuesta confirmada manualmente después de verificar Meta."
@@ -62,19 +75,36 @@ class AppRuntime(base.AppRuntime):
             return attention
         kept: list[dict] = []
         reconciled_sent = 0
+        integrity_blocked = 0
         for item in attention.get("items") or []:
             kind = str(item.get("kind") or "")
             interaction_id = str(item.get("interaction_id") or "")
-            rows = self.inbox_replies.for_interaction(company_id, kind, interaction_id) if kind in _KINDS and interaction_id else []
+            try:
+                rows = self.inbox_replies.for_interaction(company_id, kind, interaction_id) if kind in _KINDS and interaction_id else []
+            except (ValueError, OSError):
+                blocked = dict(item)
+                blocked.update({
+                    "attention_kind": "reply_verification",
+                    "rank": 18,
+                    "urgency": "HIGH",
+                    "blocking": True,
+                    "title": "Verificar integridad de respuesta social",
+                    "detail": "La evidencia local de intentos de respuesta no es íntegra. No se permite reenviar hasta revisar el estado local y Meta.",
+                    "reason_code": "INBOX_REPLY_CHECKPOINT_INTEGRITY",
+                })
+                kept.append(blocked)
+                integrity_blocked += 1
+                continue
             if any(row.stage == "RECONCILED_SENT" for row in rows):
                 reconciled_sent += 1
                 continue
             kept.append(item)
-        if reconciled_sent:
+        if reconciled_sent or integrity_blocked:
             attention = dict(attention)
             attention["items"] = kept
             attention["suppressed_by_reply"] = int(attention.get("suppressed_by_reply") or 0) + reconciled_sent
             attention["manual_reconciled_sent"] = reconciled_sent
+            attention["reply_integrity_blocked"] = integrity_blocked
         return attention
 
     def reconcile_inbox_reply(self, company_id: str, payload: dict) -> dict:
