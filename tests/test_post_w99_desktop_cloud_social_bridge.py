@@ -86,12 +86,18 @@ class DesktopCloudSocialBridgeTests(unittest.TestCase):
         })
 
     def bridge(self, client: FakeCloudClient) -> CloudSocialBridge:
+        def client_factory(gateway_url: str, tenant_id: str, secret: str) -> FakeCloudClient:
+            client.gateway_url = gateway_url
+            client.tenant_id = tenant_id
+            client.social_secret = secret
+            return client
+
         return CloudSocialBridge(
             self.social,
             self.configs,
             self.credentials,
             self.delegations,
-            client_factory=lambda gateway_url, tenant_id, secret: client,
+            client_factory=client_factory,
         )
 
     def test_success_withdraws_local_authority_before_remote_enqueue(self):
@@ -199,7 +205,6 @@ class DesktopCloudSocialBridgeTests(unittest.TestCase):
         result = bridge.refresh_status(COMPANY, row.id)
         self.assertEqual(self.social.get(row.id).status, "FAILED")
         self.assertEqual(result["delegation"]["status"], "REMOTE_FAILED")
-        # It remains absent from due() until a human explicitly queues it again.
         self.assertEqual(self.social.due(NOW + timedelta(days=1)), [])
 
     def test_delegated_state_is_not_a_local_publish_or_recovery_state(self):
