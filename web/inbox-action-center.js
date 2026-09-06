@@ -43,6 +43,20 @@
     return matched;
   }
 
+  function invalidateLocalAttentionViews(companyId){
+    if(typeof globalThis.postW99ActionState==='object'&&globalThis.postW99ActionState){
+      if(globalThis.postW99ActionState.companyId===companyId){
+        globalThis.postW99ActionState.payload=null;
+      }
+    }
+    if(typeof globalThis.postW99PortfolioState==='object'&&globalThis.postW99PortfolioState){
+      globalThis.postW99PortfolioState.payload=null;
+    }
+    if(typeof globalThis.postW99TodayPortfolioState==='object'&&globalThis.postW99TodayPortfolioState){
+      globalThis.postW99TodayPortfolioState.payload=null;
+    }
+  }
+
   if(typeof globalThis.actionCenterOpen==='function'){
     const baseActionCenterOpen=globalThis.actionCenterOpen;
     globalThis.actionCenterOpen=function postW99InboxActionCenterOpen(item){
@@ -67,6 +81,7 @@
     try{
       inboxState.data=await opsApi(`/api/companies/${encodeURIComponent(companyId)}/inbox/refresh-attention`,{method:'POST'});
       const exactLocated=applyExactTarget(inboxState.data,companyId);
+      invalidateLocalAttentionViews(companyId);
       if(exactLocated)opsToast('Interacción objetivo localizada en la bandeja');
       else opsToast(inboxState.data.configured?'Bandeja Meta actualizada y enviada a Hoy':'Meta no está conectado');
     }catch(err){exactTarget=null;opsToast(err.message)}finally{inboxState.loading=false;inboxRenderCurrent()}
@@ -82,4 +97,6 @@
       notice.textContent=`Esta actualización explícita quedó guardada localmente como evidencia mínima para Hoy y Action Center (${captured?opsDate(captured):'ahora'}). No se guardan enlaces Meta, IDs personales del proveedor ni cuerpos completos.`;
     }
   };
+
+  if(marketingOpsState.view==='inbox')inboxRenderCurrent();
 })();
