@@ -72,6 +72,15 @@ class InboxCRMIdentityStore:
         return person
 
     @staticmethod
+    def _interaction_id(value: object) -> str:
+        interaction = str(value or "").strip()
+        if not interaction:
+            raise ValueError("interaction_id is required")
+        if len(interaction) > 300 or any(ch in interaction for ch in "/?#") or any(ch.isspace() for ch in interaction):
+            raise ValueError("invalid interaction_id")
+        return interaction
+
+    @staticmethod
     def _contact(value: object) -> str:
         contact = str(value or "").strip()
         if not CONTACT_ID_RE.fullmatch(contact):
@@ -124,6 +133,35 @@ class InboxCRMIdentityStore:
         person = self._person_id(provider_person_id)
         message = f"binario-inbox-crm-v1\0{company}\0{channel}\0{person}".encode("utf-8")
         return hmac.new(self._key(), message, hashlib.sha256).hexdigest()
+
+    def intent_token(
+        self,
+        company_id: object,
+        provider: object,
+        interaction_id: object,
+        provider_person_id: object,
+    ) -> str:
+        """Return a non-persisted proof binding one observed interaction to its actor."""
+        company = self._company(company_id)
+        channel = self._provider(provider)
+        interaction = self._interaction_id(interaction_id)
+        person = self._person_id(provider_person_id)
+        message = f"binario-inbox-crm-intent-v1\0{company}\0{channel}\0{interaction}\0{person}".encode("utf-8")
+        return hmac.new(self._key(), message, hashlib.sha256).hexdigest()
+
+    def verify_intent(
+        self,
+        company_id: object,
+        provider: object,
+        interaction_id: object,
+        provider_person_id: object,
+        token: object,
+    ) -> bool:
+        supplied = str(token or "").strip().lower()
+        if len(supplied) != 64 or any(ch not in "0123456789abcdef" for ch in supplied):
+            return False
+        expected = self.intent_token(company_id, provider, interaction_id, provider_person_id)
+        return hmac.compare_digest(expected, supplied)
 
     def _path(self, fingerprint: str) -> Path:
         value = str(fingerprint or "").strip().lower()
