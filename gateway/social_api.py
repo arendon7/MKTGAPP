@@ -159,6 +159,10 @@ class SocialQueueGatewayService:
                 "publication_id": publication_id,
                 "found": False,
             }
+        metadata_reader = getattr(self.storage, "status_metadata", None)
+        metadata = metadata_reader(tenant, publication_id) if callable(metadata_reader) else {}
+        if not isinstance(metadata, dict):
+            raise RuntimeError("remote social status metadata must be an object")
         return 200, {
             "schema": SOCIAL_STATUS_SCHEMA,
             "publication_id": row.publication_id,
@@ -169,6 +173,9 @@ class SocialQueueGatewayService:
             "available_at": row.available_at,
             "remote_id": row.remote_id,
             "updated_at": row.updated_at,
+            # This boolean is required for the desktop authority handoff: FAILED after a
+            # provider-effect checkpoint must never be requeued locally or remotely.
+            "provider_outcome_ambiguous": bool(metadata.get("provider_outcome_ambiguous", False)),
             "provider_error_exposed": False,
             "lease_exposed": False,
         }
