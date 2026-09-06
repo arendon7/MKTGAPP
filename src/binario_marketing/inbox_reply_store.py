@@ -111,18 +111,22 @@ class InboxReplyStore:
     def begin(self, company_id: str, kind: str, interaction_id: str, text: str) -> tuple[InboxReplyCheckpoint, bool]:
         key, text_sha = self.identity(company_id, kind, interaction_id, text)
         with self._lock:
+            interaction_rows = self.for_interaction(company_id, kind, interaction_id)
             # A provider-effect ambiguity belongs to the interaction, not to one exact text.
             # Changing the text must never provide a blind-retry escape hatch.
-            blockers = [row for row in self.for_interaction(company_id, kind, interaction_id) if row.stage in _BLOCKING_STAGES]
-            if blockers:
+            if any(row.stage in _BLOCKING_STAGES for row in interaction_rows):
                 raise InboxReplyConflict(
                     "This interaction has an unfinished or ambiguous Meta attempt. Verify the provider and reconcile that attempt before sending any reply."
+                )
+            # A human-confirmed SENT resolution is deliberately terminal for this exact interaction.
+            # A later genuine incoming message/comment must have a new provider interaction id.
+            if any(row.stage == "RECONCILED_SENT" for row in interaction_rows):
+                raise InboxReplyConflict(
+                    "This interaction was manually confirmed as already sent after provider verification; a second reply is blocked."
                 )
             existing = self.get(key)
             if existing is not None:
                 if existing.stage == "SENT" and existing.remote_id:
-                    return existing, True
-                if existing.stage == "RECONCILED_SENT":
                     return existing, True
                 if existing.stage == "RETRY_ALLOWED":
                     row = replace(existing, stage="SENDING", remote_id=None, updated_at=_now())
