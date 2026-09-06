@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from binario_marketing.inbox_reply_store import InboxReplyConflict
 from binario_marketing.service_post_w99_inbox_reply_reconciliation_app import AppRuntime, create_server
 
 
@@ -61,7 +62,7 @@ class InboxReplyReconciliationHttpTests(unittest.TestCase):
         self.assertEqual(result["stage"], "RECONCILED_SENT")
         self.assertFalse(result["provider_call_performed"])
         self.assertFalse(result["retry_requires_new_explicit_send"])
-        with self.assertRaises(Exception):
+        with self.assertRaises(InboxReplyConflict):
             self.runtime.inbox_replies.begin(self.company.id, "facebook_message", "msg-1", "Otro")
 
     def test_post_not_sent_restores_only_explicit_future_attempt(self):
