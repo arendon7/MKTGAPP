@@ -96,7 +96,7 @@ Likewise, the repository retains exactly the three canonical workflows:
 
 - `ci.yml`
 - `full-mac-app.yml`
-- `release-mac.yml`
+- `persistent-release.yml`
 
 External scheduling belongs to the deployment platform, not to a fourth GitHub Actions workflow.
 
