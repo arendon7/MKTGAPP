@@ -17,8 +17,8 @@
 
   async function refreshLocalProjections(){
     try{if(typeof actionCenterLoad==='function')await actionCenterLoad(true)}catch(_err){}
+    try{if(typeof portfolioLoad==='function')await portfolioLoad()}catch(_err){}
     try{if(typeof todayPortfolioLoad==='function')await todayPortfolioLoad(true)}catch(_err){}
-    try{if(typeof portfolioLoad==='function'&&globalThis.postW99PortfolioState?.open)await portfolioLoad()}catch(_err){}
   }
 
   async function resolve(kind,item,candidate,outcome,wrap){
@@ -32,7 +32,7 @@
     const key=`${companyId}:${providerKind}:${interactionId}`;if(busy.has(key))return;busy.add(key);
     wrap.querySelectorAll('button').forEach(button=>button.disabled=true);
     try{
-      const result=await opsApi(`/api/companies/${encodeURIComponent(companyId)}/inbox/reply-reconcile`,{method:'POST',body:{
+      await opsApi(`/api/companies/${encodeURIComponent(companyId)}/inbox/reply-reconcile`,{method:'POST',body:{
         kind:providerKind,
         interaction_id:interactionId,
         expected_stage:String(candidate.stage||''),
@@ -45,7 +45,6 @@
       await refreshLocalProjections();
       if(typeof inboxRenderCurrent==='function')inboxRenderCurrent();
       opsToast(sent?'Respuesta marcada como enviada después de verificación manual':'Verificación registrada. Un nuevo envío requerirá otro clic explícito.');
-      return result;
     }catch(err){opsToast(err.message);wrap.querySelectorAll('button').forEach(button=>button.disabled=false)}
     finally{busy.delete(key)}
   }
