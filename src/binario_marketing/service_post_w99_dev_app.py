@@ -21,7 +21,8 @@ from .service_post_w99_primary_navigation_app import AppRuntime as _PrimaryNavig
 from .service_post_w99_social_background_control_app import AppRuntime as _SocialBackgroundControlAppRuntime
 from .service_post_w99_today_portfolio_app import AppRuntime as _TodayPortfolioAppRuntime
 from .service_post_w99_cloud_social_bridge_app import AppRuntime as _CloudSocialBridgeAppRuntime
-from .service_post_w99_inbox_action_center_app import (
+from .service_post_w99_inbox_action_center_app import AppRuntime as _InboxActionCenterAppRuntime
+from .service_post_w99_inbox_reply_reconciliation_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
