@@ -8,14 +8,12 @@ import secrets
 import threading
 import time
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-
-from gateway.social_api import SOCIAL_ENQUEUE_PATH, SOCIAL_STATUS_PATH, derive_social_secret
-from gateway.social_queue import REMOTE_SOCIAL_JOB_SCHEMA, validate_remote_social_job
 
 from .atomic import write_json_atomic
 from .company_store import COMPANY_ID_RE
@@ -25,10 +23,17 @@ from .social_store import Publication, SocialStore, _now
 
 
 DELEGATION_SCHEMA = "binario.marketing.cloud-social-delegation.v1"
+REMOTE_SOCIAL_JOB_SCHEMA = "binario.marketing.remote-social-job.v1"
+REMOTE_SOCIAL_RECEIPT_SCHEMA = "binario.marketing.remote-social-receipt.v1"
+REMOTE_SOCIAL_STATUS_SCHEMA = "binario.marketing.remote-social-status.v1"
+SOCIAL_ENQUEUE_PATH = "/api/social_enqueue"
+SOCIAL_STATUS_PATH = "/api/social_status"
 DELEGATION_STATUSES = {"PREPARED", "CONFIRMED", "REMOTE_PUBLISHED", "REMOTE_FAILED", "AMBIGUOUS"}
 MAX_RESPONSE_BYTES = 256 * 1024
+MAX_SCHEDULE_DAYS = 366
 _PUBLICATION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _TENANT_ID_RE = re.compile(r"^tenant_[0-9a-f]{24}$")
+_TARGET_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -56,11 +61,98 @@ def _gateway_origin(value: object) -> str:
     return f"https://{host}{port}"
 
 
+def _https_url(value: object, field: str, *, required: bool = False) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        if required:
+            raise CloudSocialBridgeError(f"{field} is required for cloud execution")
+        return None
+    if len(text) > 4096:
+        raise CloudSocialBridgeError(f"{field} is too long")
+    parsed = urlsplit(text)
+    if parsed.scheme.lower() != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise CloudSocialBridgeError(f"{field} must be a credential-free HTTPS URL")
+    return text
+
+
 def _tenant(value: object) -> str:
     text = str(value or "").strip().lower()
     if not _TENANT_ID_RE.fullmatch(text):
         raise ValueError("invalid cloud social tenant id")
     return text
+
+
+def derive_social_tenant_secret(master_secret: str, tenant_id: str) -> str:
+    """Desktop-side purpose-separated derivation matching gateway.social_api exactly."""
+    master = str(master_secret or "").strip()
+    if len(master) < 32 or len(master) > 4096:
+        raise CloudSocialBridgeError("gateway master credential has invalid length")
+    tenant = _tenant(tenant_id)
+    message = f"binario-gateway-v1:social:{tenant}".encode("utf-8")
+    return hmac.new(master.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _parse_schedule(value: object) -> str:
+    text = str(value or "").strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise CloudSocialBridgeError("scheduled_for must be ISO-8601") from None
+    if parsed.tzinfo is None:
+        raise CloudSocialBridgeError("scheduled_for must include a timezone")
+    normalized = parsed.astimezone(timezone.utc)
+    if normalized > datetime.now(timezone.utc) + timedelta(days=MAX_SCHEDULE_DAYS):
+        raise CloudSocialBridgeError("scheduled_for is too far in the future for cloud execution")
+    return normalized.isoformat()
+
+
+def _cloud_job(publication: Publication) -> dict:
+    if publication.status not in {"QUEUED", "DELEGATED"} or not publication.scheduled_for:
+        raise CloudSocialBridgeError("cloud delegation requires a scheduled queued/delegated publication")
+    if not _PUBLICATION_ID_RE.fullmatch(publication.id) or not COMPANY_ID_RE.fullmatch(publication.project_id):
+        raise CloudSocialBridgeError("publication identity is not cloud-compatible")
+    if not _TARGET_ID_RE.fullmatch(publication.target_id):
+        raise CloudSocialBridgeError("target account id is not cloud-compatible")
+    if len(publication.target_name) > 160 or len(publication.message) > 20000:
+        raise CloudSocialBridgeError("publication text exceeds cloud limits")
+    channel = publication.channel
+    kind = publication.kind
+    link_url = _https_url(publication.link_url, "link_url")
+    media_url = _https_url(publication.media_url, "media_url")
+    if channel == "facebook_page":
+        if kind not in {"text", "link", "image"}:
+            raise CloudSocialBridgeError("cloud Facebook supports text, link and public image only")
+        if kind in {"text", "link"} and not publication.message.strip():
+            raise CloudSocialBridgeError("Facebook cloud text/link requires a message")
+        if kind == "link" and not link_url:
+            raise CloudSocialBridgeError("Facebook cloud link requires link_url")
+        if kind == "image" and not media_url:
+            raise CloudSocialBridgeError("Facebook cloud image requires public media_url")
+    elif channel == "instagram":
+        if kind not in {"image", "reel"}:
+            raise CloudSocialBridgeError("cloud Instagram supports public image and reel only")
+        if not media_url:
+            raise CloudSocialBridgeError("Instagram cloud publication requires public media_url")
+    else:
+        raise CloudSocialBridgeError("unsupported cloud social channel")
+    return {
+        "schema": REMOTE_SOCIAL_JOB_SCHEMA,
+        "publication": {
+            "id": publication.id,
+            "project_id": publication.project_id,
+            "channel": channel,
+            "target_id": publication.target_id,
+            "target_name": publication.target_name,
+            "kind": kind,
+            "message": publication.message.strip(),
+            "link_url": link_url,
+            "media_url": media_url,
+            "scheduled_for": _parse_schedule(publication.scheduled_for),
+        },
+        "approval": {"source_status": "QUEUED", "operator_approved": True},
+    }
 
 
 def _decode_response(raw: bytes) -> dict:
@@ -112,18 +204,12 @@ class CloudSocialDelegationStore:
     def _validate(row: CloudSocialDelegation) -> CloudSocialDelegation:
         if row.schema != DELEGATION_SCHEMA:
             raise ValueError("cloud social delegation schema mismatch")
-        if not COMPANY_ID_RE.fullmatch(row.company_id):
-            raise ValueError("invalid delegation company id")
-        if not _PUBLICATION_ID_RE.fullmatch(row.publication_id):
-            raise ValueError("invalid delegation publication id")
-        if _gateway_origin(row.gateway_url) != row.gateway_url:
-            raise ValueError("delegation gateway origin is not canonical")
-        if _tenant(row.tenant_id) != row.tenant_id:
-            raise ValueError("delegation tenant is not canonical")
-        if not _SHA256_RE.fullmatch(row.payload_sha256):
-            raise ValueError("invalid delegation payload digest")
-        if row.status not in DELEGATION_STATUSES:
-            raise ValueError("invalid delegation status")
+        if not COMPANY_ID_RE.fullmatch(row.company_id) or not _PUBLICATION_ID_RE.fullmatch(row.publication_id):
+            raise ValueError("invalid delegation identity")
+        if _gateway_origin(row.gateway_url) != row.gateway_url or _tenant(row.tenant_id) != row.tenant_id:
+            raise ValueError("delegation endpoint identity is not canonical")
+        if not _SHA256_RE.fullmatch(row.payload_sha256) or row.status not in DELEGATION_STATUSES:
+            raise ValueError("invalid delegation state")
         if row.remote_status is not None and row.remote_status not in {"PENDING", "LEASED", "PUBLISHED", "FAILED"}:
             raise ValueError("invalid remote delegation status")
         if row.remote_id is not None and (not row.remote_id.strip() or len(row.remote_id) > 256):
@@ -177,15 +263,12 @@ class CloudSocialDelegationStore:
                 raise KeyError(publication_id)
             now = _now()
             updated = replace(
-                current,
-                status=clean_status,
-                remote_status=remote_status,
+                current, status=clean_status, remote_status=remote_status,
                 remote_id=(str(remote_id).strip() or None) if remote_id is not None else current.remote_id,
                 provider_outcome_ambiguous=bool(provider_outcome_ambiguous),
                 transport_error_type=(str(transport_error_type).strip() or None) if transport_error_type else None,
                 confirmed_at=(current.confirmed_at or now) if confirmed else current.confirmed_at,
-                last_checked_at=now if checked else current.last_checked_at,
-                updated_at=now,
+                last_checked_at=now if checked else current.last_checked_at, updated_at=now,
             )
             self._validate(updated)
             write_json_atomic(self._path(updated.publication_id), asdict(updated))
@@ -212,27 +295,23 @@ class CloudSocialGatewayClient:
         nonce = secrets.token_hex(16)
         signature = request_signature(self.social_secret, timestamp, nonce, "POST", path, body)
         request = Request(self.gateway_url + path, data=body, method="POST", headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "X-Binario-Tenant": self.tenant_id,
-            "X-Binario-Timestamp": timestamp,
-            "X-Binario-Nonce": nonce,
-            "X-Binario-Signature": signature,
+            "Accept": "application/json", "Content-Type": "application/json",
+            "X-Binario-Tenant": self.tenant_id, "X-Binario-Timestamp": timestamp,
+            "X-Binario-Nonce": nonce, "X-Binario-Signature": signature,
         })
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 return int(response.status), _decode_response(response.read(MAX_RESPONSE_BYTES + 1))
         except HTTPError as exc:
             if allow_not_found and exc.code == 404:
-                raw = exc.read(MAX_RESPONSE_BYTES + 1) if exc.fp else b"{}"
-                return 404, _decode_response(raw)
+                return 404, _decode_response(exc.read(MAX_RESPONSE_BYTES + 1) if exc.fp else b"{}")
             raise CloudSocialTransportError(f"cloud social gateway HTTP {exc.code}") from None
         except URLError as exc:
             raise CloudSocialTransportError(f"cloud social gateway network error: {type(exc.reason).__name__}") from None
 
     def enqueue(self, payload: dict) -> dict:
         status, response = self._post(SOCIAL_ENQUEUE_PATH, payload, max_bytes=64 * 1024)
-        if status not in {200, 202} or response.get("schema") != "binario.marketing.remote-social-receipt.v1":
+        if status not in {200, 202} or response.get("schema") != REMOTE_SOCIAL_RECEIPT_SCHEMA:
             raise CloudSocialTransportError("cloud social enqueue receipt is invalid")
         return response
 
@@ -254,27 +333,14 @@ class CloudSocialBridge:
         self.client_factory = client_factory
         self._lock = threading.RLock()
 
-    @staticmethod
-    def _job(publication: Publication) -> dict:
-        if publication.status not in {"QUEUED", "DELEGATED"} or not publication.scheduled_for:
-            raise CloudSocialBridgeError("cloud delegation requires a scheduled queued/delegated publication")
-        candidate = {
-            "schema": REMOTE_SOCIAL_JOB_SCHEMA,
-            "publication": {
-                "id": publication.id, "project_id": publication.project_id, "channel": publication.channel,
-                "target_id": publication.target_id, "target_name": publication.target_name, "kind": publication.kind,
-                "message": publication.message, "link_url": publication.link_url, "media_url": publication.media_url,
-                "scheduled_for": publication.scheduled_for,
-            },
-            "approval": {"source_status": "QUEUED", "operator_approved": True},
-        }
-        return validate_remote_social_job(canonical_json_bytes(candidate))
-
     def _bound_client(self, delegation: CloudSocialDelegation) -> CloudSocialGatewayClient:
         master = self.credentials.read()
         if not master:
             raise CloudSocialBridgeError("gateway master credential is not configured")
-        return self.client_factory(delegation.gateway_url, delegation.tenant_id, derive_social_secret(master, delegation.tenant_id))
+        return self.client_factory(
+            delegation.gateway_url, delegation.tenant_id,
+            derive_social_tenant_secret(master, delegation.tenant_id),
+        )
 
     def _prepare(self, company_id: str, publication_id: str) -> tuple[Publication, dict, CloudSocialDelegation]:
         publication = self.social.get(publication_id)
@@ -285,10 +351,11 @@ class CloudSocialBridge:
         config = self.configs.get(company_id)
         if config is None:
             raise CloudSocialBridgeError("company public gateway is not configured")
-        job = self._job(publication)
+        job = _cloud_job(publication)
         digest = hashlib.sha256(canonical_json_bytes(job)).hexdigest()
         delegation = self.delegations.prepare(
-            company_id, publication.id, gateway_url=config.gateway_url, tenant_id=config.tenant_id, payload_sha256=digest,
+            company_id, publication.id, gateway_url=config.gateway_url,
+            tenant_id=config.tenant_id, payload_sha256=digest,
         )
         return publication, job, delegation
 
@@ -306,8 +373,6 @@ class CloudSocialBridge:
                     publication = self.social.delegate(publication.id)
             finally:
                 process_lock.release()
-            # Remote IO starts only after durable local authority withdrawal and after
-            # releasing the local queue lock; from this point due()/publish cannot own it.
             try:
                 receipt = self._bound_client(delegation).enqueue(job)
             except Exception as exc:
@@ -326,7 +391,7 @@ class CloudSocialBridge:
                 raise KeyError(publication_id)
             if publication.status != "DELEGATED" or delegation is None or delegation.status != "PREPARED":
                 raise CloudSocialBridgeError("only unconfirmed delegated publications can retry cloud enqueue")
-            job = self._job(publication)
+            job = _cloud_job(publication)
             digest = hashlib.sha256(canonical_json_bytes(job)).hexdigest()
             if not hmac.compare_digest(digest, delegation.payload_sha256):
                 raise CloudSocialBridgeError("delegated publication changed after authority withdrawal")
@@ -361,7 +426,7 @@ class CloudSocialBridge:
                 next_status = "PREPARED" if delegation.status == "PREPARED" else "AMBIGUOUS"
                 self.delegations.update(publication.id, status=next_status, checked=True)
                 return self.overview(publication.id)
-            if status_code != 200 or str(remote.get("publication_id") or "").lower() != publication.id:
+            if status_code != 200 or remote.get("schema") != REMOTE_SOCIAL_STATUS_SCHEMA or str(remote.get("publication_id") or "").lower() != publication.id:
                 raise CloudSocialBridgeError("cloud social status response is invalid")
             remote_status = str(remote.get("status") or "").strip().upper()
             ambiguous = bool(remote.get("provider_outcome_ambiguous", False))
@@ -393,19 +458,18 @@ class CloudSocialBridge:
         delegation = self.delegations.get(publication_id)
         return {
             "schema": "binario.marketing.cloud-social-delegation-overview.v1",
-            "publication_id": publication.id,
-            "company_id": publication.project_id,
+            "publication_id": publication.id, "company_id": publication.project_id,
             "local_status": publication.status,
             "local_scheduler_authority": publication.status == "QUEUED",
             "delegated": delegation is not None,
             "delegation": asdict(delegation) if delegation else None,
             "requires_manual_reconciliation": bool(delegation and delegation.status == "AMBIGUOUS"),
-            "secret_returned": False,
-            "publication_body_returned": False,
+            "secret_returned": False, "publication_body_returned": False,
         }
 
 
 __all__ = [
     "CloudSocialBridge", "CloudSocialBridgeError", "CloudSocialDelegation", "CloudSocialDelegationStore",
     "CloudSocialGatewayClient", "CloudSocialTransportError", "DELEGATION_SCHEMA", "DELEGATION_STATUSES",
+    "derive_social_tenant_secret",
 ]
