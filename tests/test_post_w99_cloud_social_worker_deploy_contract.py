@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import unittest
@@ -40,8 +41,36 @@ class CloudSocialWorkerDeployContractTests(unittest.TestCase):
             timeout=10,
         )
         self.assertEqual(completed.returncode, 64)
-        self.assertIn("BINARIO_SOCIAL_WORKER_ENABLED must equal 1", completed.stderr)
+        self.assertIn("BINARIO_SOCIAL_WORKER_ENABLED must equal 0 or 1", completed.stderr)
         self.assertEqual(completed.stdout, "")
+
+    def test_disabled_mode_is_a_no_claim_configuration_smoke(self):
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONPATH": f"{ROOT / 'src'}:{ROOT}",
+            "BINARIO_SOCIAL_WORKER_ENABLED": "0",
+            "BINARIO_SOCIAL_WORKER_TENANTS": "tenant_" + "a" * 24,
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SECRET_KEY": "test-only-secret",
+            "META_ACCESS_TOKEN": "test-only-meta-token",
+        }
+        completed = subprocess.run(
+            ["sh", str(RUNNER)],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "DISABLED")
+        self.assertFalse(payload["enabled"])
+        self.assertEqual(payload["claimed"], 0)
+        self.assertFalse(payload["configuration_secret_returned"])
+        self.assertNotIn(env["SUPABASE_SECRET_KEY"], completed.stdout + completed.stderr)
+        self.assertNotIn(env["META_ACCESS_TOKEN"], completed.stdout + completed.stderr)
 
     def test_runner_requires_headless_secrets_by_name_but_never_prints_values(self):
         runner = RUNNER.read_text(encoding="utf-8")
