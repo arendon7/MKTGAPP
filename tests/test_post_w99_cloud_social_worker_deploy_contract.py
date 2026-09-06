@@ -99,7 +99,7 @@ class CloudSocialWorkerDeployContractTests(unittest.TestCase):
 
     def test_deploy_contract_does_not_add_a_fourth_canonical_workflow(self):
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
-        self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "release-mac.yml"])
+        self.assertEqual(workflows, ["ci.yml", "full-mac-app.yml", "persistent-release.yml"])
 
     def test_python_project_keeps_zero_external_runtime_dependencies(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
