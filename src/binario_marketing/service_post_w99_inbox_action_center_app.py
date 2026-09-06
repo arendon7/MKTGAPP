@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import service_post_w99_cloud_social_bridge_app as base
-from .inbox_attention import InboxAttentionStore, extend_action_center, project_attention, reply_stages
+from .inbox_attention import ATTENTION_SCHEMA, InboxAttentionStore, extend_action_center, project_attention, reply_stages
 
 
 class AppRuntime(base.AppRuntime):
@@ -20,6 +20,17 @@ class AppRuntime(base.AppRuntime):
     def inbox_attention(self, company_id: str) -> dict:
         company = self.companies.get(company_id)
         snapshot = self.inbox_attention_store.get(company.id)
+        if snapshot is None and not (company.facebook_page_id or company.instagram_id):
+            return {
+                "schema": ATTENTION_SCHEMA,
+                "snapshot_state": "NOT_CONFIGURED",
+                "captured_at": None,
+                "items": [],
+                "refresh_required": False,
+                "suppressed_by_crm": 0,
+                "suppressed_by_reply": 0,
+                "provider_read_performed": False,
+            }
         activities = self.crm.list_activities(company.id)
         stages = reply_stages(self.inbox_replies.root, company.id)
         return project_attention(snapshot, activities=activities, stages=stages)
