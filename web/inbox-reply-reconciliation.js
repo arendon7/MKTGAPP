@@ -12,7 +12,7 @@
     `;document.head.append(s)
   }
 
-  function providerKind(kind){return kind==='message'?'facebook_message':kind==='comment'?'instagram_comment':null}
+  function providerKindFor(kind){return kind==='message'?'facebook_message':kind==='comment'?'instagram_comment':null}
   function resolution(item){const value=item?.reply_reconciliation;return value&&value.required===true&&Array.isArray(value.candidates)?value:null}
 
   async function refreshLocalProjections(){
@@ -22,7 +22,7 @@
   }
 
   async function resolve(kind,item,candidate,outcome,wrap){
-    const companyId=inboxCompanyId(),providerKind=providerKind(kind),interactionId=String(item?.id||'').trim();
+    const companyId=inboxCompanyId(),providerKind=providerKindFor(kind),interactionId=String(item?.id||'').trim();
     if(!companyId||!providerKind||!interactionId||!candidate)return;
     const sent=outcome==='SENT';
     const prompt=sent
