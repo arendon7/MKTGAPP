@@ -259,14 +259,8 @@ def project_attention(
         interaction_id = str(item.get("interaction_id") or "")
         if kind not in {"facebook_message", "instagram_comment"} or not interaction_id:
             continue
-        if any(_marker(kind, interaction_id) in summary for summary in summaries):
-            suppressed_crm += 1
-            continue
-        stage = stages.get((kind, interaction_id))
-        if stage == "SENT":
-            suppressed_reply += 1
-            continue
 
+        stage = stages.get((kind, interaction_id))
         actor = f"@{item['actor_handle']}" if item.get("actor_handle") else "Interacción social"
         if stage in {"SENDING", "AMBIGUOUS"}:
             rows.append({
@@ -280,6 +274,13 @@ def project_attention(
                 "reason_code": f"INBOX_REPLY_{stage}",
             })
             continue
+        if stage == "SENT":
+            suppressed_reply += 1
+            continue
+        if any(_marker(kind, interaction_id) in summary for summary in summaries):
+            suppressed_crm += 1
+            continue
+
         if kind == "facebook_message" and item.get("reply_eligible"):
             rank, urgency, attention_kind = 27, "HIGH", "incoming_message"
             title = f"Responder mensaje reciente · {actor}"
