@@ -192,15 +192,15 @@ class InboxReplyStore:
         if resolution not in _RECONCILIATION_OUTCOMES:
             raise ValueError("outcome must be SENT or NOT_SENT")
         with self._lock:
-            matches = [
+            blockers = [
                 row for row in self.for_interaction(company_id, kind, interaction_id)
-                if row.stage == expected and row.updated_at == observed_at
+                if row.stage in _BLOCKING_STAGES
             ]
-            if len(matches) != 1:
-                raise InboxReplyConflict("reply reconciliation evidence is stale or ambiguous; refresh the inbox before resolving it")
-            current = matches[0]
-            if current.stage not in _BLOCKING_STAGES:
-                raise InboxReplyConflict("reply checkpoint no longer requires reconciliation")
+            if len(blockers) != 1:
+                raise InboxReplyConflict("reply reconciliation requires exactly one blocking attempt; refresh the inbox and resolve any historical conflict manually")
+            current = blockers[0]
+            if current.stage != expected or current.updated_at != observed_at:
+                raise InboxReplyConflict("reply reconciliation evidence is stale; refresh the inbox before resolving it")
             stage = "RECONCILED_SENT" if resolution == "SENT" else "RETRY_ALLOWED"
             row = replace(current, stage=stage, remote_id=current.remote_id if stage == "RECONCILED_SENT" else None, updated_at=_now())
             write_json_atomic(self._path(current.key), asdict(row))
