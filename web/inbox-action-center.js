@@ -43,18 +43,12 @@
     return matched;
   }
 
-  function invalidateLocalAttentionViews(companyId){
-    if(typeof globalThis.postW99ActionState==='object'&&globalThis.postW99ActionState){
-      if(globalThis.postW99ActionState.companyId===companyId){
-        globalThis.postW99ActionState.payload=null;
-      }
-    }
-    if(typeof globalThis.postW99PortfolioState==='object'&&globalThis.postW99PortfolioState){
-      globalThis.postW99PortfolioState.payload=null;
-    }
-    if(typeof globalThis.postW99TodayPortfolioState==='object'&&globalThis.postW99TodayPortfolioState){
-      globalThis.postW99TodayPortfolioState.payload=null;
-    }
+  async function refreshLocalAttentionViews(){
+    const loads=[];
+    if(typeof globalThis.actionCenterLoad==='function')loads.push(globalThis.actionCenterLoad(true));
+    if(typeof globalThis.portfolioLoad==='function')loads.push(globalThis.portfolioLoad());
+    if(typeof globalThis.todayPortfolioLoad==='function')loads.push(globalThis.todayPortfolioLoad(true));
+    if(loads.length)await Promise.allSettled(loads);
   }
 
   if(typeof globalThis.actionCenterOpen==='function'){
@@ -81,7 +75,7 @@
     try{
       inboxState.data=await opsApi(`/api/companies/${encodeURIComponent(companyId)}/inbox/refresh-attention`,{method:'POST'});
       const exactLocated=applyExactTarget(inboxState.data,companyId);
-      invalidateLocalAttentionViews(companyId);
+      await refreshLocalAttentionViews();
       if(exactLocated)opsToast('Interacción objetivo localizada en la bandeja');
       else opsToast(inboxState.data.configured?'Bandeja Meta actualizada y enviada a Hoy':'Meta no está conectado');
     }catch(err){exactTarget=null;opsToast(err.message)}finally{inboxState.loading=false;inboxRenderCurrent()}
