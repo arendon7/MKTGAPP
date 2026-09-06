@@ -50,6 +50,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/cloud-social-bridge.js" > "$TMP/cloud-social-bridge.js"
 /usr/bin/curl --fail --silent "$BASE/inbox-action-center.js" > "$TMP/inbox-action-center.js"
 /usr/bin/curl --fail --silent "$BASE/inbox-reply-reconciliation.js" > "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/curl --fail --silent "$BASE/inbox-crm-identity.js" > "$TMP/inbox-crm-identity.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -80,15 +81,27 @@ done
 /usr/bin/grep -q 'Sí, se envió' "$TMP/inbox-reply-reconciliation.js"
 /usr/bin/grep -q 'No se envió' "$TMP/inbox-reply-reconciliation.js"
 /usr/bin/grep -q 'window.confirm' "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/grep -q '/inbox-crm-identity.js' "$TMP/inbox-reply-reconciliation.js"
 ! /usr/bin/grep -q 'setInterval' "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/grep -q 'crm-identity-link' "$TMP/inbox-crm-identity.js"
+/usr/bin/grep -q 'Vincular a CRM' "$TMP/inbox-crm-identity.js"
+/usr/bin/grep -q 'Cambiar vínculo CRM' "$TMP/inbox-crm-identity.js"
+/usr/bin/grep -q 'window.confirm' "$TMP/inbox-crm-identity.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/inbox-crm-identity.js"
+! /usr/bin/grep -q 'setTimeout' "$TMP/inbox-crm-identity.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/inbox-crm-identity.js"
+! /usr/bin/grep -q 'graph.facebook' "$TMP/inbox-crm-identity.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
-# refreshes provider status, invokes the explicit Inbox provider-read POST, or reconciles a reply.
+# refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
+# or creates/replaces an Inbox CRM identity link.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
+test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
+[[ -z "$(find "$DATA/State/social/inbox_crm_identity/links" -type f 2>/dev/null || true)" ]]
 
 /bin/kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + Inbox attention + reconciliation asset; no provider refresh or reconciliation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + Inbox attention + reconciliation + CRM identity asset; no provider refresh or identity mutation executed'

@@ -35,10 +35,14 @@ class AppRuntime(base.AppRuntime):
         stages = reply_stages(self.inbox_replies.root, company.id)
         return project_attention(snapshot, activities=activities, stages=stages)
 
+    def _inbox_attention_payload(self, company_id: str, *, conversation_limit: int = 10) -> dict:
+        """One provider-read hook for local decorators that must exist before snapshot minimization."""
+        return super().social_inbox(company_id, conversation_limit=conversation_limit)
+
     def refresh_inbox_attention(self, company_id: str) -> dict:
         """The only provider-read path added here; always operator-triggered POST."""
         company = self.companies.get(company_id)
-        payload = super().social_inbox(company.id, conversation_limit=10)
+        payload = self._inbox_attention_payload(company.id, conversation_limit=10)
         snapshot = self.inbox_attention_store.capture(
             company.id,
             page_id=company.facebook_page_id,

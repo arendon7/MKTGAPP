@@ -31,13 +31,16 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/inbox_attention.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_action_center_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_reply_reconciliation_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/inbox_crm_identity.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_crm_identity_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
 [[ -f "$RESOURCES/source/web/cloud-social-bridge.js" ]]
 [[ -f "$RESOURCES/source/web/inbox-action-center.js" ]]
 [[ -f "$RESOURCES/source/web/inbox-reply-reconciliation.js" ]]
-/usr/bin/grep -q 'service_post_w99_inbox_reply_reconciliation_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+[[ -f "$RESOURCES/source/web/inbox-crm-identity.js" ]]
+/usr/bin/grep -q 'service_post_w99_inbox_crm_identity_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'SocialProcessLock' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 ! /usr/bin/grep -q 'from gateway' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 /usr/bin/grep -q '/api/portfolio-control-tower' "$RESOURCES/source/web/today-portfolio.js"
@@ -52,6 +55,17 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 /usr/bin/grep -q 'window.confirm' "$RESOURCES/source/web/inbox-reply-reconciliation.js"
 ! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/inbox-reply-reconciliation.js"
 ! /usr/bin/grep -q 'fetch.*meta' "$RESOURCES/source/web/inbox-reply-reconciliation.js"
+/usr/bin/grep -q '/inbox-crm-identity.js' "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_crm_identity_app.py"
+/usr/bin/grep -q 'crm-identity-link' "$RESOURCES/source/web/inbox-crm-identity.js"
+/usr/bin/grep -q 'window.confirm' "$RESOURCES/source/web/inbox-crm-identity.js"
+/usr/bin/grep -q 'provider_person_id' "$RESOURCES/source/web/inbox-crm-identity.js"
+! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/inbox-crm-identity.js"
+! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/inbox-crm-identity.js"
+! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/inbox-crm-identity.js"
+! /usr/bin/grep -q 'graph.facebook' "$RESOURCES/source/web/inbox-crm-identity.js"
+/usr/bin/grep -q 'hmac.new' "$RESOURCES/source/src/binario_marketing/inbox_crm_identity.py"
+/usr/bin/grep -q '0o600' "$RESOURCES/source/src/binario_marketing/inbox_crm_identity.py"
+! /usr/bin/grep -q 'MetaGraph' "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_crm_identity_app.py"
 
 "$PY" -I -B - "$PROVENANCE" <<'PY'
 import json,sys
@@ -66,4 +80,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud delegation + Inbox attention + explicit reply reconciliation'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud delegation + Inbox attention + reply reconciliation + explicit CRM identity links'
