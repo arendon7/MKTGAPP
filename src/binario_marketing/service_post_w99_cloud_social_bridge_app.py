@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import service_post_w99_today_portfolio_app as base
 from .cloud_social_bridge import CloudSocialBridge, CloudSocialBridgeError, CloudSocialDelegationStore
@@ -13,13 +14,9 @@ class AppRuntime(base.AppRuntime):
     @classmethod
     def create(cls, repo_root: Path | None = None, data_root: Path | None = None) -> "AppRuntime":
         runtime = super().create(repo_root, data_root)
-        runtime.cloud_social_delegations = CloudSocialDelegationStore(
-            runtime.data_root / "State" / "cloud-social-delegations"
-        )
+        runtime.cloud_social_delegations = CloudSocialDelegationStore(runtime.data_root / "State" / "cloud-social-delegations")
         runtime.cloud_social_bridge = CloudSocialBridge(
-            runtime.social,
-            runtime.public_gateway_configs,
-            runtime.public_gateway_credentials,
+            runtime.social, runtime.public_gateway_configs, runtime.public_gateway_credentials,
             runtime.cloud_social_delegations,
         )
         return runtime
@@ -43,12 +40,10 @@ class AppRuntime(base.AppRuntime):
             raise ValueError("only queued or unconfirmed delegated publications can enter cloud handoff")
         result = self.cloud_social_bridge.delegate(company.id, row.id)
         self.workspace.registries.timeline.append("company.publication.cloud_delegated", {
-            "company_id": company.id,
-            "publication_id": row.id,
+            "company_id": company.id, "publication_id": row.id,
             "local_status": result["local_status"],
             "delegation_status": (result.get("delegation") or {}).get("status"),
-            "secret_logged": False,
-            "publication_body_logged": False,
+            "secret_logged": False, "publication_body_logged": False,
         })
         return result
 
@@ -56,10 +51,8 @@ class AppRuntime(base.AppRuntime):
         company, row = self._company_publication(company_id, publication_id)
         result = self.cloud_social_bridge.retry_enqueue(company.id, row.id)
         self.workspace.registries.timeline.append("company.publication.cloud_enqueue_retried", {
-            "company_id": company.id,
-            "publication_id": row.id,
-            "delegation_status": (result.get("delegation") or {}).get("status"),
-            "secret_logged": False,
+            "company_id": company.id, "publication_id": row.id,
+            "delegation_status": (result.get("delegation") or {}).get("status"), "secret_logged": False,
         })
         return result
 
@@ -67,12 +60,10 @@ class AppRuntime(base.AppRuntime):
         company, row = self._company_publication(company_id, publication_id)
         result = self.cloud_social_bridge.refresh_status(company.id, row.id)
         self.workspace.registries.timeline.append("company.publication.cloud_status_refreshed", {
-            "company_id": company.id,
-            "publication_id": row.id,
+            "company_id": company.id, "publication_id": row.id,
             "local_status": result["local_status"],
             "delegation_status": (result.get("delegation") or {}).get("status"),
-            "manual_reconciliation": bool(result.get("requires_manual_reconciliation")),
-            "secret_logged": False,
+            "manual_reconciliation": bool(result.get("requires_manual_reconciliation")), "secret_logged": False,
         })
         return result
 
@@ -81,16 +72,11 @@ MarketingHTTPServer = base.MarketingHTTPServer
 
 
 class MarketingHandler(base.MarketingHandler):
-    """Explicit local control routes; no cloud polling or automatic delegation."""
+    """Explicit local controls only; no cloud polling or automatic delegation."""
 
     @staticmethod
     def _cloud_route(parts: list[str]) -> tuple[str, str, str] | None:
-        if (
-            len(parts) == 7
-            and parts[:2] == ["api", "companies"]
-            and parts[3] == "publications"
-            and parts[5] == "cloud"
-        ):
+        if len(parts) == 7 and parts[:2] == ["api", "companies"] and parts[3] == "publications" and parts[5] == "cloud":
             return parts[2], parts[4], parts[6]
         return None
 
@@ -102,7 +88,42 @@ class MarketingHandler(base.MarketingHandler):
         else:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"internal error: {type(exc).__name__}")
 
+    def _static(self, path: str) -> None:
+        if path == "/today-portfolio.js":
+            target = self.server.runtime.repo_root / "web" / "today-portfolio.js"
+            if not target.is_file():
+                self._error(HTTPStatus.NOT_FOUND, "not found")
+                return
+            bootstrap = """
+;(function loadPostW99CloudSocialBridge(){
+  if(document.querySelector('script[data-post-w99-cloud-social-bridge]'))return;
+  const script=document.createElement('script');
+  script.src='/cloud-social-bridge.js';
+  script.defer=true;
+  script.dataset.postW99CloudSocialBridge='1';
+  document.head.append(script);
+})();
+"""
+            body = (target.read_text(encoding="utf-8") + bootstrap).encode("utf-8")
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
+            self.wfile.write(body)
+            return
+        if path == "/cloud-social-bridge.js":
+            target = self.server.runtime.repo_root / "web" / "cloud-social-bridge.js"
+            if not target.is_file():
+                self._error(HTTPStatus.NOT_FOUND, "not found")
+                return
+            body = target.read_bytes()
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
+            self.wfile.write(body)
+            return
+        super()._static(path)
+
     def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/cloud-social-bridge.js":
+            self._static(path)
+            return
         route = self._cloud_route(self._segments())
         if route and route[2] == "status":
             try:
@@ -119,14 +140,11 @@ class MarketingHandler(base.MarketingHandler):
             try:
                 with self.server.mutation_lock:
                     if action == "delegate":
-                        self._json(self.server.runtime.delegate_company_publication_to_cloud(company_id, publication_id))
-                        return
+                        self._json(self.server.runtime.delegate_company_publication_to_cloud(company_id, publication_id)); return
                     if action == "retry":
-                        self._json(self.server.runtime.retry_company_publication_cloud_enqueue(company_id, publication_id))
-                        return
+                        self._json(self.server.runtime.retry_company_publication_cloud_enqueue(company_id, publication_id)); return
                     if action == "refresh":
-                        self._json(self.server.runtime.refresh_company_publication_cloud_status(company_id, publication_id))
-                        return
+                        self._json(self.server.runtime.refresh_company_publication_cloud_status(company_id, publication_id)); return
                 self._error(HTTPStatus.NOT_FOUND, "route not found")
             except Exception as exc:
                 self._cloud_error(exc)
@@ -144,12 +162,11 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
     runtime = AppRuntime.create()
     server = create_server(runtime, host, port)
     actual_host, actual_port = server.server_address[:2]
-    url = f"http://{actual_host}:{actual_port}/"
-    print(f"BINARIO Marketing App · post-W99 Cloud Social Bridge: {url}")
+    print(f"BINARIO Marketing App · post-W99 Cloud Social Bridge: http://{actual_host}:{actual_port}/")
     print(f"Data: {runtime.data_root}")
     if open_browser:
         import webbrowser
-        webbrowser.open(url)
+        webbrowser.open(f"http://{actual_host}:{actual_port}/")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -157,10 +174,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, allow_network: bool = Fa
     finally:
         if runtime.social_scheduler is not None:
             runtime.social_scheduler.shutdown()
-        runtime.proxies.shutdown()
-        runtime.transcriptions.shutdown()
-        runtime.renders.shutdown()
-        server.server_close()
+        runtime.proxies.shutdown(); runtime.transcriptions.shutdown(); runtime.renders.shutdown(); server.server_close()
 
 
 __all__ = ["AppRuntime", "MarketingHandler", "MarketingHTTPServer", "create_server", "serve"]
