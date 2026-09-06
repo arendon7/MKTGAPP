@@ -134,21 +134,21 @@ class SupabaseSocialQueueStorage:
             raise RuntimeError("Supabase social queue get response is invalid")
         return self._row(data[0])
 
-    def status_metadata(self, tenant_id: str, publication_id: str) -> dict:
-        """Return only non-sensitive execution metadata needed for authority reconciliation."""
+    def status_snapshot(self, tenant_id: str, publication_id: str) -> tuple[RemoteSocialJob, bool] | None:
+        """Read job state and ambiguity flag from one PostgREST row snapshot."""
         query = "?" + urlencode({
-            "select": "provider_outcome_ambiguous",
+            "select": self._select() + ",provider_outcome_ambiguous",
             "tenant_id": f"eq.{tenant_id}",
             "publication_id": f"eq.{publication_id}",
             "limit": "1",
         })
         data = self._request("GET", TABLE, query)
         if not isinstance(data, list) or not data:
-            return {"provider_outcome_ambiguous": False}
-        row = data[0]
-        if not isinstance(row, dict):
-            raise RuntimeError("Supabase social status metadata is invalid")
-        return {"provider_outcome_ambiguous": bool(row.get("provider_outcome_ambiguous", False))}
+            return None
+        payload = data[0]
+        if not isinstance(payload, dict):
+            raise RuntimeError("Supabase social status snapshot is invalid")
+        return self._row(payload), bool(payload.get("provider_outcome_ambiguous", False))
 
     def insert(self, row: RemoteSocialJob) -> None:
         payload = {
