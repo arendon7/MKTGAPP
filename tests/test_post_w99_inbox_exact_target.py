@@ -37,6 +37,16 @@ class InboxExactTargetContractTests(unittest.TestCase):
         self.assertIn("refresh-attention", source)
         self.assertIn("method:'POST'", source)
 
+    def test_successful_capture_refreshes_only_existing_local_projection_loaders(self):
+        source = BROWSER.read_text(encoding="utf-8")
+        self.assertIn("globalThis.actionCenterLoad(true)", source)
+        self.assertIn("globalThis.portfolioLoad()", source)
+        self.assertIn("globalThis.todayPortfolioLoad(true)", source)
+        self.assertIn("Promise.allSettled(loads)", source)
+        self.assertNotIn("postW99ActionState.payload", source)
+        self.assertNotIn("postW99PortfolioState.payload", source)
+        self.assertNotIn("postW99TodayPortfolioState.payload", source)
+
     def test_no_exact_target_adds_provider_or_business_authority(self):
         source = BROWSER.read_text(encoding="utf-8")
         self.assertNotIn("fetch('https://", source)
