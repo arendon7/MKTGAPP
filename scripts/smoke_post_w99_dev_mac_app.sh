@@ -49,6 +49,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
 /usr/bin/curl --fail --silent "$BASE/cloud-social-bridge.js" > "$TMP/cloud-social-bridge.js"
 /usr/bin/curl --fail --silent "$BASE/inbox-action-center.js" > "$TMP/inbox-action-center.js"
+/usr/bin/curl --fail --silent "$BASE/inbox-reply-reconciliation.js" > "$TMP/inbox-reply-reconciliation.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -72,11 +73,17 @@ done
 /usr/bin/grep -q 'refresh-attention' "$TMP/inbox-action-center.js"
 /usr/bin/grep -q "method:'POST'" "$TMP/inbox-action-center.js"
 /usr/bin/grep -q 'enviada a Hoy' "$TMP/inbox-action-center.js"
+/usr/bin/grep -q '/inbox-reply-reconciliation.js' "$TMP/inbox-action-center.js"
 ! /usr/bin/grep -q 'setInterval' "$TMP/inbox-action-center.js"
 ! /usr/bin/grep -q 'MutationObserver' "$TMP/inbox-action-center.js"
+/usr/bin/grep -q 'reply-reconcile' "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/grep -q 'Sí, se envió' "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/grep -q 'No se envió' "$TMP/inbox-reply-reconciliation.js"
+/usr/bin/grep -q 'window.confirm' "$TMP/inbox-reply-reconciliation.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/inbox-reply-reconciliation.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
-# refreshes provider status, or invokes the explicit Inbox provider-read POST.
+# refreshes provider status, invokes the explicit Inbox provider-read POST, or reconciles a reply.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 
@@ -84,4 +91,4 @@ test ! -e "$AGENT"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + explicit Inbox attention adapter; no provider refresh executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + Inbox attention + reconciliation asset; no provider refresh or reconciliation executed'
