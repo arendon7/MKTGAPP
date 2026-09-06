@@ -10,8 +10,10 @@ from .atomic import write_json_atomic
 from .social_store import _now
 
 
-_STAGES = {"SENDING", "SENT", "AMBIGUOUS"}
+_STAGES = {"SENDING", "SENT", "AMBIGUOUS", "RECONCILED_SENT", "RETRY_ALLOWED"}
+_BLOCKING_STAGES = {"SENDING", "AMBIGUOUS"}
 _KINDS = {"facebook_message", "instagram_comment"}
+_RECONCILIATION_OUTCOMES = {"SENT", "NOT_SENT"}
 
 
 class InboxReplyConflict(RuntimeError):
@@ -81,13 +83,55 @@ class InboxReplyStore:
                 raise ValueError("invalid inbox reply checkpoint")
             return row
 
+    def for_interaction(self, company_id: str, kind: str, interaction_id: str) -> list[InboxReplyCheckpoint]:
+        company = str(company_id or "").strip()
+        action = str(kind or "").strip()
+        interaction = str(interaction_id or "").strip()
+        if not company or not interaction:
+            raise ValueError("company and interaction ids are required")
+        if action not in _KINDS:
+            raise ValueError("unsupported inbox reply kind")
+        rows: list[InboxReplyCheckpoint] = []
+        with self._lock:
+            for path in self.root.glob("*.json"):
+                row = self.get(path.stem)
+                if row is not None and row.company_id == company and row.kind == action and row.interaction_id == interaction:
+                    rows.append(row)
+        rows.sort(key=lambda row: (row.updated_at, row.key))
+        return rows
+
+    def reconciliation_candidates(self, company_id: str, kind: str, interaction_id: str) -> list[dict]:
+        """Expose only optimistic-concurrency metadata, never text hashes or checkpoint keys."""
+        return [
+            {"stage": row.stage, "updated_at": row.updated_at}
+            for row in self.for_interaction(company_id, kind, interaction_id)
+            if row.stage in _BLOCKING_STAGES
+        ]
+
     def begin(self, company_id: str, kind: str, interaction_id: str, text: str) -> tuple[InboxReplyCheckpoint, bool]:
         key, text_sha = self.identity(company_id, kind, interaction_id, text)
         with self._lock:
+            interaction_rows = self.for_interaction(company_id, kind, interaction_id)
+            # A provider-effect ambiguity belongs to the interaction, not to one exact text.
+            # Changing the text must never provide a blind-retry escape hatch.
+            if any(row.stage in _BLOCKING_STAGES for row in interaction_rows):
+                raise InboxReplyConflict(
+                    "This interaction has an unfinished or ambiguous Meta attempt. Verify the provider and reconcile that attempt before sending any reply."
+                )
+            # A human-confirmed SENT resolution is deliberately terminal for this exact interaction.
+            # A later genuine incoming message/comment must have a new provider interaction id.
+            if any(row.stage == "RECONCILED_SENT" for row in interaction_rows):
+                raise InboxReplyConflict(
+                    "This interaction was manually confirmed as already sent after provider verification; a second reply is blocked."
+                )
             existing = self.get(key)
             if existing is not None:
                 if existing.stage == "SENT" and existing.remote_id:
                     return existing, True
+                if existing.stage == "RETRY_ALLOWED":
+                    row = replace(existing, stage="SENDING", remote_id=None, updated_at=_now())
+                    write_json_atomic(self._path(key), asdict(row))
+                    return row, False
                 raise InboxReplyConflict(
                     "This reply already has an unfinished or ambiguous Meta attempt. Refresh the inbox and verify the provider before trying again."
                 )
@@ -123,8 +167,45 @@ class InboxReplyStore:
             current = self.get(key)
             if current is None:
                 raise InboxReplyConflict("reply checkpoint is missing")
-            if current.stage == "SENT":
+            if current.stage in {"SENT", "RECONCILED_SENT"}:
                 return current
+            if current.stage == "RETRY_ALLOWED":
+                raise InboxReplyConflict("reply checkpoint is already reconciled as not sent")
             row = replace(current, stage="AMBIGUOUS", updated_at=_now())
             write_json_atomic(self._path(key), asdict(row))
+            return row
+
+    def reconcile(
+        self,
+        company_id: str,
+        kind: str,
+        interaction_id: str,
+        *,
+        expected_stage: str,
+        expected_updated_at: str,
+        outcome: str,
+    ) -> InboxReplyCheckpoint:
+        """Record a human provider verification. This method performs no provider I/O."""
+        expected = str(expected_stage or "").strip().upper()
+        observed_at = str(expected_updated_at or "").strip()
+        resolution = str(outcome or "").strip().upper()
+        if expected not in _BLOCKING_STAGES:
+            raise ValueError("expected_stage must be SENDING or AMBIGUOUS")
+        if not observed_at:
+            raise ValueError("expected_updated_at is required")
+        if resolution not in _RECONCILIATION_OUTCOMES:
+            raise ValueError("outcome must be SENT or NOT_SENT")
+        with self._lock:
+            blockers = [
+                row for row in self.for_interaction(company_id, kind, interaction_id)
+                if row.stage in _BLOCKING_STAGES
+            ]
+            if len(blockers) != 1:
+                raise InboxReplyConflict("reply reconciliation requires exactly one blocking attempt; refresh the inbox and resolve any historical conflict manually")
+            current = blockers[0]
+            if current.stage != expected or current.updated_at != observed_at:
+                raise InboxReplyConflict("reply reconciliation evidence is stale; refresh the inbox before resolving it")
+            stage = "RECONCILED_SENT" if resolution == "SENT" else "RETRY_ALLOWED"
+            row = replace(current, stage=stage, remote_id=current.remote_id if stage == "RECONCILED_SENT" else None, updated_at=_now())
+            write_json_atomic(self._path(current.key), asdict(row))
             return row

@@ -45,10 +45,12 @@ PLIST="$CONTENTS/Info.plist"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_cloud_social_bridge_app.py" ]] || fail "post-W99 cloud social bridge terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/inbox_attention.py" ]] || fail "post-W99 inbox attention core is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_action_center_app.py" ]] || fail "post-W99 inbox action center terminal is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_reply_reconciliation_app.py" ]] || fail "post-W99 inbox reply reconciliation terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]] || fail "post-W99 calendar control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]] || fail "post-W99 Today portfolio browser surface is missing from packaged source"
 [[ -f "$RESOURCES/source/web/cloud-social-bridge.js" ]] || fail "post-W99 cloud social browser control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/inbox-action-center.js" ]] || fail "post-W99 inbox action center browser adapter is missing from packaged source"
+[[ -f "$RESOURCES/source/web/inbox-reply-reconciliation.js" ]] || fail "post-W99 inbox reply reconciliation browser adapter is missing from packaged source"
 
 cat > "$LAUNCH" <<'PY'
 from __future__ import annotations
