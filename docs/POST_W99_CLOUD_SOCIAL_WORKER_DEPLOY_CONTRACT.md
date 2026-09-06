@@ -37,13 +37,17 @@ python -m binario_marketing.cloud_social_worker
 
 ## Required secret/configuration inputs
 
-A headless production run is fail-closed unless all of these conditions are true:
+The runner accepts only two explicit authority modes:
 
-- `BINARIO_SOCIAL_WORKER_ENABLED=1`
+- `BINARIO_SOCIAL_WORKER_ENABLED=0`: configuration smoke. The Python worker returns `DISABLED` before resolving Meta credentials or claiming database work.
+- `BINARIO_SOCIAL_WORKER_ENABLED=1`: real one-shot execution authority.
+
+Both modes fail closed unless these inputs are present:
+
 - `BINARIO_SOCIAL_WORKER_TENANTS` contains the explicit tenant allowlist.
 - `SUPABASE_URL` is present and uses HTTPS.
 - One of `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` is present.
-- `META_ACCESS_TOKEN` is present.
+- `META_ACCESS_TOKEN` is present for the headless deployment contract.
 
 Optional bounded worker variables remain owned by the worker implementation:
 
@@ -51,7 +55,13 @@ Optional bounded worker variables remain owned by the worker implementation:
 - `BINARIO_SOCIAL_WORKER_LEASE_SECONDS`
 - `META_GRAPH_API_VERSION`
 
-The runner checks only presence and the hard enable/HTTPS requirements. It never echoes credential values. The Python worker performs the canonical tenant, numeric, Meta and lease validation.
+The wrapper checks only presence, explicit authority mode and the HTTPS requirement. It never echoes credential values. The Python worker performs the canonical tenant, numeric, Meta and lease validation.
+
+### Safe preflight
+
+Before enabling publication authority, launch the exact production image once with `BINARIO_SOCIAL_WORKER_ENABLED=0` and the intended environment bindings. A successful run exits `0` with a secret-free `DISABLED` result and `claimed=0`. This verifies the container entrypoint and static deployment configuration without touching Meta or claiming a queued publication.
+
+Only after that preflight should the scheduled service switch to `BINARIO_SOCIAL_WORKER_ENABLED=1`.
 
 ## Scheduler contract
 
@@ -59,10 +69,11 @@ A compatible scheduler should:
 
 1. Start this container on a recurring private schedule.
 2. Inject secrets through the hosting provider's secret/environment mechanism.
-3. Allow the process to exit after each invocation.
-4. Treat a non-zero process exit as an operational signal requiring inspection.
-5. Never wrap this process in a public HTTP endpoint merely to trigger it.
-6. Avoid overlapping invocations when possible; the Supabase atomic lease protocol remains the authoritative concurrency boundary if overlap occurs.
+3. Set `BINARIO_SOCIAL_WORKER_ENABLED=1` only after the disabled preflight succeeds.
+4. Allow the process to exit after each invocation.
+5. Treat a non-zero process exit as an operational signal requiring inspection.
+6. Never wrap this process in a public HTTP endpoint merely to trigger it.
+7. Avoid overlapping invocations when possible; the Supabase atomic lease protocol remains the authoritative concurrency boundary if overlap occurs.
 
 A 1–5 minute cadence is operationally reasonable for social scheduling, but this repository deliberately does not codify provider-specific cron syntax until the actual hosting target is selected and connected.
 
@@ -98,8 +109,8 @@ Once a hosting target and the correct Supabase project are explicitly identified
 3. Configure `META_ACCESS_TOKEN` in the private worker service.
 4. Configure the explicit tenant allowlist.
 5. Build this Dockerfile from the post-W99 development branch/revision.
-6. Run a disabled/configuration smoke first.
-7. Enable the worker and exercise one non-production/test publication path.
+6. Run the exact image with `BINARIO_SOCIAL_WORKER_ENABLED=0` and confirm the secret-free `DISABLED`/`claimed=0` result.
+7. Set `BINARIO_SOCIAL_WORKER_ENABLED=1` and exercise one non-production/test publication path.
 8. Add a private recurring schedule only after the one-shot execution is verified.
 
 This remains post-W99 development work and has no authority over the frozen `main@60ef38aa01c841c60f98b7dc79fcc9bb5d676e53` candidate.
