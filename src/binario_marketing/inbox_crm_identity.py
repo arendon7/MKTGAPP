@@ -81,6 +81,13 @@ class InboxCRMIdentityStore:
         return interaction
 
     @staticmethod
+    def _observed_at(value: object) -> str:
+        observed = str(value or "").strip()
+        if not observed or len(observed) > 100 or any(ord(ch) < 33 or ord(ch) == 127 for ch in observed):
+            raise ValueError("invalid observed_at")
+        return observed
+
+    @staticmethod
     def _contact(value: object) -> str:
         contact = str(value or "").strip()
         if not CONTACT_ID_RE.fullmatch(contact):
@@ -140,13 +147,15 @@ class InboxCRMIdentityStore:
         provider: object,
         interaction_id: object,
         provider_person_id: object,
+        observed_at: object,
     ) -> str:
-        """Return a non-persisted proof binding one observed interaction to its actor."""
+        """Return a non-persisted proof binding one refresh, interaction and actor."""
         company = self._company(company_id)
         channel = self._provider(provider)
         interaction = self._interaction_id(interaction_id)
         person = self._person_id(provider_person_id)
-        message = f"binario-inbox-crm-intent-v1\0{company}\0{channel}\0{interaction}\0{person}".encode("utf-8")
+        observed = self._observed_at(observed_at)
+        message = f"binario-inbox-crm-intent-v1\0{company}\0{channel}\0{interaction}\0{person}\0{observed}".encode("utf-8")
         return hmac.new(self._key(), message, hashlib.sha256).hexdigest()
 
     def verify_intent(
@@ -155,12 +164,13 @@ class InboxCRMIdentityStore:
         provider: object,
         interaction_id: object,
         provider_person_id: object,
+        observed_at: object,
         token: object,
     ) -> bool:
         supplied = str(token or "").strip().lower()
         if len(supplied) != 64 or any(ch not in "0123456789abcdef" for ch in supplied):
             return False
-        expected = self.intent_token(company_id, provider, interaction_id, provider_person_id)
+        expected = self.intent_token(company_id, provider, interaction_id, provider_person_id, observed_at)
         return hmac.compare_digest(expected, supplied)
 
     def _path(self, fingerprint: str) -> Path:
