@@ -20,6 +20,7 @@ from gateway.social_queue import REMOTE_SOCIAL_JOB_SCHEMA, validate_remote_socia
 from .atomic import write_json_atomic
 from .company_store import COMPANY_ID_RE
 from .public_gateway import GatewayCredentialStore, PublicGatewayConfigStore, canonical_json_bytes, request_signature
+from .social_process_lock import SocialProcessLock
 from .social_store import Publication, SocialStore, _now
 
 
@@ -60,6 +61,18 @@ def _tenant(value: object) -> str:
     if not _TENANT_ID_RE.fullmatch(text):
         raise ValueError("invalid cloud social tenant id")
     return text
+
+
+def _decode_response(raw: bytes) -> dict:
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise CloudSocialTransportError("cloud social gateway response exceeded limit")
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CloudSocialTransportError("cloud social gateway returned invalid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise CloudSocialTransportError("cloud social gateway response must be an object")
+    return decoded
 
 
 @dataclass(frozen=True)
@@ -191,7 +204,7 @@ class CloudSocialGatewayClient:
         self.social_secret = secret
         self.timeout = max(1.0, min(float(timeout), 30.0))
 
-    def _post(self, path: str, payload: dict, *, max_bytes: int) -> tuple[int, dict]:
+    def _post(self, path: str, payload: dict, *, max_bytes: int, allow_not_found: bool = False) -> tuple[int, dict]:
         body = canonical_json_bytes(payload)
         if len(body) > max_bytes:
             raise ValueError("cloud social request body exceeds endpoint limit")
@@ -208,21 +221,14 @@ class CloudSocialGatewayClient:
         })
         try:
             with urlopen(request, timeout=self.timeout) as response:
-                status = int(response.status)
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                return int(response.status), _decode_response(response.read(MAX_RESPONSE_BYTES + 1))
         except HTTPError as exc:
+            if allow_not_found and exc.code == 404:
+                raw = exc.read(MAX_RESPONSE_BYTES + 1) if exc.fp else b"{}"
+                return 404, _decode_response(raw)
             raise CloudSocialTransportError(f"cloud social gateway HTTP {exc.code}") from None
         except URLError as exc:
             raise CloudSocialTransportError(f"cloud social gateway network error: {type(exc.reason).__name__}") from None
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise CloudSocialTransportError("cloud social gateway response exceeded limit")
-        try:
-            decoded = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise CloudSocialTransportError("cloud social gateway returned invalid JSON") from exc
-        if not isinstance(decoded, dict):
-            raise CloudSocialTransportError("cloud social gateway response must be an object")
-        return status, decoded
 
     def enqueue(self, payload: dict) -> dict:
         status, response = self._post(SOCIAL_ENQUEUE_PATH, payload, max_bytes=64 * 1024)
@@ -234,7 +240,7 @@ class CloudSocialGatewayClient:
         publication = str(publication_id or "").strip().lower()
         if not _PUBLICATION_ID_RE.fullmatch(publication):
             raise ValueError("invalid publication id")
-        return self._post(SOCIAL_STATUS_PATH, {"publication_id": publication}, max_bytes=4096)
+        return self._post(SOCIAL_STATUS_PATH, {"publication_id": publication}, max_bytes=4096, allow_not_found=True)
 
 
 class CloudSocialBridge:
@@ -255,15 +261,9 @@ class CloudSocialBridge:
         candidate = {
             "schema": REMOTE_SOCIAL_JOB_SCHEMA,
             "publication": {
-                "id": publication.id,
-                "project_id": publication.project_id,
-                "channel": publication.channel,
-                "target_id": publication.target_id,
-                "target_name": publication.target_name,
-                "kind": publication.kind,
-                "message": publication.message,
-                "link_url": publication.link_url,
-                "media_url": publication.media_url,
+                "id": publication.id, "project_id": publication.project_id, "channel": publication.channel,
+                "target_id": publication.target_id, "target_name": publication.target_name, "kind": publication.kind,
+                "message": publication.message, "link_url": publication.link_url, "media_url": publication.media_url,
                 "scheduled_for": publication.scheduled_for,
             },
             "approval": {"source_status": "QUEUED", "operator_approved": True},
@@ -274,11 +274,7 @@ class CloudSocialBridge:
         master = self.credentials.read()
         if not master:
             raise CloudSocialBridgeError("gateway master credential is not configured")
-        return self.client_factory(
-            delegation.gateway_url,
-            delegation.tenant_id,
-            derive_social_secret(master, delegation.tenant_id),
-        )
+        return self.client_factory(delegation.gateway_url, delegation.tenant_id, derive_social_secret(master, delegation.tenant_id))
 
     def _prepare(self, company_id: str, publication_id: str) -> tuple[Publication, dict, CloudSocialDelegation]:
         publication = self.social.get(publication_id)
@@ -292,8 +288,7 @@ class CloudSocialBridge:
         job = self._job(publication)
         digest = hashlib.sha256(canonical_json_bytes(job)).hexdigest()
         delegation = self.delegations.prepare(
-            company_id, publication.id,
-            gateway_url=config.gateway_url, tenant_id=config.tenant_id, payload_sha256=digest,
+            company_id, publication.id, gateway_url=config.gateway_url, tenant_id=config.tenant_id, payload_sha256=digest,
         )
         return publication, job, delegation
 
@@ -302,10 +297,17 @@ class CloudSocialBridge:
         if not COMPANY_ID_RE.fullmatch(company):
             raise ValueError("invalid company id")
         with self._lock:
-            publication, job, delegation = self._prepare(company, publication_id)
-            if publication.status == "QUEUED":
-                publication = self.social.delegate(publication.id)
-            # Remote IO starts only after durable local authority withdrawal.
+            process_lock = SocialProcessLock(self.social.root)
+            if not process_lock.acquire():
+                raise CloudSocialBridgeError("local publication queue is busy in another process")
+            try:
+                publication, job, delegation = self._prepare(company, publication_id)
+                if publication.status == "QUEUED":
+                    publication = self.social.delegate(publication.id)
+            finally:
+                process_lock.release()
+            # Remote IO starts only after durable local authority withdrawal and after
+            # releasing the local queue lock; from this point due()/publish cannot own it.
             try:
                 receipt = self._bound_client(delegation).enqueue(job)
             except Exception as exc:
