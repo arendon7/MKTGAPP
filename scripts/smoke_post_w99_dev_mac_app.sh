@@ -9,9 +9,12 @@ PORT="${BINARIO_POST_W99_SMOKE_PORT:-18766}"
 
 EXEC="$APP/Contents/MacOS/Binario Marketing IA"
 PLIST="$APP/Contents/Info.plist"
+RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
+/usr/bin/grep -q 'service_post_w99_results_freshness_guard_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
 
 TMP="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/binario-post-w99-smoke.XXXXXX")"
 DATA="$TMP/data"
@@ -94,14 +97,17 @@ done
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
 # refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
-# or creates/replaces an Inbox CRM identity link.
+# creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
+# or requests campaign AI.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 [[ -z "$(find "$DATA/State/social/inbox_crm_identity/links" -type f 2>/dev/null || true)" ]]
+[[ -z "$(find "$DATA/State/learning/decisions" -type f 2>/dev/null || true)" ]]
+[[ -z "$(find "$DATA/State/ai/sessions" -type f 2>/dev/null || true)" ]]
 
 /bin/kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + Inbox attention + reconciliation + CRM identity asset; no provider refresh or identity mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness guard; no provider refresh, decision or AI mutation executed'
