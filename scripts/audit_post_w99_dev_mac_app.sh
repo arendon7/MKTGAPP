@@ -33,6 +33,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_reply_reconciliation_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/inbox_crm_identity.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_crm_identity_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/results_freshness.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -40,7 +42,13 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/inbox-action-center.js" ]]
 [[ -f "$RESOURCES/source/web/inbox-reply-reconciliation.js" ]]
 [[ -f "$RESOURCES/source/web/inbox-crm-identity.js" ]]
-/usr/bin/grep -q 'service_post_w99_inbox_crm_identity_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_results_freshness_guard_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_inbox_crm_identity_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py"
+/usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
+/usr/bin/grep -q 'CAPTURE_RESULTS' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
+/usr/bin/grep -q 'record_learning_decision' "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py"
+/usr/bin/grep -q 'generate_ai_copilot' "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py"
 /usr/bin/grep -q 'SocialProcessLock' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 ! /usr/bin/grep -q 'from gateway' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 /usr/bin/grep -q '/api/portfolio-control-tower' "$RESOURCES/source/web/today-portfolio.js"
@@ -80,4 +88,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud delegation + Inbox attention + reply reconciliation + explicit CRM identity links'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud delegation + Inbox loop + CRM identity + results decision freshness guard'
