@@ -48,6 +48,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/social-background-control.js" > "$TMP/social-background-control.js"
 /usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
 /usr/bin/curl --fail --silent "$BASE/cloud-social-bridge.js" > "$TMP/cloud-social-bridge.js"
+/usr/bin/curl --fail --silent "$BASE/inbox-action-center.js" > "$TMP/inbox-action-center.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -66,10 +67,16 @@ done
 /usr/bin/grep -q 'Delegar a cloud' "$TMP/cloud-social-bridge.js"
 /usr/bin/grep -q 'Estado cloud' "$TMP/cloud-social-bridge.js"
 /usr/bin/grep -q 'window.confirm' "$TMP/cloud-social-bridge.js"
+/usr/bin/grep -q '/inbox-action-center.js' "$TMP/cloud-social-bridge.js"
 ! /usr/bin/grep -q 'setInterval' "$TMP/cloud-social-bridge.js"
+/usr/bin/grep -q 'refresh-attention' "$TMP/inbox-action-center.js"
+/usr/bin/grep -q "method:'POST'" "$TMP/inbox-action-center.js"
+/usr/bin/grep -q 'enviada a Hoy' "$TMP/inbox-action-center.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/inbox-action-center.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/inbox-action-center.js"
 
-# Smoke remains read-only for both scheduling mechanisms: it never installs launchd,
-# delegates a publication, retries remote enqueue or refreshes a remote provider status.
+# Smoke remains read-only: it never installs launchd, delegates cloud publication,
+# refreshes provider status, or invokes the explicit Inbox provider-read POST.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 
@@ -77,4 +84,4 @@ test ! -e "$AGENT"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + explicit cloud social controls; no automatic scheduler mutation'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud controls + explicit Inbox attention adapter; no provider refresh executed'
