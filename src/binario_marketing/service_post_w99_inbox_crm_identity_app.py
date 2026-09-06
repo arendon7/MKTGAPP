@@ -14,6 +14,7 @@ _KIND_PROVIDER = {
     "facebook_message": "facebook",
     "instagram_comment": "instagram",
 }
+_LINKED_STATES = {"LINKED", "LINKED_USERNAME_MISMATCH"}
 
 
 class AppRuntime(base.AppRuntime):
@@ -71,7 +72,7 @@ class AppRuntime(base.AppRuntime):
         try:
             linked = self._linked_contact(company_id, link.contact_id)
         except (KeyError, ValueError):
-            item["crm_contact"] = None if not username_match else username_match
+            item["crm_contact"] = username_match
             item["crm_identity"] = {
                 "state": "BROKEN",
                 "can_link": True,
@@ -82,23 +83,24 @@ class AppRuntime(base.AppRuntime):
             return
 
         linked_summary = self._contact_summary(linked)
+        item["crm_contact"] = linked_summary
         if username_match and str(username_match.get("id") or "") != linked.id:
-            item["crm_contact"] = None
             item["crm_identity"] = {
-                "state": "CONFLICT",
+                "state": "LINKED_USERNAME_MISMATCH",
                 "can_link": True,
                 "current_contact": linked_summary,
                 "username_contact": username_match,
+                "explicit_link_authority": True,
                 "provider_person_id_persisted": False,
                 "fingerprint_exposed": False,
             }
             return
 
-        item["crm_contact"] = linked_summary
         item["crm_identity"] = {
             "state": "LINKED",
             "can_link": True,
             "current_contact": linked_summary,
+            "explicit_link_authority": True,
             "provider_person_id_persisted": False,
             "fingerprint_exposed": False,
         }
@@ -106,6 +108,7 @@ class AppRuntime(base.AppRuntime):
     def _decorate_identity_payload(self, company_id: str, payload: dict) -> dict:
         result = payload
         matched: set[str] = set()
+        linked_items = 0
         for conversation in result.get("conversations") or []:
             if not isinstance(conversation, dict):
                 continue
@@ -116,6 +119,8 @@ class AppRuntime(base.AppRuntime):
                 contact = message.get("crm_contact")
                 if isinstance(contact, dict) and contact.get("id"):
                     matched.add(str(contact["id"]))
+                if (message.get("crm_identity") or {}).get("state") in _LINKED_STATES:
+                    linked_items += 1
         for comment in result.get("comments") or []:
             if not isinstance(comment, dict):
                 continue
@@ -123,17 +128,11 @@ class AppRuntime(base.AppRuntime):
             contact = comment.get("crm_contact")
             if isinstance(contact, dict) and contact.get("id"):
                 matched.add(str(contact["id"]))
+            if (comment.get("crm_identity") or {}).get("state") in _LINKED_STATES:
+                linked_items += 1
         summary = dict(result.get("summary") or {})
         summary["crm_matches"] = len(matched)
-        summary["crm_identity_links"] = sum(
-            1
-            for conversation in result.get("conversations") or []
-            for row in (conversation.get("messages") or [])
-            if isinstance(row, dict) and (row.get("crm_identity") or {}).get("state") == "LINKED"
-        ) + sum(
-            1 for row in result.get("comments") or []
-            if isinstance(row, dict) and (row.get("crm_identity") or {}).get("state") == "LINKED"
-        )
+        summary["crm_identity_links"] = linked_items
         result["summary"] = summary
         return result
 
@@ -200,7 +199,6 @@ class AppRuntime(base.AppRuntime):
             if item.get("kind") == kind and str(item.get("interaction_id") or "") == interaction_id:
                 if item.get("crm_contact_id") != contact_id:
                     item["crm_contact_id"] = contact_id
-                    item["crm_link_updated_at"] = str(snapshot.get("captured_at") or "")
                     changed = True
         if changed:
             self.inbox_attention_store.save(updated)
