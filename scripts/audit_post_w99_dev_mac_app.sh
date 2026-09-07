@@ -39,6 +39,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_review_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/ai_recommendation_handoff.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -48,7 +50,9 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/inbox-crm-identity.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-review.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-handoff.js" ]]
-/usr/bin/grep -q 'service_post_w99_ai_recommendation_handoff_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+[[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]]
+/usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_ai_recommendation_handoff_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_review_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py"
 /usr/bin/grep -q 'service_post_w99_results_freshness_guard_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_review_app.py"
 /usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
@@ -68,6 +72,13 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 /usr/bin/grep -q 'resolve_ai_recommendation_handoff' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py"
 ! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py"
 ! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py"
+/usr/bin/grep -q 'FOLLOWUP_WINDOW_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py"
+/usr/bin/grep -q 'rank=88' "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py"
+/usr/bin/grep -q 'CAMPAIGN_CAPTURE_RESULTS' "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py"
+/usr/bin/grep -q 'causal_attribution_to_ai' "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py"
+/usr/bin/grep -q 'ai_recommendation_causal_attribution' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
+! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
 /usr/bin/grep -q 'SocialProcessLock' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 ! /usr/bin/grep -q 'from gateway' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 /usr/bin/grep -q '/api/portfolio-control-tower' "$RESOURCES/source/web/today-portfolio.js"
@@ -116,6 +127,16 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 ! /usr/bin/grep -q 'localStorage' "$RESOURCES/source/web/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'sessionStorage' "$RESOURCES/source/web/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/ai-recommendation-handoff.js"
+/usr/bin/grep -q 'POST_W99_AI_RECOMMENDATION_EVIDENCE' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'Abrir Resultados para actualizar' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'causalidad' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q "method:'POST'" "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'localStorage' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'sessionStorage' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/ai-recommendation-evidence.js"
 
 "$PY" -I -B - "$PROVENANCE" <<'PY'
 import json,sys
@@ -130,4 +151,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence'
