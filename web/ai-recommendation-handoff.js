@@ -37,7 +37,7 @@
 
   function capture(companyId,item){
     const action=item?.action||item||{},kind=String(item?.kind||'').toLowerCase();
-    if(kind!=='ai_accepted_handoff'||!action.entity_id||!action.view)return;
+    if(kind!=='ai_accepted_handoff'||action.tab!=='ai-accepted-handoff'||!action.entity_id||!action.view)return;
     activeHandoff={companyId:String(companyId||'').trim()||null,recommendationId:String(action.entity_id),ownerView:String(action.view)};
   }
 
@@ -106,7 +106,7 @@
     const baseOpen=globalThis.actionCenterOpen;globalThis.actionCenterOpen=function postW99AIHandoffOpen(item){capture(company()?.id,item);const value=baseOpen.apply(this,arguments);queueMicrotask(renderOwnerContext);return value};
   }
   if(typeof globalThis.portfolioNavigate==='function'){
-    const baseNavigate=globalThis.portfolioNavigate;globalThis.portfolioNavigate=async function postW99AIHandoffPortfolioNavigate(companyId,action){capture(companyId,{kind:'ai_accepted_handoff',action});const value=await baseNavigate.apply(this,arguments);queueMicrotask(renderOwnerContext);return value};
+    const baseNavigate=globalThis.portfolioNavigate;globalThis.portfolioNavigate=async function postW99AIHandoffPortfolioNavigate(companyId,action){if(action?.tab==='ai-accepted-handoff')capture(companyId,{kind:'ai_accepted_handoff',action});const value=await baseNavigate.apply(this,arguments);queueMicrotask(renderOwnerContext);return value};
   }
   if(typeof globalThis.actionCenterLoad==='function'){
     const baseLoad=globalThis.actionCenterLoad;globalThis.actionCenterLoad=async function postW99AIHandoffActionCenterLoad(){const value=await baseLoad.apply(this,arguments);await load(true);return value};
