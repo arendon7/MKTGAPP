@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from . import service_post_w99_action_center_app as action_base
@@ -174,6 +174,7 @@ def project_recommendation_evidence(
                 "recommendation_id": resolution.recommendation_id,
                 "session_id": resolution.session_id,
                 "applied_at": resolution.resolved_at,
+                "followup_due_at": None,
                 "state": "IDENTITY_GAP",
                 "state_reason": "La resolución existe, pero la sesión/recomendación histórica exacta ya no está disponible para reconstruir el objetivo sin inferencias.",
                 "target": {"kind": "UNKNOWN", "id": None, "campaign_id": None, "media_id": None},
@@ -186,6 +187,7 @@ def project_recommendation_evidence(
         route = _route(recommendation)
         target = _target(recommendation)
         applied = _timestamp(resolution.resolved_at)
+        followup_due_at = None if applied is None else (applied + timedelta(seconds=FOLLOWUP_WINDOW_SECONDS)).isoformat()
         age_seconds = None if applied is None or applied > current else int((current - applied).total_seconds())
         post_snapshots = []
         if applied is not None:
@@ -225,6 +227,7 @@ def project_recommendation_evidence(
             "area": recommendation.get("area"),
             "task": recommendation.get("task"),
             "applied_at": resolution.resolved_at,
+            "followup_due_at": followup_due_at,
             "age_seconds": age_seconds,
             "state": state,
             "state_reason": reason,
@@ -331,7 +334,7 @@ def extend_action_center(payload: dict, evidence: dict) -> dict:
             entity_id=row.get("recommendation_id"),
             campaign_id=target.get("campaign_id"),
             media_id=target.get("media_id"),
-            due_at=row.get("applied_at"),
+            due_at=row.get("followup_due_at"),
             reason_code="AI_RECOMMENDATION_POST_APPLICATION_CAPTURE_DUE",
             reason="La captura sirve para observar qué ocurrió después del cierre humano. No demuestra que la recomendación ni Astra causaran el resultado.",
         )
