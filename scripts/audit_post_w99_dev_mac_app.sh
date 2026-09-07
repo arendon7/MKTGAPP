@@ -41,6 +41,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -51,6 +53,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/ai-recommendation-review.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-handoff.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]]
+/usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_handoff_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_review_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_handoff_app.py"
@@ -79,6 +83,13 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 /usr/bin/grep -q 'ai_recommendation_causal_attribution' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
 ! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
 ! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py"
+/usr/bin/grep -q 'MAX_FEEDBACK_ITEMS = 12' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
+/usr/bin/grep -q 'prior_ai_text_is_untrusted_history' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
+/usr/bin/grep -q 'human_review_required_for_feedback_item' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
+/usr/bin/grep -q 'human_recommendation_feedback' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
+/usr/bin/grep -q 'untrusted prior model output' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
+! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
 /usr/bin/grep -q 'SocialProcessLock' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 ! /usr/bin/grep -q 'from gateway' "$RESOURCES/source/src/binario_marketing/cloud_social_bridge.py"
 /usr/bin/grep -q '/api/portfolio-control-tower' "$RESOURCES/source/web/today-portfolio.js"
@@ -151,4 +162,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context'
