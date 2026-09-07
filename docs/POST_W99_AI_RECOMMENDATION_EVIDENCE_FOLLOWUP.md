@@ -6,7 +6,7 @@ This increment closes the loop after an Astra recommendation has been explicitly
 
 `APPLIED` is only local operator evidence that the handoff was closed as applied. It does **not** prove that a provider-side, CRM, publishing, paid-media, creative, or campaign mutation occurred, and it does **not** prove that Astra caused any later result.
 
-The follow-up layer asks a narrower question: **what evidence was observed after that human closure on the exact structured campaign or creative identity?**
+The follow-up layer asks a narrower question: **what evidence was captured after that human closure on the exact structured campaign or creative identity?**
 
 ## Canonical flow
 
@@ -18,7 +18,7 @@ The layer never skips the human handoff and never executes the recommendation.
 
 - `OBSERVATION_WINDOW`: fewer than 24 hours have elapsed since the human `APPLIED` resolution and no later snapshot exists yet.
 - `CAPTURE_DUE`: at least 24 hours have elapsed and no later Learning snapshot exists. Action Center may add one LOW-priority `AI_EVIDENCE` item to open Results and capture evidence manually.
-- `EVIDENCE_AVAILABLE`: a later Learning snapshot contains observed marketing metrics on the exact structured campaign or creative target.
+- `EVIDENCE_AVAILABLE`: a Learning snapshot captured later contains observed marketing metrics on the exact structured campaign or creative target.
 - `POST_SNAPSHOT_NO_TARGET_SIGNAL`: a later snapshot exists, but it contains no observed metrics for that exact target.
 - `IDENTITY_GAP`: the historical AI session/recommendation needed to reconstruct the exact target is no longer available. The layer fails closed rather than inferring from prose.
 - `INVALID_APPLIED_TIME`: chronology cannot be ordered safely.
@@ -43,9 +43,21 @@ No owner or evidence target is inferred from the recommendation title, rationale
 
 A snapshot for another campaign or another creative does not satisfy the follow-up.
 
+## Capture time is not metric-event time
+
+A snapshot is considered later only when its `created_at` is strictly greater than the human `APPLIED` timestamp. That establishes **capture chronology**, not the time at which every metric event occurred.
+
+For example, a snapshot captured after `APPLIED` with `date_preset=last_7d` can include impressions, clicks, reach, spend, or engagement from days before the recommendation was marked as applied. Therefore the projection explicitly exposes:
+
+- `snapshot_captured_after_application: true`
+- `metric_window_strictly_post_application: false`
+- `snapshot_capture_after_applied_does_not_bound_metric_event_time: true`
+
+The UI must describe these rows as snapshots **captured after** application, not as proof that all included activity happened afterward.
+
 ## No causal inference
 
-Post-application evidence is observational. A metric appearing after `APPLIED` **no demuestra causalidad** and is not labelled as an uplift, improvement, degradation, ROI impact, or Astra-attributed result.
+Post-application evidence is observational. A metric present in a snapshot captured after `APPLIED` **no demuestra causalidad**, does not establish that the metric itself occurred after `APPLIED`, and is not labelled as an uplift, improvement, degradation, ROI impact, or Astra-attributed result.
 
 The browser surface states this explicitly. `learning_payload` also exposes `ai_recommendation_causal_attribution: false`.
 
