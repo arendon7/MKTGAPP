@@ -168,12 +168,12 @@ class AIRecommendationHandoffRuntimeTests(unittest.TestCase):
 
     def test_acceptance_creates_handoff_projection_but_no_business_execution(self):
         self._create_session(); rec = self._accept_current()
-        before_campaign = self.runtime.campaigns.get(self.company["id"], self.campaign.id)
+        before_campaign = self.runtime.campaigns.get(self.campaign.id)
         handoffs = self.runtime.ai_recommendation_handoffs(self.company["id"])
         self.assertEqual(handoffs["summary"]["open_handoffs"], 1)
         self.assertEqual(handoffs["handoffs"][0]["recommendation_id"], rec["recommendation_id"])
         self.assertFalse(handoffs["safety"]["business_mutation_performed"])
-        after_campaign = self.runtime.campaigns.get(self.company["id"], self.campaign.id)
+        after_campaign = self.runtime.campaigns.get(self.campaign.id)
         self.assertEqual(before_campaign, after_campaign)
 
     def test_manual_resolution_closes_handoff_without_executing_marketing(self):
