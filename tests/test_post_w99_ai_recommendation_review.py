@@ -172,7 +172,7 @@ class AIRecommendationReviewRuntimeTests(unittest.TestCase):
         self.assertEqual(source.count("method:'POST'"), 1)
         for forbidden in ("setInterval(", "setTimeout(", "MutationObserver", "localStorage", "sessionStorage", "sendBeacon", "fetch('https://", 'fetch("https://'):
             self.assertNotIn(forbidden, source)
-        self.assertIn("priority del modelo no altera Hoy", source)
+        self.assertIn("prioridad del modelo no altera hoy", source.casefold())
         self.assertIn("no publica, no activa pauta, no crea contenido y no modifica CRM", source)
 
     def test_source_contract_keeps_frozen_main_and_three_workflows(self):
@@ -186,7 +186,7 @@ class AIRecommendationReviewRuntimeTests(unittest.TestCase):
         self.assertNotIn("AIProviderClient", service)
         docs = (ROOT / "docs" / "POST_W99_AI_RECOMMENDATION_REVIEW.md").read_text(encoding="utf-8")
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", docs)
-        self.assertIn("no ejecuta", docs.lower())
+        self.assertIn("does not execute", docs.lower().replace("**", ""))
 
 
 if __name__ == "__main__":
