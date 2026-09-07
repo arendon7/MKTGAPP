@@ -13,7 +13,10 @@ RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
+/usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'MAX_FEEDBACK_ITEMS = 12' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
+/usr/bin/grep -q 'human_recommendation_feedback' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
 /usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
 /usr/bin/grep -q 'rank=86' "$RESOURCES/source/src/binario_marketing/ai_recommendation_review.py"
 /usr/bin/grep -q 'rank=87' "$RESOURCES/source/src/binario_marketing/ai_recommendation_handoff.py"
@@ -139,7 +142,7 @@ done
 # refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
 # creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
 # requests campaign AI, accepts/dismisses an AI recommendation, resolves an accepted handoff,
-# or creates any recommendation-evidence record (the new evidence surface is GET-only).
+# creates any recommendation-evidence record, or invokes the new human-feedback context through generation.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
@@ -153,4 +156,4 @@ test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness + AI review + accepted handoff + post-application evidence assets; no provider, AI-generation, review, handoff or evidence mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal includes human feedback context; no provider, AI-generation, review, handoff or evidence mutation executed'
