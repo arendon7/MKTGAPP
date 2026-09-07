@@ -13,8 +13,9 @@ RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
-/usr/bin/grep -q 'service_post_w99_results_freshness_guard_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_ai_recommendation_review_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
+/usr/bin/grep -q 'rank=86' "$RESOURCES/source/src/binario_marketing/ai_recommendation_review.py"
 
 TMP="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/binario-post-w99-smoke.XXXXXX")"
 DATA="$TMP/data"
@@ -54,6 +55,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/inbox-action-center.js" > "$TMP/inbox-action-center.js"
 /usr/bin/curl --fail --silent "$BASE/inbox-reply-reconciliation.js" > "$TMP/inbox-reply-reconciliation.js"
 /usr/bin/curl --fail --silent "$BASE/inbox-crm-identity.js" > "$TMP/inbox-crm-identity.js"
+/usr/bin/curl --fail --silent "$BASE/ai-recommendation-review.js" > "$TMP/ai-recommendation-review.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -94,20 +96,32 @@ done
 ! /usr/bin/grep -q 'setTimeout' "$TMP/inbox-crm-identity.js"
 ! /usr/bin/grep -q 'MutationObserver' "$TMP/inbox-crm-identity.js"
 ! /usr/bin/grep -q 'graph.facebook' "$TMP/inbox-crm-identity.js"
+/usr/bin/grep -q 'POST_W99_AI_RECOMMENDATION_REVIEW' "$TMP/ai-recommendation-review.js"
+/usr/bin/grep -q 'Aceptar recomendación' "$TMP/ai-recommendation-review.js"
+/usr/bin/grep -q 'Descartar' "$TMP/ai-recommendation-review.js"
+/usr/bin/grep -q 'actionCenterOpen' "$TMP/ai-recommendation-review.js"
+/usr/bin/grep -q 'portfolioNavigate' "$TMP/ai-recommendation-review.js"
+/usr/bin/grep -q 'window.confirm' "$TMP/ai-recommendation-review.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/ai-recommendation-review.js"
+! /usr/bin/grep -q 'setTimeout' "$TMP/ai-recommendation-review.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/ai-recommendation-review.js"
+! /usr/bin/grep -q 'localStorage' "$TMP/ai-recommendation-review.js"
+! /usr/bin/grep -q 'sessionStorage' "$TMP/ai-recommendation-review.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
 # refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
 # creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
-# or requests campaign AI.
+# requests campaign AI, or accepts/dismisses an AI recommendation.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 [[ -z "$(find "$DATA/State/social/inbox_crm_identity/links" -type f 2>/dev/null || true)" ]]
 [[ -z "$(find "$DATA/State/learning/decisions" -type f 2>/dev/null || true)" ]]
 [[ -z "$(find "$DATA/State/ai/sessions" -type f 2>/dev/null || true)" ]]
+[[ -z "$(find "$DATA/State/ai/recommendation_reviews" -type f 2>/dev/null || true)" ]]
 
 /bin/kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness guard; no provider refresh, decision or AI mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness + AI review asset; no provider, decision, AI-generation or review mutation executed'
