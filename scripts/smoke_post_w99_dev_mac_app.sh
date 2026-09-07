@@ -13,10 +13,11 @@ RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
-/usr/bin/grep -q 'service_post_w99_ai_recommendation_handoff_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
 /usr/bin/grep -q 'rank=86' "$RESOURCES/source/src/binario_marketing/ai_recommendation_review.py"
 /usr/bin/grep -q 'rank=87' "$RESOURCES/source/src/binario_marketing/ai_recommendation_handoff.py"
+/usr/bin/grep -q 'rank=88' "$RESOURCES/source/src/binario_marketing/ai_recommendation_evidence.py"
 
 TMP="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/binario-post-w99-smoke.XXXXXX")"
 DATA="$TMP/data"
@@ -58,6 +59,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/inbox-crm-identity.js" > "$TMP/inbox-crm-identity.js"
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-review.js" > "$TMP/ai-recommendation-review.js"
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-handoff.js" > "$TMP/ai-recommendation-handoff.js"
+/usr/bin/curl --fail --silent "$BASE/ai-recommendation-evidence.js" > "$TMP/ai-recommendation-evidence.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -116,16 +118,28 @@ done
 /usr/bin/grep -q 'No aplicar' "$TMP/ai-recommendation-handoff.js"
 /usr/bin/grep -q 'window.confirm' "$TMP/ai-recommendation-handoff.js"
 /usr/bin/grep -q "method:'POST'" "$TMP/ai-recommendation-handoff.js"
+/usr/bin/grep -q '/ai-recommendation-evidence.js' "$TMP/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'setInterval' "$TMP/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'setTimeout' "$TMP/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'MutationObserver' "$TMP/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'localStorage' "$TMP/ai-recommendation-handoff.js"
 ! /usr/bin/grep -q 'sessionStorage' "$TMP/ai-recommendation-handoff.js"
+/usr/bin/grep -q 'POST_W99_AI_RECOMMENDATION_EVIDENCE' "$TMP/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'Evidencia posterior disponible' "$TMP/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'Abrir Resultados para actualizar' "$TMP/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'causalidad' "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q "method:'POST'" "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'setTimeout' "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'localStorage' "$TMP/ai-recommendation-evidence.js"
+! /usr/bin/grep -q 'sessionStorage' "$TMP/ai-recommendation-evidence.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
 # refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
 # creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
-# requests campaign AI, accepts/dismisses an AI recommendation, or resolves an accepted handoff.
+# requests campaign AI, accepts/dismisses an AI recommendation, resolves an accepted handoff,
+# or creates any recommendation-evidence record (the new evidence surface is GET-only).
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
@@ -139,4 +153,4 @@ test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness + AI review + accepted handoff assets; no provider, AI-generation, review or handoff mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal + Today + cloud + Inbox + CRM identity + results freshness + AI review + accepted handoff + post-application evidence assets; no provider, AI-generation, review, handoff or evidence mutation executed'
