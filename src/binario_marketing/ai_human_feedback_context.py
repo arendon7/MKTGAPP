@@ -48,6 +48,13 @@ def _session_target(session: object) -> tuple[str, str, str]:
     )
 
 
+def _session_order(session: object) -> tuple[str, str]:
+    return (
+        str(_value(session, "created_at") or ""),
+        str(_value(session, "id") or ""),
+    )
+
+
 def project_ai_human_feedback_context(
     company_id: str,
     *,
@@ -83,8 +90,9 @@ def project_ai_human_feedback_context(
         if isinstance(row, dict)
     }
 
+    session_rows = sorted(list(sessions), key=_session_order, reverse=True)
     items: list[dict] = []
-    for session in sessions:
+    for session in session_rows:
         if _session_target(session) != target:
             continue
         for recommendation in current_recommendations([session]):
@@ -188,6 +196,7 @@ def project_ai_human_feedback_context(
             "causal_attribution_to_ai": False,
             "operator_feedback_is_not_performance_score": True,
             "automatic_generation": False,
+            "history_order": "SESSION_CREATED_AT_DESC",
         },
         "privacy": {
             "contact_pii_included": False,
