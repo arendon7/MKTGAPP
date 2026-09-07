@@ -50,12 +50,15 @@ PLIST="$CONTENTS/Info.plist"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_inbox_crm_identity_app.py" ]] || fail "post-W99 inbox CRM identity terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/results_freshness.py" ]] || fail "post-W99 results freshness core is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_results_freshness_guard_app.py" ]] || fail "post-W99 results freshness terminal is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/ai_recommendation_review.py" ]] || fail "post-W99 AI recommendation review core is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_review_app.py" ]] || fail "post-W99 AI recommendation review terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]] || fail "post-W99 calendar control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]] || fail "post-W99 Today portfolio browser surface is missing from packaged source"
 [[ -f "$RESOURCES/source/web/cloud-social-bridge.js" ]] || fail "post-W99 cloud social browser control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/inbox-action-center.js" ]] || fail "post-W99 inbox action center browser adapter is missing from packaged source"
 [[ -f "$RESOURCES/source/web/inbox-reply-reconciliation.js" ]] || fail "post-W99 inbox reply reconciliation browser adapter is missing from packaged source"
 [[ -f "$RESOURCES/source/web/inbox-crm-identity.js" ]] || fail "post-W99 inbox CRM identity browser adapter is missing from packaged source"
+[[ -f "$RESOURCES/source/web/ai-recommendation-review.js" ]] || fail "post-W99 AI recommendation review browser adapter is missing from packaged source"
 
 cat > "$LAUNCH" <<'PY'
 from __future__ import annotations
