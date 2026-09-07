@@ -40,14 +40,15 @@ class AppRuntime(base.AppRuntime):
             campaign_id=campaign_id,
             creative_media_id=creative_media_id,
         )
-        context["human_recommendation_feedback"] = self.ai_human_feedback_context(
+        feedback = self.ai_human_feedback_context(
             company_id,
             task=task,
             campaign_id=campaign_id,
             creative_media_id=creative_media_id,
         )
+        context["human_recommendation_feedback"] = feedback
         privacy = context.setdefault("privacy", {})
-        privacy["historical_reviewed_ai_proposals_included"] = True
+        privacy["historical_reviewed_ai_proposals_included"] = bool(feedback.get("items"))
         privacy["historical_ai_rationale_included"] = False
         privacy["historical_ai_next_step_included"] = False
         return context
