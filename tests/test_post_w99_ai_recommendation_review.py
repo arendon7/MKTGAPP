@@ -167,7 +167,7 @@ class AIRecommendationReviewRuntimeTests(unittest.TestCase):
 
     def test_browser_contract_has_exact_transient_deep_link_and_only_explicit_review_mutation(self):
         source = (ROOT / "web" / "ai-recommendation-review.js").read_text(encoding="utf-8")
-        for required in ("actionCenterOpen", "portfolioNavigate", "ai-recommendation-review", "data.aiReviewSessionId", "Aceptar recomendación", "Descartar", "window.confirm", "recommendation_id", "decision"):
+        for required in ("actionCenterOpen", "portfolioNavigate", "ai-recommendation-review", "dataset.aiReviewSessionId", "Aceptar recomendación", "Descartar", "window.confirm", "recommendation_id", "decision"):
             self.assertIn(required, source)
         self.assertEqual(source.count("method:'POST'"), 1)
         for forbidden in ("setInterval(", "setTimeout(", "MutationObserver", "localStorage", "sessionStorage", "sendBeacon", "fetch('https://", 'fetch("https://'):
