@@ -52,7 +52,8 @@
     if(row.applied_at)node.append(opsEl('p','',`Marcada como aplicada: ${row.applied_at}`));
     const observation=row.post_application_snapshot;
     if(observation){
-      node.append(opsEl('p','',`Snapshot posterior: ${observation.created_at||'sin fecha'} · ${observation.organic_observations||0} observación(es) orgánicas · ${observation.paid_observations||0} de pauta.`));
+      node.append(opsEl('p','',`Snapshot capturado después: ${observation.created_at||'sin fecha'} · ${observation.organic_observations||0} observación(es) orgánicas · ${observation.paid_observations||0} de pauta.`));
+      node.append(opsEl('div','ai-evidence-safety',`Ventana del snapshot: ${observation.date_preset||'no especificada'}. La captura es posterior al cierre, pero sus métricas pueden incluir tiempo anterior a la aplicación.`));
       const samples=opsEl('div','ai-evidence-samples');
       for(const sample of [...(observation.organic_samples||[]),...(observation.paid_samples||[])].slice(0,4)){
         const text=metricText(sample);if(text)samples.append(opsEl('div','ai-evidence-sample',text));
@@ -62,14 +63,14 @@
     if(row.state==='CAPTURE_DUE'){
       const actions=opsEl('div','ai-evidence-actions'),button=opsEl('button','primary','Abrir Resultados para actualizar');button.type='button';button.addEventListener('click',()=>openResults(row));actions.append(button);node.append(actions)
     }
-    node.append(opsEl('div','ai-evidence-safety','Lectura observacional: que una métrica aparezca después no demuestra que Astra ni la recomendación la hayan causado.'));
+    node.append(opsEl('div','ai-evidence-safety','Lectura observacional: que una métrica esté en un snapshot capturado después no demuestra que ocurriera después ni que Astra o la recomendación la hayan causado.'));
     return node
   }
 
   function render(){
     if(marketingOpsState.view!=='intelligence'&&marketingOpsState.view!=='analytics')return;styles();const root=document.querySelector('#marketing-ops-view');if(!root)return;root.querySelector('#post-w99-ai-recommendation-evidence')?.remove();
     const current=company();if(!current)return;const section=opsEl('section','ai-evidence-section');section.id='post-w99-ai-recommendation-evidence';
-    const head=opsEl('div','ai-evidence-head'),copy=opsEl('div','');copy.append(opsEl('p','eyebrow','ASTRA / IA · EVIDENCIA POSTERIOR'),opsEl('h3','','Qué ocurrió después de recomendaciones marcadas como aplicadas'),opsEl('p','muted','La app conserva la cronología y la evidencia observada; no convierte correlación temporal en causalidad.'));const refresh=opsEl('button','','Actualizar evidencia local');refresh.type='button';refresh.addEventListener('click',async()=>{await load(true);render()});head.append(copy,refresh);section.append(head);
+    const head=opsEl('div','ai-evidence-head'),copy=opsEl('div','');copy.append(opsEl('p','eyebrow','ASTRA / IA · EVIDENCIA POSTERIOR'),opsEl('h3','','Qué se capturó después de recomendaciones marcadas como aplicadas'),opsEl('p','muted','La app conserva cronología de captura y evidencia observada; no convierte correlación temporal ni ventanas solapadas en causalidad.'));const refresh=opsEl('button','','Actualizar evidencia local');refresh.type='button';refresh.addEventListener('click',async()=>{await load(true);render()});head.append(copy,refresh);section.append(head);
     const payload=state.companyId===current.id?state.payload:null;if(!payload){section.append(opsEl('div','ai-evidence-empty',state.loading?'Cargando evidencia local…':'Cargando seguimiento…'));const anchor=root.querySelector('#post-w99-ai-handoffs')||root.querySelector('.w65-hero');anchor?.insertAdjacentElement('afterend',section);if(!state.loading)load(true).then(render);return}
     const summary=payload.summary||{},meta=opsEl('div','ai-evidence-meta');meta.append(opsEl('span','ai-evidence-chip',`${summary.tracked_applied||0} aplicadas rastreadas`),opsEl('span','ai-evidence-chip',`${summary.evidence_available||0} con evidencia posterior`),opsEl('span','ai-evidence-chip',`${summary.capture_due||0} captura(s) pendientes`));section.append(meta);
     const list=opsEl('div','ai-evidence-list');for(const row of rows())list.append(card(row));if(!rows().length)list.append(opsEl('div','ai-evidence-empty','Todavía no hay recomendaciones aceptadas y marcadas como aplicadas para observar.'));section.append(list,opsEl('div','ai-evidence-safety','Contrato: endpoint GET local, snapshots ya existentes y navegación humana. No refresca proveedores, no genera IA, no ejecuta marketing y no atribuye resultados a Astra.'));
