@@ -26,7 +26,8 @@ from .service_post_w99_inbox_reply_reconciliation_app import AppRuntime as _Inbo
 from .service_post_w99_inbox_crm_identity_app import AppRuntime as _InboxCRMIdentityAppRuntime
 from .service_post_w99_results_freshness_guard_app import AppRuntime as _ResultsFreshnessGuardAppRuntime
 from .service_post_w99_ai_recommendation_review_app import AppRuntime as _AIRecommendationReviewAppRuntime
-from .service_post_w99_ai_recommendation_handoff_app import (
+from .service_post_w99_ai_recommendation_handoff_app import AppRuntime as _AIRecommendationHandoffAppRuntime
+from .service_post_w99_ai_recommendation_evidence_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
