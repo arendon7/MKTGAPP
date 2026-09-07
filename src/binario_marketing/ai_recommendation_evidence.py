@@ -135,6 +135,8 @@ def _snapshot_observation(snapshot: object, target: dict) -> dict:
         "organic_samples": organic_rows[:3],
         "paid_samples": paid_rows[:3],
         "has_target_signal": bool(organic_rows or paid_rows),
+        "snapshot_captured_after_application": True,
+        "metric_window_strictly_post_application": False,
     }
 
 
@@ -200,11 +202,11 @@ def project_recommendation_evidence(
             selected = None
         elif with_signal:
             state = "EVIDENCE_AVAILABLE"
-            reason = "Existe evidencia de marketing observada después del cierre humano del handoff sobre la identidad estructurada exacta."
+            reason = "Existe un snapshot capturado después del cierre humano con señal de marketing para la identidad estructurada exacta. Su ventana de métricas puede incluir tiempo anterior a la aplicación."
             selected = with_signal[0]
         elif post_snapshots:
             state = "POST_SNAPSHOT_NO_TARGET_SIGNAL"
-            reason = "Existe al menos un snapshot posterior, pero no contiene métricas observadas para la campaña/creativo exacto."
+            reason = "Existe al menos un snapshot capturado después del cierre, pero no contiene métricas observadas para la campaña/creativo exacto."
             selected = observations[0] if observations else None
         elif age_seconds is not None and age_seconds >= FOLLOWUP_WINDOW_SECONDS:
             state = "CAPTURE_DUE"
@@ -258,6 +260,7 @@ def project_recommendation_evidence(
             "applied_means_operator_marked_handoff_closed": True,
             "applied_does_not_prove_business_execution": True,
             "post_application_evidence_is_observational": True,
+            "snapshot_capture_after_applied_does_not_bound_metric_event_time": True,
             "causal_attribution_to_ai": False,
             "historical_session_identity_required": True,
             "exact_structured_target_required": True,
