@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from binario_marketing.ai_human_feedback_context import (
     AI_HUMAN_FEEDBACK_CONTEXT_SCHEMA,
@@ -229,8 +230,46 @@ class AIHumanFeedbackRuntimeTests(unittest.TestCase):
         self.assertEqual(feedback["summary"]["dismissed"], 1)
         self.assertTrue(feedback["contracts"]["human_review_required_for_feedback_item"])
         self.assertFalse(context["privacy"]["contact_pii_included"])
+        self.assertTrue(context["privacy"]["historical_reviewed_ai_proposals_included"])
         self.assertFalse(context["privacy"]["historical_ai_rationale_included"])
         self.assertFalse(context["privacy"]["historical_ai_next_step_included"])
+
+    def test_explicit_generation_persists_feedback_context_without_real_provider(self):
+        self._create_reviewed_session("DISMISSED")
+        self.runtime.ai_settings.update(self.company["id"], {"provider": "ollama", "model": "llama3.2"})
+
+        calls = []
+
+        class FakeAIClient:
+            def generate(_self, provider, model, *, system, prompt):
+                calls.append({"provider": provider, "model": model, "system": system, "prompt": prompt})
+                return SimpleNamespace(
+                    provider=provider,
+                    model=model,
+                    output={
+                        "summary": "Nueva sesión",
+                        "diagnosis": [],
+                        "recommendations": [],
+                        "creative_variants": [],
+                        "campaign_brief": {},
+                    },
+                    provider_meta={"transport": "fake"},
+                )
+
+        self.runtime.ai_client = FakeAIClient()
+        generated = self.runtime.generate_ai_copilot(
+            self.company["id"],
+            {"task": "CAMPAIGN", "campaign_id": self.campaign.id},
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["provider"], "ollama")
+        feedback = generated["context"]["human_recommendation_feedback"]
+        self.assertEqual(feedback["summary"]["dismissed"], 1)
+        self.assertEqual(feedback["items"][0]["historical_proposal"]["title"], "Repetir oferta")
+        self.assertNotIn("Texto previo", json.dumps(feedback, ensure_ascii=False))
+        persisted = self.runtime.ai_sessions.list(self.company["id"], limit=1)[0]
+        self.assertEqual(persisted.id, generated["id"])
+        self.assertEqual(persisted.context["human_recommendation_feedback"]["summary"]["dismissed"], 1)
 
     def test_prompt_explicitly_blocks_self_validation_and_mechanical_repetition(self):
         system, prompt = self.runtime._ai_prompt(
@@ -259,6 +298,13 @@ class AIHumanFeedbackRuntimeTests(unittest.TestCase):
         self.assertIn("human_recommendation_feedback", service)
         self.assertNotIn("MetaGraphClient", service)
         self.assertNotIn("AIProviderClient", service)
+        build = (ROOT / "scripts" / "build_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
+        audit = (ROOT / "scripts" / "audit_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
+        smoke = (ROOT / "scripts" / "smoke_post_w99_dev_mac_app.sh").read_text(encoding="utf-8")
+        for source in (build, audit, smoke):
+            self.assertIn("ai_human_feedback_context", source)
+        self.assertIn("MAX_FEEDBACK_ITEMS = 12", audit)
+        self.assertIn("service_post_w99_ai_human_feedback_context_app", smoke)
         docs = (ROOT / "docs" / "POST_W99_AI_HUMAN_FEEDBACK_CONTEXT.md").read_text(encoding="utf-8")
         self.assertIn("60ef38aa01c841c60f98b7dc79fcc9bb5d676e53", docs)
         self.assertIn("no causal", docs.casefold())
