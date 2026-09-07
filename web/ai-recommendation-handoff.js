@@ -117,6 +117,6 @@
   }
   const baseRender=globalThis.renderMarketingOps;if(typeof baseRender==='function')globalThis.renderMarketingOps=function postW99AIHandoffRenderMarketingOps(){const value=baseRender.apply(this,arguments);queueMicrotask(renderOwnerContext);return value};
   ['campaignRenderCurrent','contentRenderCurrent','wave64Render'].forEach(name=>{const base=globalThis[name];if(typeof base!=='function')return;globalThis[name]=function postW99AIHandoffOwnerRender(){const value=base.apply(this,arguments);queueMicrotask(renderOwnerContext);return value}});
-  window.addEventListener('marketing-ops-refreshed',()=>{const current=company();if(!current||current.id!==state.companyId){state.payload=null;state.companyId=null;activeHandoff=null}load(true).then(()=>{renderOwnerContext();if(marketingOpsState.view==='intelligence'&&typeof wave65Render==='function')wave65Render()})});
+  window.addEventListener('marketing-ops-refreshed',()=>{const current=company();if(!current){state.payload=null;state.companyId=null;activeHandoff=null}else if(current.id!==state.companyId){state.payload=null;state.companyId=null;if(activeHandoff&&activeHandoff.companyId!==current.id)activeHandoff=null}load(true).then(()=>{renderOwnerContext();if(marketingOpsState.view==='intelligence'&&typeof wave65Render==='function')wave65Render()})});
   styles();load();if(marketingOpsState.view==='intelligence'&&typeof wave65Render==='function')wave65Render();
 })();
