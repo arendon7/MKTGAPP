@@ -32,14 +32,14 @@
   }
 
   async function run(button){
-    if(state.busy)return;
-    const plan=await loadPlan(true);if(!plan)return;
+    if(state.busy)return null;
+    const plan=await loadPlan(true);if(!plan)return null;
     const ids=Array.isArray(plan.company_ids)?plan.company_ids:[];
     const summary=plan.summary||{};
-    if(!ids.length){opsToast('No hay bandejas configuradas para actualizar.');render();return}
-    if((summary.eligible_overflow||0)>0){opsToast('Hay más empresas configuradas que el límite seguro de esta operación.');return}
+    if(!ids.length){opsToast('No hay bandejas configuradas para actualizar.');render();return null}
+    if((summary.eligible_overflow||0)>0){opsToast('Hay más empresas configuradas que el límite seguro de esta operación.');return null}
     const confirmed=window.confirm(`Vas a consultar secuencialmente Meta para ${ids.length} empresa(s). Esto solo actualiza snapshots locales de Inbox: no responde mensajes, no comenta, no modifica CRM, no publica y no genera IA. ¿Continuar?`);
-    if(!confirmed)return;
+    if(!confirmed)return null;
     state.busy=true;if(button)button.disabled=true;
     try{
       state.lastResult=await opsApi('/api/portfolio/inbox-refresh',{method:'POST',body:{company_ids:ids}});
@@ -47,7 +47,8 @@
       await loadPlan(true);
       const result=state.lastResult?.summary||{};
       opsToast(`Inbox multiempresa: ${result.refreshed||0}/${result.requested||0} actualizadas${result.failed?`; ${result.failed} fallaron`:''}`);
-    }catch(err){opsToast(err.message)}
+      return state.lastResult;
+    }catch(err){opsToast(err.message);return null}
     finally{state.busy=false;render()}
   }
 
@@ -61,6 +62,9 @@
     if(note)note.textContent=statusText();
     if(!state.plan&&!state.loading)loadPlan().then(render);
   }
+
+  globalThis.postW99PortfolioInboxRefreshRun=run;
+  globalThis.postW99PortfolioInboxRefreshLoadPlan=loadPlan;
 
   if(typeof globalThis.todayPortfolioRender==='function'){
     const baseRender=globalThis.todayPortfolioRender;
