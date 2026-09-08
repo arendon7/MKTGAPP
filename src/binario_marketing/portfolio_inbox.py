@@ -104,13 +104,16 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
         })
 
     queue.sort(key=_queue_key)
+    observed_attention_total = len(queue)
     queue = queue[:MAX_PORTFOLIO_INBOX_ITEMS]
     summary = {
         "active_companies": len(active),
         "configured_companies": len(configured),
         "companies_with_attention": sum(1 for row in company_rows if row["attention_count"]),
         "companies_requiring_refresh": sum(1 for row in company_rows if row["refresh_required"]),
-        "attention_total": len(queue),
+        "attention_total": observed_attention_total,
+        "displayed_attention": len(queue),
+        "queue_truncated": observed_attention_total > len(queue),
         "blocking": sum(1 for row in queue if bool(row.get("blocking"))),
         "high": sum(1 for row in queue if str(row.get("urgency") or "").upper() == "HIGH"),
         "medium": sum(1 for row in queue if str(row.get("urgency") or "").upper() == "MEDIUM"),
@@ -134,6 +137,7 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
             "existing_attention_rank_is_priority_authority": True,
             "cross_company_order_is_deterministic": True,
             "max_items": MAX_PORTFOLIO_INBOX_ITEMS,
+            "queue_scope_declared": True,
             "provider_person_ids_excluded": True,
             "provider_links_excluded": True,
             "full_provider_bodies_excluded": True,
