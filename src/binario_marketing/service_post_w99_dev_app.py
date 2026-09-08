@@ -29,7 +29,8 @@ from .service_post_w99_ai_recommendation_review_app import AppRuntime as _AIReco
 from .service_post_w99_ai_recommendation_handoff_app import AppRuntime as _AIRecommendationHandoffAppRuntime
 from .service_post_w99_ai_recommendation_evidence_app import AppRuntime as _AIRecommendationEvidenceAppRuntime
 from .service_post_w99_ai_human_feedback_context_app import AppRuntime as _AIHumanFeedbackContextAppRuntime
-from .service_post_w99_portfolio_inbox_refresh_app import (
+from .service_post_w99_portfolio_inbox_refresh_app import AppRuntime as _PortfolioInboxRefreshAppRuntime
+from .service_post_w99_portfolio_inbox_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
