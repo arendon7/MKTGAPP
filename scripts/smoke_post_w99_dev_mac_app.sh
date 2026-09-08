@@ -13,8 +13,10 @@ RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
+/usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES = 50' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
 /usr/bin/grep -q 'MAX_FEEDBACK_ITEMS = 12' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
 /usr/bin/grep -q 'human_recommendation_feedback' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
 /usr/bin/grep -q 'ACTIVE_RESULTS_MAX_AGE_SECONDS = 24' "$RESOURCES/source/src/binario_marketing/results_freshness.py"
@@ -53,6 +55,7 @@ done
 
 /usr/bin/curl --fail --silent "$BASE/api/social/background" > "$TMP/background.json"
 /usr/bin/curl --fail --silent "$BASE/api/portfolio-control-tower" > "$TMP/portfolio.json"
+/usr/bin/curl --fail --silent "$BASE/api/portfolio/inbox-refresh-plan" > "$TMP/portfolio-inbox-refresh-plan.json"
 /usr/bin/curl --fail --silent "$BASE/primary-navigation.js" > "$TMP/primary-navigation.js"
 /usr/bin/curl --fail --silent "$BASE/social-background-control.js" > "$TMP/social-background-control.js"
 /usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
@@ -63,10 +66,13 @@ done
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-review.js" > "$TMP/ai-recommendation-review.js"
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-handoff.js" > "$TMP/ai-recommendation-handoff.js"
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-evidence.js" > "$TMP/ai-recommendation-evidence.js"
+/usr/bin/curl --fail --silent "$BASE/portfolio-inbox-refresh.js" > "$TMP/portfolio-inbox-refresh.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
 /usr/bin/grep -q 'binario.marketing.portfolio-control-tower.v1' "$TMP/portfolio.json"
+/usr/bin/grep -q 'binario.marketing.portfolio-inbox-refresh-plan.v1' "$TMP/portfolio-inbox-refresh-plan.json"
+/usr/bin/grep -q '"provider_read_performed": false' "$TMP/portfolio-inbox-refresh-plan.json"
 /usr/bin/grep -q 'POST_W99_PRIMARY_NAVIGATION' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Hoy' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Resultados' "$TMP/primary-navigation.js"
@@ -131,22 +137,33 @@ done
 /usr/bin/grep -q 'Evidencia posterior disponible' "$TMP/ai-recommendation-evidence.js"
 /usr/bin/grep -q 'Abrir Resultados para actualizar' "$TMP/ai-recommendation-evidence.js"
 /usr/bin/grep -q 'causalidad' "$TMP/ai-recommendation-evidence.js"
+/usr/bin/grep -q '/portfolio-inbox-refresh.js' "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q "method:'POST'" "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'setInterval' "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'setTimeout' "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'MutationObserver' "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'localStorage' "$TMP/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'sessionStorage' "$TMP/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'POST_W99_PORTFOLIO_INBOX_REFRESH' "$TMP/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'Actualizar Inbox de todas' "$TMP/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'window.confirm' "$TMP/portfolio-inbox-refresh.js"
+/usr/bin/grep -q '/api/portfolio/inbox-refresh-plan' "$TMP/portfolio-inbox-refresh.js"
+/usr/bin/grep -q '/api/portfolio/inbox-refresh' "$TMP/portfolio-inbox-refresh.js"
+/usr/bin/grep -q "method:'POST'" "$TMP/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'setTimeout' "$TMP/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/portfolio-inbox-refresh.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
-# refreshes provider status, invokes the Inbox provider-read POST, reconciles a reply,
-# creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
+# refreshes provider status, invokes either single-company or portfolio Inbox provider-read POST,
+# reconciles a reply, creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
 # requests campaign AI, accepts/dismisses an AI recommendation, resolves an accepted handoff,
-# creates any recommendation-evidence record, or invokes the new human-feedback context through generation.
+# creates any recommendation-evidence record, or invokes the human-feedback context through generation.
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 [[ -z "$(find "$DATA/State/social/inbox_crm_identity/links" -type f 2>/dev/null || true)" ]]
+[[ -z "$(find "$DATA/State/social/inbox_attention" -type f 2>/dev/null || true)" ]]
 [[ -z "$(find "$DATA/State/learning/decisions" -type f 2>/dev/null || true)" ]]
 [[ -z "$(find "$DATA/State/ai/sessions" -type f 2>/dev/null || true)" ]]
 [[ -z "$(find "$DATA/State/ai/recommendation_reviews" -type f 2>/dev/null || true)" ]]
@@ -156,4 +173,4 @@ test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal includes human feedback context; no provider, AI-generation, review, handoff or evidence mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal includes portfolio Inbox refresh plan/control; no provider POST, AI generation or business mutation executed'

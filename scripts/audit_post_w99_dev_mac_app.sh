@@ -43,6 +43,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_recommendation_evidence_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -53,6 +55,15 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/ai-recommendation-review.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-handoff.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]]
+[[ -f "$RESOURCES/source/web/portfolio-inbox-refresh.js" ]]
+/usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES = 50' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
+/usr/bin/grep -q 'sequential_provider_reads' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
+/usr/bin/grep -q 'per_company_failure_isolated' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
+/usr/bin/grep -q '/api/portfolio/inbox-refresh' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py"
+! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
@@ -148,6 +159,16 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 ! /usr/bin/grep -q 'localStorage' "$RESOURCES/source/web/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'sessionStorage' "$RESOURCES/source/web/ai-recommendation-evidence.js"
 ! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/ai-recommendation-evidence.js"
+/usr/bin/grep -q 'POST_W99_PORTFOLIO_INBOX_REFRESH' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'Actualizar Inbox de todas' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'window.confirm' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q '/api/portfolio/inbox-refresh-plan' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q '/api/portfolio/inbox-refresh' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q "method:'POST'" "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 
 "$PY" -I -B - "$PROVENANCE" <<'PY'
 import json,sys
@@ -162,4 +183,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context + bounded portfolio Inbox refresh'
