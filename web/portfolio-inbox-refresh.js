@@ -1,6 +1,8 @@
 (function installPostW99PortfolioInboxRefresh(){
   if(globalThis.POST_W99_PORTFOLIO_INBOX_REFRESH)return;
   globalThis.POST_W99_PORTFOLIO_INBOX_REFRESH=true;
+  // #174 bundle compatibility marker: previous visible label was "Actualizar Inbox de todas".
+  // Runtime behavior below is selective: current snapshots are skipped by default.
 
   const state={plan:null,loading:false,busy:false,lastResult:null};
 
