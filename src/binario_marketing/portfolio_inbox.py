@@ -104,8 +104,9 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
         })
 
     queue.sort(key=_queue_key)
-    observed_attention_total = len(queue)
-    queue = queue[:MAX_PORTFOLIO_INBOX_ITEMS]
+    observed_queue = list(queue)
+    observed_attention_total = len(observed_queue)
+    queue = observed_queue[:MAX_PORTFOLIO_INBOX_ITEMS]
     summary = {
         "active_companies": len(active),
         "configured_companies": len(configured),
@@ -114,13 +115,13 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
         "attention_total": observed_attention_total,
         "displayed_attention": len(queue),
         "queue_truncated": observed_attention_total > len(queue),
-        "blocking": sum(1 for row in queue if bool(row.get("blocking"))),
-        "high": sum(1 for row in queue if str(row.get("urgency") or "").upper() == "HIGH"),
-        "medium": sum(1 for row in queue if str(row.get("urgency") or "").upper() == "MEDIUM"),
-        "low": sum(1 for row in queue if str(row.get("urgency") or "").upper() == "LOW"),
-        "facebook_messages": sum(1 for row in queue if row.get("kind") == "facebook_message"),
-        "instagram_comments": sum(1 for row in queue if row.get("kind") == "instagram_comment"),
-        "reply_verifications": sum(1 for row in queue if row.get("attention_kind") == "reply_verification"),
+        "blocking": sum(1 for row in observed_queue if bool(row.get("blocking"))),
+        "high": sum(1 for row in observed_queue if str(row.get("urgency") or "").upper() == "HIGH"),
+        "medium": sum(1 for row in observed_queue if str(row.get("urgency") or "").upper() == "MEDIUM"),
+        "low": sum(1 for row in observed_queue if str(row.get("urgency") or "").upper() == "LOW"),
+        "facebook_messages": sum(1 for row in observed_queue if row.get("kind") == "facebook_message"),
+        "instagram_comments": sum(1 for row in observed_queue if row.get("kind") == "instagram_comment"),
+        "reply_verifications": sum(1 for row in observed_queue if row.get("attention_kind") == "reply_verification"),
         "snapshot_states": state_counts,
     }
 
