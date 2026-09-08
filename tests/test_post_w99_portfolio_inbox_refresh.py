@@ -62,6 +62,7 @@ class PortfolioInboxRefreshPureTests(unittest.TestCase):
         self.assertEqual(plan["summary"]["unmapped_companies"], 1)
         self.assertEqual(plan["summary"]["refresh_required"], 1)
         self.assertEqual(plan["company_ids"], [mapped["id"]])
+        self.assertEqual(plan["refresh_company_ids"], [mapped["id"]])
         serialized = json.dumps(plan)
         self.assertNotIn("provider-page-secretish-id", serialized)
         self.assertNotIn("provider-instagram-secretish-id", serialized)
@@ -101,6 +102,7 @@ class PortfolioInboxRefreshRuntimeTests(unittest.TestCase):
         self.assertEqual(plan["summary"]["configured_companies"], 2)
         self.assertEqual(plan["summary"]["unmapped_companies"], 1)
         self.assertEqual(set(plan["company_ids"]), {self.first.id, self.second.id})
+        self.assertEqual(set(plan["refresh_company_ids"]), {self.first.id, self.second.id})
         self.assertTrue(all(row["snapshot_state"] == "MISSING" for row in plan["companies"]))
         self.assertFalse(plan["safety"]["provider_read_performed"])
 
@@ -154,6 +156,7 @@ class PortfolioInboxRefreshRuntimeTests(unittest.TestCase):
             with urlopen(root + "/api/portfolio/inbox-refresh-plan", timeout=5) as response:
                 plan = json.loads(response.read().decode("utf-8"))
             self.assertEqual(plan["summary"]["configured_companies"], 2)
+            self.assertEqual(set(plan["refresh_company_ids"]), {self.first.id, self.second.id})
             with urlopen(root + "/portfolio-inbox-refresh.js", timeout=5) as response:
                 source = response.read().decode("utf-8")
             self.assertIn("POST_W99_PORTFOLIO_INBOX_REFRESH", source)
@@ -169,9 +172,9 @@ class PortfolioInboxRefreshRuntimeTests(unittest.TestCase):
     def test_browser_contract_is_explicit_no_polling_and_exact_company_list(self):
         source = (ROOT / "web" / "portfolio-inbox-refresh.js").read_text(encoding="utf-8")
         for required in (
-            "Actualizar Inbox de todas", "window.confirm", "/api/portfolio/inbox-refresh-plan",
-            "/api/portfolio/inbox-refresh", "company_ids:ids", "method:'POST'",
-            "no responde mensajes", "todayPortfolioLoad(true)",
+            "Actualizar Inbox pendiente", "window.confirm", "/api/portfolio/inbox-refresh-plan",
+            "/api/portfolio/inbox-refresh", "refresh_company_ids", "company_ids:ids", "method:'POST'",
+            "no responde mensajes", "Las bandejas vigentes se omiten", "todayPortfolioLoad(true)",
         ):
             self.assertIn(required, source)
         self.assertEqual(source.count("method:'POST'"), 1)

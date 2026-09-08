@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable
 
 from .company_store import COMPANY_ID_RE
@@ -71,26 +70,45 @@ def build_refresh_plan(companies: Iterable[object], attention_by_company: dict[s
             "attention_items": len(attention.get("items") or []),
             "provider_read_performed": False,
         })
-    rows.sort(key=lambda row: (row["company_name"].casefold(), row["company_id"]))
-    overflow = max(0, len(rows) - MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES)
+
+    # Pending/stale local evidence is listed first so the visible plan and the default
+    # batch remain aligned even when a portfolio has more than one batch worth of brands.
+    rows.sort(key=lambda row: (
+        0 if row["refresh_required"] else 1,
+        row["company_name"].casefold(),
+        row["company_id"],
+    ))
+    refresh_rows = [row for row in rows if row["refresh_required"]]
+    configured_overflow = max(0, len(rows) - MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES)
+    refresh_overflow = max(0, len(refresh_rows) - MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES)
     visible = rows[:MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES]
+    refresh_visible = refresh_rows[:MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES]
+
     return {
         "schema": PORTFOLIO_INBOX_REFRESH_PLAN_SCHEMA,
         "summary": {
             "configured_companies": len(rows),
             "unmapped_companies": unmapped,
-            "refresh_required": sum(bool(row["refresh_required"]) for row in rows),
+            "refresh_required": len(refresh_rows),
+            "refresh_eligible": len(refresh_rows),
             "current": sum(row["snapshot_state"] == "CURRENT" for row in rows),
             "batch_limit": MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES,
-            "eligible_overflow": overflow,
+            # Retained for the v1 response contract; this describes configured rows,
+            # not whether the selective default batch can safely run.
+            "eligible_overflow": configured_overflow,
+            "configured_overflow": configured_overflow,
+            "refresh_overflow": refresh_overflow,
         },
         "companies": visible,
         "company_ids": [row["company_id"] for row in visible],
+        "refresh_company_ids": [row["company_id"] for row in refresh_visible],
         "contracts": {
             "local_plan_only": True,
             "explicit_operator_post_required": True,
             "exact_company_ids_required": True,
             "configured_companies_only": True,
+            "default_batch_refresh_required_only": True,
+            "current_snapshots_skipped_by_default": True,
             "sequential_provider_reads": True,
             "per_company_failure_isolated": True,
             "automatic_retry": False,
