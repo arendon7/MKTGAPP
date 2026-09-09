@@ -13,10 +13,13 @@ RESOURCES="$APP/Contents/Resources"
 [[ -x "$EXEC" && -f "$PLIST" ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: bundle is incomplete' >&2; exit 4; }
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
 [[ "$IDENTIFIER" == 'com.sistemabinario.marketing.postw99dev' ]] || { echo 'POST-W99 DEV MAC SMOKE BLOCKED: not the isolated post-W99 development app' >&2; exit 4; }
+/usr/bin/grep -q 'service_post_w99_portfolio_crm_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_portfolio_inbox_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_recommendation_evidence_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_CRM_OPPORTUNITIES = 200' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_CRM_ACTIVITIES = 200' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
 /usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_ITEMS = 100' "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py"
 /usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES = 50' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
 /usr/bin/grep -q 'MAX_FEEDBACK_ITEMS = 12' "$RESOURCES/source/src/binario_marketing/ai_human_feedback_context.py"
@@ -59,6 +62,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/api/portfolio-control-tower" > "$TMP/portfolio.json"
 /usr/bin/curl --fail --silent "$BASE/api/portfolio/inbox-refresh-plan" > "$TMP/portfolio-inbox-refresh-plan.json"
 /usr/bin/curl --fail --silent "$BASE/api/portfolio/inbox-attention" > "$TMP/portfolio-inbox.json"
+/usr/bin/curl --fail --silent "$BASE/api/portfolio/crm" > "$TMP/portfolio-crm.json"
 /usr/bin/curl --fail --silent "$BASE/primary-navigation.js" > "$TMP/primary-navigation.js"
 /usr/bin/curl --fail --silent "$BASE/social-background-control.js" > "$TMP/social-background-control.js"
 /usr/bin/curl --fail --silent "$BASE/today-portfolio.js" > "$TMP/today-portfolio.js"
@@ -71,6 +75,7 @@ done
 /usr/bin/curl --fail --silent "$BASE/ai-recommendation-evidence.js" > "$TMP/ai-recommendation-evidence.js"
 /usr/bin/curl --fail --silent "$BASE/portfolio-inbox-refresh.js" > "$TMP/portfolio-inbox-refresh.js"
 /usr/bin/curl --fail --silent "$BASE/portfolio-inbox.js" > "$TMP/portfolio-inbox.js"
+/usr/bin/curl --fail --silent "$BASE/portfolio-crm.js" > "$TMP/portfolio-crm.js"
 
 /usr/bin/grep -q 'status' "$TMP/health.json"
 /usr/bin/grep -q 'platform_supported' "$TMP/background.json"
@@ -80,6 +85,10 @@ done
 /usr/bin/grep -q 'binario.marketing.portfolio-inbox.v1' "$TMP/portfolio-inbox.json"
 /usr/bin/grep -q '"provider_read_performed": false' "$TMP/portfolio-inbox.json"
 /usr/bin/grep -q '"read_only_projection": true' "$TMP/portfolio-inbox.json"
+/usr/bin/grep -q 'binario.marketing.portfolio-crm.v1' "$TMP/portfolio-crm.json"
+/usr/bin/grep -q '"provider_read_performed": false' "$TMP/portfolio-crm.json"
+/usr/bin/grep -q '"crm_mutation_performed": false' "$TMP/portfolio-crm.json"
+/usr/bin/grep -q '"no_cross_type_priority_score": true' "$TMP/portfolio-crm.json"
 /usr/bin/grep -q 'POST_W99_PRIMARY_NAVIGATION' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Hoy' "$TMP/primary-navigation.js"
 /usr/bin/grep -q 'Resultados' "$TMP/primary-navigation.js"
@@ -171,12 +180,26 @@ done
 ! /usr/bin/grep -q 'setInterval' "$TMP/portfolio-inbox.js"
 ! /usr/bin/grep -q 'setTimeout' "$TMP/portfolio-inbox.js"
 ! /usr/bin/grep -q 'MutationObserver' "$TMP/portfolio-inbox.js"
+/usr/bin/grep -q 'POST_W99_PORTFOLIO_CRM' "$TMP/portfolio-crm.js"
+/usr/bin/grep -q 'CRM / MULTIEMPRESA' "$TMP/portfolio-crm.js"
+/usr/bin/grep -q '/api/portfolio/crm' "$TMP/portfolio-crm.js"
+/usr/bin/grep -q 'portfolioNavigate' "$TMP/portfolio-crm.js"
+/usr/bin/grep -q 'actionCenterOpen' "$TMP/portfolio-crm.js"
+/usr/bin/grep -q 'Volver a todas las empresas' "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q "method:'POST'" "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q "method:'PATCH'" "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q 'setInterval' "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q 'setTimeout' "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q 'MutationObserver' "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q 'localStorage' "$TMP/portfolio-crm.js"
+! /usr/bin/grep -q 'sessionStorage' "$TMP/portfolio-crm.js"
 
 # Smoke remains read-only: it never installs launchd, delegates cloud publication,
 # refreshes provider status, invokes either single-company or portfolio Inbox provider-read POST,
 # reconciles a reply, creates/replaces an Inbox CRM identity link, refreshes results, records a decision,
 # requests campaign AI, accepts/dismisses an AI recommendation, resolves an accepted handoff,
-# creates any recommendation-evidence record, or invokes the human-feedback context through generation.
+# creates any recommendation-evidence record, invokes the human-feedback context through generation,
+# or executes any Portfolio CRM business mutation (the Portfolio CRM surface exposes GET only).
 test ! -e "$AGENT"
 [[ -z "$(find "$FAKE_HOME/Library/LaunchAgents" -type f 2>/dev/null || true)" ]]
 test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
@@ -191,4 +214,4 @@ test ! -e "$DATA/State/social/inbox_crm_identity/.identity-key"
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal includes local portfolio Inbox + explicit portfolio Inbox refresh control; no provider POST, AI generation or business mutation executed'
+echo 'POST-W99 DEV MAC SMOKE PASS: packaged terminal includes local portfolio Inbox + explicit portfolio Inbox refresh control + local multi-company CRM; no provider POST, AI generation or business mutation executed'
