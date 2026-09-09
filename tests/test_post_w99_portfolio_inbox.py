@@ -89,7 +89,7 @@ class PortfolioInboxPureTests(unittest.TestCase):
         self.assertNotIn("page_1", serialized)
         self.assertNotIn("facebook_page_id", serialized)
         self.assertNotIn("instagram_id", serialized)
-        self.assertIn("Texto mínimo", serialized)
+        self.assertEqual(result["queue"][0]["excerpt"], "Texto mínimo")
         self.assertTrue(result["contracts"]["full_provider_bodies_excluded"])
 
 
