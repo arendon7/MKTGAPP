@@ -47,6 +47,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/portfolio_crm.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -59,6 +61,26 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]]
 [[ -f "$RESOURCES/source/web/portfolio-inbox-refresh.js" ]]
 [[ -f "$RESOURCES/source/web/portfolio-inbox.js" ]]
+[[ -f "$RESOURCES/source/web/portfolio-crm.js" ]]
+/usr/bin/grep -q 'service_post_w99_portfolio_crm_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_portfolio_inbox_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_CRM_OPPORTUNITIES = 200' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_CRM_ACTIVITIES = 200' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
+/usr/bin/grep -q 'no_cross_type_priority_score' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
+/usr/bin/grep -q 'cross_company_contact_pii_omitted' "$RESOURCES/source/src/binario_marketing/portfolio_crm.py"
+/usr/bin/grep -q '/api/portfolio/crm' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py"
+! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py"
+/usr/bin/grep -q 'POST_W99_PORTFOLIO_CRM' "$RESOURCES/source/web/portfolio-crm.js"
+/usr/bin/grep -q 'portfolioNavigate' "$RESOURCES/source/web/portfolio-crm.js"
+/usr/bin/grep -q 'actionCenterOpen' "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q "method:'POST'" "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q "method:'PATCH'" "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q 'localStorage' "$RESOURCES/source/web/portfolio-crm.js"
+! /usr/bin/grep -q 'sessionStorage' "$RESOURCES/source/web/portfolio-crm.js"
 /usr/bin/grep -q 'service_post_w99_portfolio_inbox_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py"
 /usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_ITEMS = 100' "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py"
@@ -206,4 +228,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context + bounded portfolio Inbox refresh + local multi-company Inbox'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context + bounded portfolio Inbox refresh + local multi-company Inbox + local multi-company CRM'
