@@ -43,7 +43,7 @@ class PortfolioCRMPureTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["pending_activities"], 3)
         self.assertTrue(payload["contracts"]["no_cross_type_priority_score"])
         serialized = json.dumps(payload)
-        for forbidden in ("secret@example.com", "contact-secret", "private activity body", "+57 300", "secret notes", '"contact"', '"notes"', '"summary"'):
+        for forbidden in ("secret@example.com", "contact-secret", "private activity body", "+57 300", "secret notes", '"contact"', '"notes"', '"detail"'):
             self.assertNotIn(forbidden, serialized)
         self.assertEqual(payload["activities"][0]["opportunity_title"], "Propuesta A")
         self.assertEqual(payload["activities"][0]["action"]["entity_id"], "act-a")
@@ -88,7 +88,7 @@ class PortfolioCRMRuntimeTests(unittest.TestCase):
 
     def test_browser_contract_has_no_portfolio_mutation_or_background_loop(self):
         source = (ROOT / "web" / "portfolio-crm.js").read_text(encoding="utf-8")
-        for required in ("CRM / MULTIEMPRESA", "/api/portfolio/crm", "portfolioNavigate", "actionCenterOpen", "Volver a todas las empresas", "commercial Pipeline".replace("commercial", "Commercial")):
+        for required in ("CRM / MULTIEMPRESA", "/api/portfolio/crm", "portfolioNavigate", "actionCenterOpen", "Volver a todas las empresas", "Commercial Pipeline"):
             self.assertIn(required, source)
         for forbidden in ("method:'POST'", "method:'PATCH'", "method:'DELETE'", "setInterval(", "setTimeout(", "MutationObserver", "localStorage", "sessionStorage", "fetch('https://", 'fetch("https://'):
             self.assertNotIn(forbidden, source)
