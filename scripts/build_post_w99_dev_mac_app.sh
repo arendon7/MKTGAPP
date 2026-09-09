@@ -62,6 +62,8 @@ PLIST="$CONTENTS/Info.plist"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py" ]] || fail "post-W99 portfolio Inbox refresh terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py" ]] || fail "post-W99 portfolio Inbox core is missing from packaged source"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py" ]] || fail "post-W99 portfolio Inbox terminal is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/portfolio_crm.py" ]] || fail "post-W99 portfolio CRM core is missing from packaged source"
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_crm_app.py" ]] || fail "post-W99 portfolio CRM terminal is missing from packaged source"
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]] || fail "post-W99 calendar control is missing from packaged source"
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]] || fail "post-W99 Today portfolio browser surface is missing from packaged source"
 [[ -f "$RESOURCES/source/web/cloud-social-bridge.js" ]] || fail "post-W99 cloud social browser control is missing from packaged source"
@@ -73,6 +75,7 @@ PLIST="$CONTENTS/Info.plist"
 [[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]] || fail "post-W99 AI recommendation evidence browser adapter is missing from packaged source"
 [[ -f "$RESOURCES/source/web/portfolio-inbox-refresh.js" ]] || fail "post-W99 portfolio Inbox refresh browser adapter is missing from packaged source"
 [[ -f "$RESOURCES/source/web/portfolio-inbox.js" ]] || fail "post-W99 portfolio Inbox browser surface is missing from packaged source"
+[[ -f "$RESOURCES/source/web/portfolio-crm.js" ]] || fail "post-W99 portfolio CRM browser surface is missing from packaged source"
 
 cat > "$LAUNCH" <<'PY'
 from __future__ import annotations
