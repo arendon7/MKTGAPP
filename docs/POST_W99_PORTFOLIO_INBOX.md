@@ -38,9 +38,11 @@ is local and read-only. It:
 - reuses the current `inbox_attention()` projection, including reply/CRM suppression and blocking reconciliation states;
 - preserves the existing attention `rank` as priority authority;
 - caps the displayed global queue at 100 items;
-- exposes only minimized fields already allowed by the local attention snapshot.
+- re-minimizes every cross-company item through an explicit field allowlist before exposing it.
 
-No Facebook/Instagram mapping IDs, Meta person IDs, provider links, raw provider errors or full provider response bodies are added to this projection.
+The Portfolio boundary accepts only the fields required to identify and explain the pending local action: interaction kind/ID, observed time, actor handle, exact local CRM contact ID when already resolved, excerpt, reply eligibility, attention kind, rank/urgency/blocking state, title/detail and reason code. Excerpts remain capped at 280 characters.
+
+Unexpected future snapshot fields are discarded by default. Facebook/Instagram mapping IDs, Meta person IDs, provider links, raw provider errors, sender/recipient graphs and full provider response bodies cannot cross this projection merely because a lower-level snapshot later evolves.
 
 ## Explicit refresh reuse
 
