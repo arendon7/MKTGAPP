@@ -10,6 +10,22 @@ from .portfolio_inbox_refresh import company_has_inbox_mapping
 SCHEMA = "binario.marketing.portfolio-inbox.v1"
 MAX_PORTFOLIO_INBOX_ITEMS = 100
 _URGENCY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+_PORTFOLIO_ITEM_FIELDS = (
+    "kind",
+    "interaction_id",
+    "occurred_at",
+    "actor_handle",
+    "crm_contact_id",
+    "excerpt",
+    "reply_eligible",
+    "attention_kind",
+    "rank",
+    "urgency",
+    "blocking",
+    "title",
+    "detail",
+    "reason_code",
+)
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -49,6 +65,34 @@ def _company_identity(company: object) -> dict:
     }
 
 
+def _portfolio_item(item: dict) -> dict:
+    """Re-minimize one already-minimized attention row at the cross-company boundary."""
+    row = {
+        key: deepcopy(item.get(key))
+        for key in _PORTFOLIO_ITEM_FIELDS
+        if key in item
+    }
+    row["kind"] = str(row.get("kind") or "").strip()
+    row["interaction_id"] = str(row.get("interaction_id") or "").strip()[:300]
+    row["occurred_at"] = str(row.get("occurred_at") or "").strip()
+    actor = str(row.get("actor_handle") or "").strip().lstrip("@").casefold()
+    row["actor_handle"] = actor[:120] or None
+    contact = str(row.get("crm_contact_id") or "").strip()
+    row["crm_contact_id"] = contact if contact.startswith("contact_") else None
+    excerpt = " ".join(str(row.get("excerpt") or "").strip().split())
+    row["excerpt"] = excerpt[:280] or None
+    row["reply_eligible"] = bool(row.get("reply_eligible"))
+    row["attention_kind"] = str(row.get("attention_kind") or "").strip()
+    rank = row.get("rank")
+    row["rank"] = rank if isinstance(rank, int) and not isinstance(rank, bool) else 999
+    row["urgency"] = str(row.get("urgency") or "").strip().upper()
+    row["blocking"] = bool(row.get("blocking"))
+    row["title"] = str(row.get("title") or "").strip()[:240]
+    row["detail"] = str(row.get("detail") or "").strip()[:400]
+    row["reason_code"] = str(row.get("reason_code") or "").strip()[:120]
+    return row
+
+
 def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dict[str, dict]) -> dict:
     """Aggregate minimized local Inbox attention without any provider read or mutation."""
     company_rows: list[dict] = []
@@ -76,11 +120,11 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
         for item in attention.get("items") or []:
             if not isinstance(item, dict):
                 continue
-            kind = str(item.get("kind") or "").strip()
-            interaction_id = str(item.get("interaction_id") or "").strip()
+            row = _portfolio_item(item)
+            kind = row["kind"]
+            interaction_id = row["interaction_id"]
             if kind not in {"facebook_message", "instagram_comment"} or not interaction_id:
                 continue
-            row = deepcopy(item)
             row["portfolio_id"] = f"{identity['id']}:{kind}:{interaction_id}"
             row["company"] = deepcopy(identity)
             row["action"] = {
@@ -137,6 +181,7 @@ def build_portfolio_inbox(companies: Iterable[object], attention_by_company: dic
             "existing_inbox_attention_is_resolution_authority": True,
             "existing_attention_rank_is_priority_authority": True,
             "cross_company_order_is_deterministic": True,
+            "portfolio_field_allowlist_enforced": True,
             "max_items": MAX_PORTFOLIO_INBOX_ITEMS,
             "queue_scope_declared": True,
             "provider_person_ids_excluded": True,
