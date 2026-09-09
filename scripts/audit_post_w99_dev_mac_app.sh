@@ -45,6 +45,8 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_ai_human_feedback_context_app.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py" ]]
 [[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py" ]]
+[[ -f "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py" ]]
 [[ -f "$RESOURCES/source/web/primary-navigation.js" ]]
 [[ -f "$RESOURCES/source/web/social-background-control.js" ]]
 [[ -f "$RESOURCES/source/web/today-portfolio.js" ]]
@@ -56,6 +58,15 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 [[ -f "$RESOURCES/source/web/ai-recommendation-handoff.js" ]]
 [[ -f "$RESOURCES/source/web/ai-recommendation-evidence.js" ]]
 [[ -f "$RESOURCES/source/web/portfolio-inbox-refresh.js" ]]
+[[ -f "$RESOURCES/source/web/portfolio-inbox.js" ]]
+/usr/bin/grep -q 'service_post_w99_portfolio_inbox_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
+/usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py"
+/usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_ITEMS = 100' "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py"
+/usr/bin/grep -q 'existing_inbox_attention_is_resolution_authority' "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py"
+/usr/bin/grep -q 'queue_scope_declared' "$RESOURCES/source/src/binario_marketing/portfolio_inbox.py"
+/usr/bin/grep -q '/api/portfolio/inbox-attention' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py"
+! /usr/bin/grep -q 'MetaGraphClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py"
+! /usr/bin/grep -q 'AIProviderClient' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_app.py"
 /usr/bin/grep -q 'service_post_w99_portfolio_inbox_refresh_app' "$RESOURCES/source/src/binario_marketing/service_post_w99_dev_app.py"
 /usr/bin/grep -q 'service_post_w99_ai_human_feedback_context_app as base' "$RESOURCES/source/src/binario_marketing/service_post_w99_portfolio_inbox_refresh_app.py"
 /usr/bin/grep -q 'MAX_PORTFOLIO_INBOX_REFRESH_COMPANIES = 50' "$RESOURCES/source/src/binario_marketing/portfolio_inbox_refresh.py"
@@ -165,10 +176,22 @@ DISPLAY="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")"
 /usr/bin/grep -q '/api/portfolio/inbox-refresh-plan' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 /usr/bin/grep -q '/api/portfolio/inbox-refresh' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 /usr/bin/grep -q "method:'POST'" "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'postW99PortfolioInboxRefreshRun' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 ! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 ! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 ! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
 ! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/portfolio-inbox-refresh.js"
+/usr/bin/grep -q 'POST_W99_PORTFOLIO_INBOX' "$RESOURCES/source/web/portfolio-inbox.js"
+/usr/bin/grep -q "mode:'PORTFOLIO'" "$RESOURCES/source/web/portfolio-inbox.js"
+/usr/bin/grep -q '/api/portfolio/inbox-attention' "$RESOURCES/source/web/portfolio-inbox.js"
+/usr/bin/grep -q 'postW99PortfolioInboxRefreshRun' "$RESOURCES/source/web/portfolio-inbox.js"
+/usr/bin/grep -q 'portfolioNavigate' "$RESOURCES/source/web/portfolio-inbox.js"
+/usr/bin/grep -q 'Volver a todas las empresas' "$RESOURCES/source/web/portfolio-inbox.js"
+! /usr/bin/grep -q "method:'POST'" "$RESOURCES/source/web/portfolio-inbox.js"
+! /usr/bin/grep -q 'setInterval' "$RESOURCES/source/web/portfolio-inbox.js"
+! /usr/bin/grep -q 'setTimeout' "$RESOURCES/source/web/portfolio-inbox.js"
+! /usr/bin/grep -q 'MutationObserver' "$RESOURCES/source/web/portfolio-inbox.js"
+! /usr/bin/grep -q 'fetch.*https://' "$RESOURCES/source/web/portfolio-inbox.js"
 
 "$PY" -I -B - "$PROVENANCE" <<'PY'
 import json,sys
@@ -183,4 +206,4 @@ print('POST-W99 DEV PROVENANCE PASS')
 PY
 
 /usr/bin/codesign --verify --deep --strict "$APP"
-echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context + bounded portfolio Inbox refresh'
+echo 'POST-W99 DEV MAC AUDIT PASS: current terminal includes cloud + Inbox + CRM identity + results freshness + AI review + accepted owner handoff + post-application evidence + human feedback context + bounded portfolio Inbox refresh + local multi-company Inbox'
