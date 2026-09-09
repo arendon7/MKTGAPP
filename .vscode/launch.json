@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MKTGAPP: Debug Serve Dev",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "binario_marketing.cli",
+      "args": [
+        "serve-dev",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8766",
+        "--open"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

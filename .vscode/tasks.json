@@ -1,0 +1,87 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MKTGAPP: Serve Dev",
+      "type": "shell",
+      "command": "python3",
+      "args": [
+        "-m",
+        "binario_marketing.cli",
+        "serve-dev",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8766",
+        "--open"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MKTGAPP: Test All",
+      "type": "shell",
+      "command": "python3",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MKTGAPP: Runtime Diagnostics",
+      "type": "shell",
+      "command": "python3",
+      "args": ["-m", "binario_marketing.cli", "runtime"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MKTGAPP: Meta Status (read-only)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["-m", "binario_marketing.cli", "meta-status"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}
