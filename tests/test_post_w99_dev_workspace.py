@@ -14,6 +14,7 @@ class PostW99DevelopmentWorkspaceTests(unittest.TestCase):
         tasks = json.loads((ROOT / ".vscode" / "tasks.json").read_text(encoding="utf-8"))
         launch = json.loads((ROOT / ".vscode" / "launch.json").read_text(encoding="utf-8"))
         extensions = json.loads((ROOT / ".vscode" / "extensions.json").read_text(encoding="utf-8"))
+        settings = json.loads((ROOT / ".vscode" / "settings.json").read_text(encoding="utf-8"))
 
         labels = {task["label"]: task for task in tasks["tasks"]}
         self.assertIn("MKTGAPP: Serve Dev", labels)
@@ -32,6 +33,11 @@ class PostW99DevelopmentWorkspaceTests(unittest.TestCase):
         self.assertIn("ms-python.python", recommendations)
         self.assertIn("ms-python.debugpy", recommendations)
         self.assertIn("Google.google-antigravity", recommendations)
+
+        self.assertEqual(settings["python.analysis.extraPaths"], ["./src"])
+        self.assertTrue(settings["python.testing.unittestEnabled"])
+        self.assertFalse(settings["python.testing.pytestEnabled"])
+        self.assertIn("test_*.py", settings["python.testing.unittestArgs"])
 
     def test_agent_guardrails_preserve_frozen_release_boundary(self):
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
