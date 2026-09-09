@@ -39,13 +39,13 @@
   }
 
   async function run(button){
-    if(state.busy)return;
-    const plan=await loadPlan(true);if(!plan)return;
+    if(state.busy)return null;
+    const plan=await loadPlan(true);if(!plan)return null;
     const ids=pendingIds(plan),summary=plan.summary||{};
-    if(!ids.length){opsToast('Inbox ya está al día; no hay snapshots pendientes de actualización.');render();return}
-    if((summary.refresh_overflow||0)>0){opsToast('Hay más bandejas pendientes que el límite seguro de una sola actualización.');return}
+    if(!ids.length){opsToast('Inbox ya está al día; no hay snapshots pendientes de actualización.');render();return null}
+    if((summary.refresh_overflow||0)>0){opsToast('Hay más bandejas pendientes que el límite seguro de una sola actualización.');return null}
     const confirmed=window.confirm(`Vas a consultar secuencialmente Meta sólo para ${ids.length} empresa(s) cuyo snapshot local requiere actualización. Las bandejas vigentes se omiten. Esto no responde mensajes, no comenta, no modifica CRM, no publica y no genera IA. ¿Continuar?`);
-    if(!confirmed)return;
+    if(!confirmed)return null;
     state.busy=true;if(button)button.disabled=true;
     try{
       state.lastResult=await opsApi('/api/portfolio/inbox-refresh',{method:'POST',body:{company_ids:ids}});
@@ -53,7 +53,8 @@
       await loadPlan(true);
       const result=state.lastResult?.summary||{};
       opsToast(`Inbox pendiente: ${result.refreshed||0}/${result.requested||0} actualizadas${result.failed?`; ${result.failed} fallaron`:''}`);
-    }catch(err){opsToast(err.message)}
+      return state.lastResult;
+    }catch(err){opsToast(err.message);return null}
     finally{state.busy=false;render()}
   }
 
@@ -67,6 +68,9 @@
     if(note)note.textContent=statusText();
     if(!state.plan&&!state.loading)loadPlan().then(render);
   }
+
+  globalThis.postW99PortfolioInboxRefreshRun=run;
+  globalThis.postW99PortfolioInboxRefreshLoadPlan=loadPlan;
 
   if(typeof globalThis.todayPortfolioRender==='function'){
     const baseRender=globalThis.todayPortfolioRender;
