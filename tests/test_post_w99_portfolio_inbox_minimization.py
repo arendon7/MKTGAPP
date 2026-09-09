@@ -54,19 +54,23 @@ class PortfolioInboxMinimizationTests(unittest.TestCase):
         self.assertEqual(row["excerpt"], "Quiero información")
         self.assertEqual(row["urgency"], "HIGH")
         self.assertTrue(result["contracts"]["portfolio_field_allowlist_enforced"])
-        for forbidden in (
+        for forbidden_value in (
             "person-secret",
             "provider.example",
             "Nombre privado",
             "cuerpo completo",
             "never-leak",
             "page-mapping-must-not-leak",
+        ):
+            self.assertNotIn(forbidden_value, serialized)
+        for forbidden_key in (
             "provider_person_id",
             "provider_link",
+            "from",
             "full_message_body",
             "provider_error",
         ):
-            self.assertNotIn(forbidden, serialized)
+            self.assertNotIn(forbidden_key, row)
 
     def test_allowlist_normalizes_lengths_and_rejects_boolean_rank(self):
         company = SimpleNamespace(
