@@ -148,12 +148,12 @@ class PilotRecoveryRehearsal:
         if not SNAPSHOT_ID_RE.fullmatch(value):
             raise ValueError("invalid pilot snapshot id")
         with self._lock:
-            # Reuse the certified snapshot verifier rather than introducing a second
-            # snapshot-validity authority.
-            self.pilot_data_safety.verify_snapshot(value)
             snapshot_root = self.backup_root / value
+            # Defense in depth for the known root-link edge case: reject before the
+            # inherited verifier can follow a directory symlink.
             if snapshot_root.is_symlink():
                 raise ValueError("pilot snapshot root cannot be a symbolic link")
+            self.pilot_data_safety.verify_snapshot(value)
             manifest_path = snapshot_root / "manifest.json"
             if manifest_path.is_symlink() or not manifest_path.is_file():
                 raise KeyError(value)
@@ -165,12 +165,15 @@ class PilotRecoveryRehearsal:
             root_existed = self.rehearsal_root.exists()
             if root_existed and self.rehearsal_root.is_symlink():
                 raise ValueError("recovery rehearsal root must not be a symbolic link")
+            if root_existed and not self.rehearsal_root.is_dir():
+                raise ValueError("recovery rehearsal root must be a directory")
             self.rehearsal_root.mkdir(parents=True, exist_ok=True)
             if self.rehearsal_root.is_symlink():
                 raise ValueError("recovery rehearsal root must not be a symbolic link")
 
             workspace = Path(tempfile.mkdtemp(prefix="rehearsal_", dir=self.rehearsal_root))
             result: dict | None = None
+            operation_error: Exception | None = None
             cleanup_error = False
             try:
                 seen: set[str] = set()
@@ -187,8 +190,7 @@ class PilotRecoveryRehearsal:
                 if len(relatives) != int(payload.get("file_count") or 0) or copied_bytes != int(payload.get("total_bytes") or 0):
                     raise ValueError("isolated recovery copy inventory mismatch")
 
-                isolated_payload = dict(payload)
-                self.pilot_data_safety._verify_directory(workspace, isolated_payload)
+                self.pilot_data_safety._verify_directory(workspace, dict(payload))
                 readability = self._readability(workspace / "data", relatives)
                 result = {
                     "schema": RECOVERY_REHEARSAL_SCHEMA,
@@ -206,6 +208,8 @@ class PilotRecoveryRehearsal:
                     "provider_mutations": False,
                     "workers_started": False,
                 }
+            except Exception as exc:  # preserve the safe local failure after cleanup/evidence checks
+                operation_error = exc
             finally:
                 try:
                     shutil.rmtree(workspace)
@@ -219,11 +223,15 @@ class PilotRecoveryRehearsal:
                 except OSError:
                     cleanup_error = True
 
-            if cleanup_error:
-                raise ValueError("isolated recovery rehearsal cleanup failed")
             active_after = self._active_fingerprint()
             if active_before != active_after:
                 raise ValueError("active application data changed during recovery rehearsal")
+            if cleanup_error:
+                raise ValueError("isolated recovery rehearsal cleanup failed")
+            if operation_error is not None:
+                if isinstance(operation_error, (KeyError, ValueError, OSError)):
+                    raise operation_error
+                raise ValueError("isolated recovery rehearsal failed") from operation_error
             if result is None:
                 raise ValueError("isolated recovery rehearsal failed")
             result["active_data_unchanged"] = True
