@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import service_post_w99_pilot_launch_gate_app as base
-from .pilot_daily_receipt import PilotDailyReceiptStore
+from .pilot_daily_receipt import PilotDailyReceiptStore, PilotDailyReceiptStoreCorrupt
 
 
 OPERATOR_HEADER = "X-Mercadeo-Operator"
@@ -63,13 +63,19 @@ class MarketingHandler(base.MarketingHandler):
             self._static(path)
             return
         if path == "/api/pilot/daily-receipts":
+            query = parse_qs(parsed.query)
+            raw_limit = (query.get("limit") or ["90"])[0]
             try:
-                query = parse_qs(parsed.query)
-                raw_limit = (query.get("limit") or ["90"])[0]
-                result = self.server.runtime.pilot_daily_receipts.list(limit=int(raw_limit))
-                self._json(result)
+                limit = int(raw_limit)
+                if limit < 1 or limit > 365:
+                    raise ValueError
             except (ValueError, TypeError):
                 self._error(HTTPStatus.BAD_REQUEST, "invalid pilot receipt history limit")
+                return
+            try:
+                self._json(self.server.runtime.pilot_daily_receipts.list(limit=limit))
+            except PilotDailyReceiptStoreCorrupt:
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "local pilot receipt history failed integrity validation")
             except (OSError, UnicodeError, json.JSONDecodeError):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "local pilot receipt history unavailable")
             return
@@ -84,12 +90,19 @@ class MarketingHandler(base.MarketingHandler):
             self._error(HTTPStatus.FORBIDDEN, "explicit local operator action required")
             return
         try:
-            with self.server.mutation_lock:
-                result = self.server.runtime.pilot_daily_receipts.record(self._body())
-            self._json(result, HTTPStatus.CREATED)
+            payload = self._body()
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._error(HTTPStatus.BAD_REQUEST, str(exc))
-        except (OSError, UnicodeError):
+            return
+        try:
+            with self.server.mutation_lock:
+                result = self.server.runtime.pilot_daily_receipts.record(payload)
+            self._json(result, HTTPStatus.CREATED)
+        except (ValueError, TypeError) as exc:
+            self._error(HTTPStatus.BAD_REQUEST, str(exc))
+        except PilotDailyReceiptStoreCorrupt:
+            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "local pilot receipt history failed integrity validation")
+        except (OSError, UnicodeError, json.JSONDecodeError):
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "local pilot receipt write failed")
 
 
