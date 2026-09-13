@@ -18,6 +18,10 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _RECEIPT_RE = re.compile(r"^receipt_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
 
 
+class PilotDailyReceiptStoreCorrupt(RuntimeError):
+    """Raised when persisted pilot receipt state cannot be trusted."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -52,20 +56,21 @@ class PilotDailyReceiptStore:
         return {"schema": STORE_SCHEMA, "receipts": []}
 
     def _read(self) -> dict:
-        if self.path.is_symlink():
-            raise ValueError("pilot receipt store must not be a symbolic link")
         if not self.path.exists():
             return self._empty()
-        if not self.path.is_file():
-            raise ValueError("pilot receipt store must be a regular file")
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or set(payload) != {"schema", "receipts"}:
-            raise ValueError("invalid pilot receipt store")
-        if payload.get("schema") != STORE_SCHEMA or not isinstance(payload.get("receipts"), list):
-            raise ValueError("invalid pilot receipt store")
-        for row in payload["receipts"]:
-            self._validate_stored(row)
-        return payload
+        try:
+            if self.path.is_symlink() or not self.path.is_file():
+                raise ValueError("unsafe pilot receipt store")
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or set(payload) != {"schema", "receipts"}:
+                raise ValueError("invalid pilot receipt store")
+            if payload.get("schema") != STORE_SCHEMA or not isinstance(payload.get("receipts"), list):
+                raise ValueError("invalid pilot receipt store")
+            for row in payload["receipts"]:
+                self._validate_stored(row)
+            return payload
+        except (ValueError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
+            raise PilotDailyReceiptStoreCorrupt("pilot receipt store failed integrity validation") from exc
 
     @staticmethod
     def _sanitize_gate(payload: object) -> dict:
@@ -139,10 +144,10 @@ class PilotDailyReceiptStore:
         local_date = str(row.get("local_date") or "")
         if not _DATE_RE.fullmatch(local_date):
             raise ValueError("invalid pilot receipt local date")
-        try:
-            datetime.fromisoformat(str(row.get("recorded_at") or "").replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("invalid pilot receipt timestamp") from exc
+        datetime.strptime(local_date, "%Y-%m-%d")
+        timestamp = datetime.fromisoformat(str(row.get("recorded_at") or "").replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            raise ValueError("invalid pilot receipt timestamp")
         gate = row.get("gate")
         if not isinstance(gate, dict):
             raise ValueError("invalid pilot receipt gate evidence")
@@ -196,7 +201,7 @@ class PilotDailyReceiptStore:
         with self._lock:
             rows = [self._public(row) for row in self._read()["receipts"]]
         rows.sort(key=lambda row: (row["recorded_at"], row["id"]), reverse=True)
-        observed_days = sorted({row["local_date"] for row in rows})
+        observed_days = {row["local_date"] for row in rows}
         latest_by_day: dict[str, dict] = {}
         for row in rows:
             latest_by_day.setdefault(row["local_date"], row)
@@ -225,6 +230,7 @@ __all__ = [
     "CHECK_IDS",
     "GATE_SCHEMA",
     "PilotDailyReceiptStore",
+    "PilotDailyReceiptStoreCorrupt",
     "RECEIPT_SCHEMA",
     "STORE_SCHEMA",
 ]
