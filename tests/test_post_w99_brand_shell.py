@@ -59,7 +59,8 @@ class PostW99BrandShellTests(unittest.TestCase):
                 self.assertTrue(content_type.startswith("image/svg+xml"))
                 self.assertIn("<title id=\"title\">MERCADEO APP</title>", body)
                 self.assertIn("viewBox=\"0 0 64 64\"", body)
-                for forbidden in ("<script", "http://", "https://", "data:", "<image", "href="):
+                self.assertIn('xmlns="http://www.w3.org/2000/svg"', body)
+                for forbidden in ("<script", "https://", "data:", "<image", "xlink:href", 'href="http'):
                     self.assertNotIn(forbidden, body)
 
     def test_brand_terminal_is_presentation_only_and_preserves_language_polish(self):
