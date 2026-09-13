@@ -35,7 +35,8 @@ from .service_post_w99_portfolio_crm_app import AppRuntime as _PortfolioCRMAppRu
 from .service_post_w99_portfolio_content_app import AppRuntime as _PortfolioContentAppRuntime
 from .service_post_w99_portfolio_campaigns_app import AppRuntime as _PortfolioCampaignsAppRuntime
 from .service_post_w99_portfolio_companies_app import AppRuntime as _PortfolioCompaniesAppRuntime
-from .service_post_w99_pilot_readiness_app import (
+from .service_post_w99_pilot_readiness_app import AppRuntime as _PilotReadinessAppRuntime
+from .service_post_w99_pilot_guidance_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
