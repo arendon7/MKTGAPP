@@ -43,7 +43,8 @@ from .service_post_w99_pilot_session_status_app import AppRuntime as _PilotSessi
 from .service_post_w99_pilot_language_polish_app import AppRuntime as _PilotLanguagePolishAppRuntime
 from .service_post_w99_pilot_recovery_rehearsal_app import AppRuntime as _PilotRecoveryRehearsalAppRuntime
 from .service_post_w99_pilot_launch_gate_app import AppRuntime as _PilotLaunchGateAppRuntime
-from .service_post_w99_pilot_daily_receipt_app import (
+from .service_post_w99_pilot_daily_receipt_app import AppRuntime as _PilotDailyReceiptAppRuntime
+from .service_post_w99_pilot_month_tracker_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
