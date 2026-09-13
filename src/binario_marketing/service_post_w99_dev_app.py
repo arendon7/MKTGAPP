@@ -41,7 +41,8 @@ from .service_post_w99_pilot_journey_smoke_app import AppRuntime as _PilotJourne
 from .service_post_w99_pilot_data_safety_app import AppRuntime as _PilotDataSafetyAppRuntime
 from .service_post_w99_pilot_session_status_app import AppRuntime as _PilotSessionStatusAppRuntime
 from .service_post_w99_pilot_language_polish_app import AppRuntime as _PilotLanguagePolishAppRuntime
-from .service_post_w99_pilot_recovery_rehearsal_app import (
+from .service_post_w99_pilot_recovery_rehearsal_app import AppRuntime as _PilotRecoveryRehearsalAppRuntime
+from .service_post_w99_pilot_launch_gate_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
