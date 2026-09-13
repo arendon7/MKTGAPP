@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import service_post_w99_pilot_readiness_app as base
 
@@ -23,23 +25,30 @@ class MarketingHandler(base.MarketingHandler):
         if path == "/pilot-guidance.js":
             target = self.server.runtime.repo_root / "web" / "pilot-guidance.js"
             if not target.is_file():
-                self._error(404, "not found")
+                self._error(HTTPStatus.NOT_FOUND, "not found")
                 return
             body = target.read_bytes()
-            self._headers(200, "application/javascript; charset=utf-8", len(body))
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
             self.wfile.write(body)
             return
         if path == "/pilot-readiness.js":
             target = self.server.runtime.repo_root / "web" / "pilot-readiness.js"
             if not target.is_file():
-                self._error(404, "not found")
+                self._error(HTTPStatus.NOT_FOUND, "not found")
                 return
             loader = b"\n;(()=>{if(document.querySelector('script[data-post-w99-pilot-guidance]'))return;const s=document.createElement('script');s.src='/pilot-guidance.js';s.defer=true;s.dataset.postW99PilotGuidance='1';document.head.append(s)})();\n"
             body = target.read_bytes() + loader
-            self._headers(200, "application/javascript; charset=utf-8", len(body))
+            self._headers(HTTPStatus.OK, "application/javascript; charset=utf-8", len(body))
             self.wfile.write(body)
             return
         super()._static(path)
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path in {"/pilot-readiness.js", "/pilot-guidance.js"}:
+            self._static(path)
+            return
+        super().do_GET()
 
 
 def create_server(runtime: AppRuntime, host: str = "127.0.0.1", port: int = 8765) -> MarketingHTTPServer:
