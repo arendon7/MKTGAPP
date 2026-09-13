@@ -5,6 +5,7 @@
   const API='/api/pilot-data-safety/snapshots';
   const OPERATOR_HEADER={'X-Mercadeo-Operator':'pilot-data-safety'};
   let busy=false;
+  let lastResult=null;
 
   function ensureStyles(){
     if(document.querySelector('#post-w99-pilot-recovery-rehearsal-style'))return;
@@ -45,6 +46,11 @@
     node.textContent=message;
   }
 
+  function publishEvidence(payload){
+    lastResult=payload?{...payload}:null;
+    window.dispatchEvent(new CustomEvent('post-w99-pilot-recovery-rehearsed',{detail:lastResult?{...lastResult}:null}));
+  }
+
   async function rehearse(panel,button){
     if(busy)return;
     busy=true;
@@ -55,6 +61,7 @@
       const listing=await request('GET',API);
       const snapshot=Array.isArray(listing.snapshots)?listing.snapshots[0]:null;
       if(!snapshot?.id){
+        publishEvidence({schema:'binario.marketing.pilot-recovery-session-evidence.v1',status:'FAIL',checked_at:new Date().toISOString()});
         show(panel,'No hay un respaldo disponible. Crea primero un respaldo verificado y vuelve a probar.','error');
         return;
       }
@@ -63,8 +70,18 @@
       if(outcome.status!=='PASS'||!outcome.active_data_unchanged||!outcome.workspace_cleaned){
         throw new Error('El ensayo no pudo demostrar una recuperación aislada segura.');
       }
+      publishEvidence({
+        schema:'binario.marketing.pilot-recovery-session-evidence.v1',
+        snapshot_id:outcome.snapshot_id,
+        status:'PASS',
+        checked_at:new Date().toISOString(),
+        files_checked:files,
+        active_data_unchanged:true,
+        workspace_cleaned:true,
+      });
       show(panel,`RECUPERACIÓN VERIFICADA · ${files} archivos comprobados · datos activos sin cambios · espacio temporal eliminado.`,'pass');
     }catch(error){
+      publishEvidence({schema:'binario.marketing.pilot-recovery-session-evidence.v1',status:'FAIL',checked_at:new Date().toISOString()});
       show(panel,String(error?.message||'No fue posible completar el ensayo local de recuperación.'),'error');
     }finally{
       busy=false;
@@ -100,6 +117,7 @@
   window.addEventListener('marketing-ops-refreshed',()=>setTimeout(installControl,0));
   window.addEventListener('wave73-entry-ready',()=>setTimeout(installControl,0));
   window.addEventListener('wave73-bootstrap-ready',()=>setTimeout(installControl,0));
+  globalThis.pilotRecoveryRehearsalReport=()=>lastResult?{...lastResult}:null;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(installControl,0),{once:true});
   else setTimeout(installControl,0);
 })();
