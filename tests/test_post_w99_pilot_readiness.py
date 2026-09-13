@@ -56,6 +56,7 @@ class PilotReadinessRuntimeTests(unittest.TestCase):
             "MERCADEO APP · Centro de operaciones",
             "wave73-bootstrap-failed",
             "marketing-ops-refreshed",
+            "marketingOpsState.dashboard===null",
             "opsShowView('companies')",
             "opsShowView('today-execution')",
             "Piloto local",
