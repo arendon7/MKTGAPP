@@ -34,7 +34,8 @@ from .service_post_w99_portfolio_inbox_app import AppRuntime as _PortfolioInboxA
 from .service_post_w99_portfolio_crm_app import AppRuntime as _PortfolioCRMAppRuntime
 from .service_post_w99_portfolio_content_app import AppRuntime as _PortfolioContentAppRuntime
 from .service_post_w99_portfolio_campaigns_app import AppRuntime as _PortfolioCampaignsAppRuntime
-from .service_post_w99_portfolio_companies_app import (
+from .service_post_w99_portfolio_companies_app import AppRuntime as _PortfolioCompaniesAppRuntime
+from .service_post_w99_pilot_readiness_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
