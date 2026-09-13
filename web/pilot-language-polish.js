@@ -30,12 +30,18 @@
   }
 
   function polishGuidance(){
-    for(const node of document.querySelectorAll('.pilot-guide-copy p'))replaceText(node,[
-      ['No se pudo leer el estado local de W50.','No se pudo leer el estado de preparación de esta empresa.'],
-      ['W50 no pudo componer el estado local de esta empresa.','No fue posible componer el estado local de esta empresa.'],
-      ['Los ocho pasos de readiness reportados por W50 están completos.','Los pasos de preparación de la empresa están completos.'],
-      ['W50 reporta preparación incompleta.','La preparación de la empresa está incompleta.'],
-    ]);
+    for(const node of document.querySelectorAll('.pilot-guide-copy p')){
+      const current=node.textContent||'';
+      if(current.startsWith('No se pudo leer el estado local de W50.')){
+        node.textContent='No se pudo leer el estado de preparación de esta empresa. Reintenta la lectura local.';
+        continue;
+      }
+      replaceText(node,[
+        ['W50 no pudo componer el estado local de esta empresa.','No fue posible componer el estado local de esta empresa.'],
+        ['Los ocho pasos de readiness reportados por W50 están completos.','Los pasos de preparación de la empresa están completos.'],
+        ['W50 reporta preparación incompleta.','La preparación de la empresa está incompleta.'],
+      ]);
+    }
   }
 
   function polishCompanies(){
@@ -89,7 +95,6 @@
       else if(chip.textContent==='AVAILABLE')chip.textContent='DISPONIBLE';
       else if(chip.textContent==='NONE')chip.textContent='SIN RESPALDO';
       else if(chip.textContent==='ERROR')chip.textContent='REVISAR';
-      else if(chip.textContent==='OK')chip.textContent='OK';
     }
   }
 
@@ -104,7 +109,7 @@
     polishSession();
   }
 
-  function schedule(){setTimeout(polish,0);setTimeout(polish,450)}
+  function schedule(){setTimeout(polish,0);setTimeout(polish,450);setTimeout(polish,1400)}
   const baseRender=globalThis.renderMarketingOps;
   if(typeof baseRender==='function'&&!baseRender.__postW99LanguagePolish){
     const wrapped=function(){const result=baseRender.apply(this,arguments);schedule();return result};
