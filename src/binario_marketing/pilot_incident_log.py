@@ -82,10 +82,12 @@ class PilotIncidentLog:
         return {"schema": STORE_SCHEMA, "events": []}
 
     def _read(self) -> dict:
-        if not self.path.exists():
-            return self._empty()
         try:
-            if self.path.is_symlink() or not self.path.is_file():
+            if self.path.is_symlink():
+                raise ValueError("unsafe pilot incident store")
+            if not self.path.exists():
+                return self._empty()
+            if not self.path.is_file():
                 raise ValueError("unsafe pilot incident store")
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or set(payload) != {"schema", "events"}:
