@@ -75,7 +75,7 @@
     const r=report();const summary=document.createElement('div');summary.className=`pilot-launch-summary ${r.ready?'pass':''}`;const s1=document.createElement('strong');s1.textContent=r.ready?'LISTO PARA PILOTO LOCAL':'PILOTO AÚN NO HABILITADO';const s2=document.createElement('span');s2.textContent=`${r.passed}/${r.total} controles listos`;summary.append(s1,s2);panel.append(summary);
     const grid=document.createElement('div');grid.className='pilot-launch-grid';r.checks.forEach(row=>grid.append(rowNode(row)));panel.append(grid);
     const actions=document.createElement('div');actions.className='pilot-launch-actions';const reload=document.createElement('button');reload.type='button';reload.disabled=state.busy;reload.textContent=state.busy?'Comprobando…':'Actualizar controles';reload.addEventListener('click',()=>refresh());actions.append(reload);panel.append(actions);
-    const note=document.createElement('div');note.className='pilot-launch-note';note.textContent='Este gate habilita únicamente el piloto local. No acredita producción, publicación remota, UAT física, release 0.9.0 ni que todas las empresas tengan preparación W50 completa. Las conexiones y mutaciones siguen perteneciendo a sus módulos propietarios.';panel.append(note);document.body.append(panel);return r;
+    const note=document.createElement('div');note.className='pilot-launch-note';note.textContent='Este gate habilita únicamente el piloto local. No acredita producción, publicación remota, UAT física, release 0.9.0 ni que todas las empresas tengan preparación W50 completa. Las conexiones y mutaciones siguen perteneciendo a sus módulos propietarios.';panel.append(note);document.body.append(panel);window.dispatchEvent(new CustomEvent('post-w99-pilot-launch-gate-rendered',{detail:{ready:r.ready,passed:r.passed,total:r.total}}));return r;
   }
 
   function installAction(){suppressLegacyActions();ensureStyles();const top=document.querySelector('.marketing-ops-top');if(!top||top.querySelector('.pilot-launch-action'))return;const wrap=document.createElement('div');wrap.className='pilot-launch-action';const button=document.createElement('button');button.type='button';button.textContent='Preparación piloto';button.addEventListener('click',async()=>{render();await refresh()});wrap.append(button);top.append(wrap)}
@@ -86,6 +86,7 @@
   window.addEventListener('post-w99-pilot-journey-observed',()=>{if(state.open)render()});
   window.addEventListener('post-w99-pilot-recovery-rehearsed',()=>{if(state.open)render()});
   globalThis.pilotLaunchGateOpen=()=>{render();return refresh()};
+  globalThis.pilotLaunchGateClose=closeGate;
   globalThis.pilotLaunchGateReport=report;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(installAction,0),{once:true});else setTimeout(installAction,0);
 })();
