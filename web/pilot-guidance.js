@@ -44,7 +44,6 @@
   }
 
   function button(label,handler,primary=false){const node=opsEl('button',primary?'primary':'',label);node.type='button';node.addEventListener('click',handler);return node}
-
   function removeExisting(){document.querySelector('[data-post-w99-pilot-guide]')?.remove()}
 
   function render(){
@@ -79,10 +78,18 @@
     box.append(copy,actions);root.prepend(box);
   }
 
+  function wrapDirectRenderer(name){
+    const original=globalThis[name];if(typeof original!=='function'||original.__postW99PilotGuided)return;
+    const wrapped=function(){const result=original.apply(this,arguments);if(result&&typeof result.then==='function')return result.finally(render);render();return result};
+    wrapped.__postW99PilotGuided=true;globalThis[name]=wrapped;
+  }
+
   const baseRender=globalThis.renderMarketingOps;
   globalThis.renderMarketingOps=function(){const result=baseRender.apply(this,arguments);render();return result};
+  ['inboxRenderCurrent','campaignRenderCurrent','contentRenderCurrent','wave65Render','renderWave47Pauta','renderCRMCurrent','renderOpsPublish','renderOpsCalendar','todayRender','todayPortfolioRender'].forEach(wrapDirectRenderer);
 
   window.addEventListener('marketing-ops-refreshed',()=>{state.payload=null;state.error=null;if(eligible())load(true).then(render);else removeExisting()});
   window.addEventListener('wave73-bootstrap-ready',()=>{if(eligible())load().then(render)});
+  globalThis.postW99PilotGuidanceRender=render;
   if(eligible())load().then(render);
 })();
