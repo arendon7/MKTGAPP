@@ -86,7 +86,8 @@ class PilotJourneySmokeTests(unittest.TestCase):
     def test_smoke_records_portfolio_and_company_evidence_separately(self):
         source = (ROOT / "web" / "pilot-journey-smoke.js").read_text(encoding="utf-8")
         self.assertIn("visits:{PORTFOLIO:{},COMPANY:{}}", source)
-        self.assertIn("marketingOpsState?.selectedCompanyId?'COMPANY':'PORTFOLIO'", source)
+        self.assertIn("function opsState()", source)
+        self.assertIn("opsState()?.selectedCompanyId?'COMPANY':'PORTFOLIO'", source)
         self.assertIn("OWNER_ONLY", source)
         self.assertIn("post-w99-pilot-journey-observed", source)
         self.assertIn("setTimeout(()=>inspect(view),350)", source)
