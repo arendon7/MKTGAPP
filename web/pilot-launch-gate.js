@@ -19,6 +19,8 @@
     document.querySelector('.pilot-data-safety-action')?.remove();
   }
 
+  function closeGate(){state.open=false;document.querySelector('#post-w99-pilot-launch-gate-panel')?.remove()}
+
   async function getJson(path){
     const response=await fetch(path,{method:'GET',cache:'no-store'});
     const payload=await response.json().catch(()=>({error:'Respuesta local inválida'}));
@@ -52,14 +54,15 @@
     try{[state.session,state.companies]=await Promise.all([getJson(SESSION_API),getJson(COMPANIES_API)])}catch(error){state.error=String(error?.message||error)}finally{state.busy=false;if(state.open)render()}
   }
 
-  function openView(view){if(typeof globalThis.opsShowView==='function')globalThis.opsShowView(view)}
+  function handoff(callback){closeGate();callback()}
+  function openView(view){handoff(()=>{if(typeof globalThis.opsShowView==='function')globalThis.opsShowView(view)})}
 
   function rowNode(row){
     const item=document.createElement('article');item.className='pilot-launch-row';const copy=document.createElement('div');copy.className='pilot-launch-copy';const title=document.createElement('strong');title.textContent=row.label;const badge=document.createElement('span');badge.className=`pilot-launch-badge ${row.pass?'pass':''}`;badge.textContent=row.pass?'LISTO':'PENDIENTE';const detail=document.createElement('span');detail.textContent=row.detail;copy.append(title,badge,detail);item.append(copy);
     const action=document.createElement('button');action.type='button';
     if(row.id==='companies'){action.textContent='Abrir empresas';action.addEventListener('click',()=>openView('companies'))}
-    else if(row.id==='journey'){action.textContent='Abrir recorrido';action.disabled=typeof globalThis.pilotJourneyShow!=='function';action.addEventListener('click',()=>globalThis.pilotJourneyShow?.())}
-    else if(row.id==='snapshot'||row.id==='recovery'){action.textContent='Abrir respaldo';action.disabled=typeof globalThis.pilotDataSafetyOpen!=='function';action.addEventListener('click',()=>globalThis.pilotDataSafetyOpen?.())}
+    else if(row.id==='journey'){action.textContent='Abrir recorrido';action.disabled=typeof globalThis.pilotJourneyShow!=='function';action.addEventListener('click',()=>handoff(()=>globalThis.pilotJourneyShow?.()))}
+    else if(row.id==='snapshot'||row.id==='recovery'){action.textContent='Abrir respaldo';action.disabled=typeof globalThis.pilotDataSafetyOpen!=='function';action.addEventListener('click',()=>handoff(()=>globalThis.pilotDataSafetyOpen?.()))}
     else{action.textContent='Actualizar';action.addEventListener('click',()=>refresh())}
     item.append(action);return item;
   }
@@ -67,7 +70,7 @@
   function render(){
     ensureStyles();suppressLegacyActions();document.querySelector('#post-w99-pilot-launch-gate-panel')?.remove();
     const panel=document.createElement('section');panel.id='post-w99-pilot-launch-gate-panel';panel.className='pilot-launch-panel';state.open=true;
-    const head=document.createElement('div');head.className='pilot-launch-head';const copy=document.createElement('div');const eyebrow=document.createElement('p');eyebrow.className='eyebrow';eyebrow.textContent='PILOTO · PUERTA DE INICIO';const title=document.createElement('h3');title.textContent='Preparación piloto';const desc=document.createElement('p');desc.className='muted';desc.textContent='Consolida las verificaciones locales necesarias antes de iniciar el piloto operativo de MERCADEO APP.';copy.append(eyebrow,title,desc);const close=document.createElement('button');close.type='button';close.textContent='Cerrar';close.addEventListener('click',()=>{state.open=false;panel.remove()});head.append(copy,close);panel.append(head);
+    const head=document.createElement('div');head.className='pilot-launch-head';const copy=document.createElement('div');const eyebrow=document.createElement('p');eyebrow.className='eyebrow';eyebrow.textContent='PILOTO · PUERTA DE INICIO';const title=document.createElement('h3');title.textContent='Preparación piloto';const desc=document.createElement('p');desc.className='muted';desc.textContent='Consolida las verificaciones locales necesarias antes de iniciar el piloto operativo de MERCADEO APP.';copy.append(eyebrow,title,desc);const close=document.createElement('button');close.type='button';close.textContent='Cerrar';close.addEventListener('click',closeGate);head.append(copy,close);panel.append(head);
     if(state.error){const error=document.createElement('div');error.className='pilot-launch-error';error.textContent=state.error;panel.append(error)}
     const r=report();const summary=document.createElement('div');summary.className=`pilot-launch-summary ${r.ready?'pass':''}`;const s1=document.createElement('strong');s1.textContent=r.ready?'LISTO PARA PILOTO LOCAL':'PILOTO AÚN NO HABILITADO';const s2=document.createElement('span');s2.textContent=`${r.passed}/${r.total} controles listos`;summary.append(s1,s2);panel.append(summary);
     const grid=document.createElement('div');grid.className='pilot-launch-grid';r.checks.forEach(row=>grid.append(rowNode(row)));panel.append(grid);
