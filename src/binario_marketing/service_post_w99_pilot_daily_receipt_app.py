@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -69,7 +70,7 @@ class MarketingHandler(base.MarketingHandler):
                 self._json(result)
             except (ValueError, TypeError):
                 self._error(HTTPStatus.BAD_REQUEST, "invalid pilot receipt history limit")
-            except (OSError, UnicodeError):
+            except (OSError, UnicodeError, json.JSONDecodeError):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "local pilot receipt history unavailable")
             return
         super().do_GET()
