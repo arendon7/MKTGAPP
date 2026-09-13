@@ -51,7 +51,7 @@ class PilotDailyReceiptUnitTests(unittest.TestCase):
         self.assertEqual(listing["summary"]["ready_days"], 1)
         self.assertEqual(listing["summary"]["attention_days"], 1)
         self.assertFalse(listing["safety"]["free_text_stored"])
-        self.assertFalse(listing["safety"]["company_or_contact_identity_stored"])
+        self.assertFalse(listing["safety"]["identity_fields_stored"])
         serialized = json.dumps(listing, sort_keys=True)
         for forbidden in ("company_id", "contact_id", "provider_id", "path", "sha256", "token", "note"):
             self.assertNotIn(forbidden, serialized)
