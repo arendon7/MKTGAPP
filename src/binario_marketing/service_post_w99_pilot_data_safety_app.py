@@ -8,6 +8,10 @@ from . import service_post_w99_pilot_journey_smoke_app as base
 from .pilot_data_safety import PilotDataSafety
 
 
+OPERATOR_HEADER = "X-Mercadeo-Operator"
+OPERATOR_VALUE = "pilot-data-safety"
+
+
 class AppRuntime(base.AppRuntime):
     """Cumulative post-W99 runtime with explicit local pilot data snapshots."""
 
@@ -46,6 +50,9 @@ class MarketingHandler(base.MarketingHandler):
             return
         super()._static(path)
 
+    def _operator_request(self) -> bool:
+        return self.headers.get(OPERATOR_HEADER, "") == OPERATOR_VALUE
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in {"/pilot-journey-smoke.js", "/pilot-data-safety.js"}:
@@ -58,6 +65,12 @@ class MarketingHandler(base.MarketingHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        is_snapshot_path = path == "/api/pilot-data-safety/snapshots" or (
+            path.startswith("/api/pilot-data-safety/snapshots/") and path.endswith("/verify")
+        )
+        if is_snapshot_path and not self._operator_request():
+            self._error(HTTPStatus.FORBIDDEN, "explicit local operator action required")
+            return
         try:
             if path == "/api/pilot-data-safety/snapshots":
                 # Creation is an explicit local operator mutation; serialize it with other local writes.
