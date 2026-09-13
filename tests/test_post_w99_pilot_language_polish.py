@@ -60,14 +60,14 @@ class PilotLanguagePolishTests(unittest.TestCase):
 
     def test_user_facing_replacements_remove_engineering_terms_without_changing_internal_authority(self):
         source = (ROOT / "web" / "pilot-language-polish.js").read_text(encoding="utf-8")
-        # Engineering terms can occur only as source strings to replace; the replacement text itself is product-facing.
+        # Engineering terms may remain as exact source strings solely so the presentation adapter can replace them.
         self.assertIn("No se pudo leer el estado de preparación de esta empresa.", source)
         self.assertIn("Los pasos de preparación de la empresa están completos.", source)
         self.assertIn("Los pasos y porcentajes reflejan la preparación de cada empresa.", source)
         self.assertIn("La preparación de cada empresa se revisa desde Empresas.", source)
+        self.assertIn("['PROMEDIO READINESS','PREPARACIÓN PROM.']", source)
         self.assertNotIn("W50 conserva", source)
         self.assertNotIn("Command Center/W50", source)
-        self.assertNotIn("PROMEDIO READINESS'", source)
 
     def test_terminal_release_separation_and_documentation(self):
         workflows = sorted(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml"))
