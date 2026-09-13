@@ -218,7 +218,7 @@ class PilotDailyReceiptStore:
             "safety": {
                 "local_only": True,
                 "free_text_stored": False,
-                "company_or_contact_identity_stored": False,
+                "identity_fields_stored": False,
                 "provider_metadata_stored": False,
                 "filesystem_metadata_stored": False,
                 "execution_authority": False,
