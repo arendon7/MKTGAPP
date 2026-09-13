@@ -61,6 +61,9 @@
     ensureIdentity();
     if(state.routed||state.bootstrapFailed)return;
     if(typeof marketingOpsState==='undefined'||!Array.isArray(marketingOpsState.companies)||typeof opsShowView!=='function')return;
+    // `dashboard === null` means the first local refresh has not completed yet.
+    // Do not infer an empty portfolio from the initial in-memory [] value.
+    if(marketingOpsState.dashboard===null)return;
     if(marketingOpsState.view&&marketingOpsState.view!=='home'){state.routed=true;return}
     state.routed=true;
     if(marketingOpsState.companies.length===0){opsShowView('companies');return}
