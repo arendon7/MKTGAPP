@@ -46,7 +46,8 @@ from .service_post_w99_pilot_launch_gate_app import AppRuntime as _PilotLaunchGa
 from .service_post_w99_pilot_daily_receipt_app import AppRuntime as _PilotDailyReceiptAppRuntime
 from .service_post_w99_pilot_month_tracker_app import AppRuntime as _PilotMonthTrackerAppRuntime
 from .service_post_w99_pilot_incident_log_app import AppRuntime as _PilotIncidentLogAppRuntime
-from .service_post_w99_pilot_health_summary_app import (
+from .service_post_w99_pilot_health_summary_app import AppRuntime as _PilotHealthSummaryAppRuntime
+from .service_post_w99_brand_shell_app import (
     AppRuntime,
     MarketingHandler,
     MarketingHTTPServer,
