@@ -16,7 +16,8 @@
   ];
   const state={visits:{PORTFOLIO:{},COMPANY:{}},panelOpen:false};
 
-  function mode(){return marketingOpsState?.selectedCompanyId?'COMPANY':'PORTFOLIO'}
+  function opsState(){return globalThis.marketingOpsState&&typeof globalThis.marketingOpsState==='object'?globalThis.marketingOpsState:null}
+  function mode(){return opsState()?.selectedCompanyId?'COMPANY':'PORTFOLIO'}
   function company(){return typeof globalThis.opsSelectedCompany==='function'?globalThis.opsSelectedCompany():null}
   function required(row,currentMode=mode()){return !(row.requiresCompany&&currentMode==='PORTFOLIO')}
   function navFor(view){return document.querySelector(`[data-ops-view="${view}"]`)}
@@ -35,9 +36,9 @@
 
   function inspect(view){
     if(!PILOT_JOURNEY_STEPS.some(row=>row.view===view))return null;
-    const currentMode=mode(),errors=[];
+    const currentMode=mode(),errors=[],currentState=opsState();
     const shell=document.querySelector('#marketing-ops-shell'),root=document.querySelector('#marketing-ops-view'),nav=navFor(view);
-    if(marketingOpsState?.view!==view)errors.push('la vista activa no coincide');
+    if(currentState?.view!==view)errors.push('la vista activa no coincide');
     if(!shell||shell.classList.contains('marketing-ops-hidden'))errors.push('shell empresarial no visible');
     if(!root||root.textContent.trim().length<3)errors.push('vista sin contenido renderizado');
     if(!nav)errors.push('navegación no declarada');
@@ -50,7 +51,7 @@
   }
 
   function report(){
-    const currentMode=mode(),seen=state.visits[currentMode],rows=PILOT_JOURNEY_STEPS.map(step=>{
+    const currentMode=mode(),seen=state.visits[currentMode],activeCompany=company(),rows=PILOT_JOURNEY_STEPS.map(step=>{
       const isRequired=required(step,currentMode),nav=navFor(step.view),visit=seen[step.view];
       if(!isRequired)return {...step,required:false,status:'OWNER_ONLY',detail:'Disponible cuando selecciones una empresa exacta.'};
       if(!nav)return {...step,required:true,status:'FAIL',detail:'La navegación actual no declara esta vista.'};
@@ -58,7 +59,7 @@
       return {...step,required:true,status:'READY',detail:'Ruta declarada; todavía no fue visitada en esta sesión.'};
     });
     const requiredRows=rows.filter(row=>row.required),pass=requiredRows.filter(row=>row.status==='PASS').length;
-    return {schema:'binario.marketing.pilot-journey-smoke.v1',mode:currentMode,company:company()?{id:company().id,name:company().name}:null,pass,total:requiredRows.length,ready:pass===requiredRows.length,rows,checkedAt:new Date().toISOString(),safety:{automaticNavigation:false,providerReads:false,providerMutations:false,formSubmission:false,publishing:false,backgroundPolling:false}};
+    return {schema:'binario.marketing.pilot-journey-smoke.v1',mode:currentMode,company:activeCompany?{id:activeCompany.id,name:activeCompany.name}:null,pass,total:requiredRows.length,ready:pass===requiredRows.length,rows,checkedAt:new Date().toISOString(),safety:{automaticNavigation:false,providerReads:false,providerMutations:false,formSubmission:false,publishing:false,backgroundPolling:false}};
   }
 
   function statusLabel(status){return ({PASS:'PASS',READY:'POR VISITAR',FAIL:'REVISAR',OWNER_ONLY:'EMPRESA EXACTA'})[status]||status}
@@ -91,9 +92,9 @@
   }
 
   document.addEventListener('click',event=>{const target=event.target instanceof Element?event.target.closest('[data-ops-view]'):null;if(!target)return;const view=target.dataset.opsView;if(PILOT_JOURNEY_STEPS.some(row=>row.view===view))setTimeout(()=>inspect(view),350)});
-  window.addEventListener('marketing-ops-refreshed',()=>{installAction();setTimeout(()=>inspect(marketingOpsState?.view),250)});
-  window.addEventListener('wave73-entry-ready',()=>{installAction();setTimeout(()=>inspect(marketingOpsState?.view),350)});
-  window.addEventListener('wave73-bootstrap-ready',()=>{installAction();setTimeout(()=>inspect(marketingOpsState?.view),350)});
+  window.addEventListener('marketing-ops-refreshed',()=>{installAction();setTimeout(()=>inspect(opsState()?.view),250)});
+  window.addEventListener('wave73-entry-ready',()=>{installAction();setTimeout(()=>inspect(opsState()?.view),350)});
+  window.addEventListener('wave73-bootstrap-ready',()=>{installAction();setTimeout(()=>inspect(opsState()?.view),350)});
 
   globalThis.wave73RunJourneyCheck=pilotJourneyShow;
   globalThis.pilotJourneyShow=pilotJourneyShow;
