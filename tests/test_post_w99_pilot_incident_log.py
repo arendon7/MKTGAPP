@@ -85,6 +85,31 @@ class PilotIncidentLogUnitTests(unittest.TestCase):
             self.store.open({**incident_payload(), "severity": "CRITICAL"})
         self.assertFalse(hasattr(self.store, "delete"))
 
+    def test_tampered_event_identity_and_time_order_fail_closed(self):
+        self.store.open(incident_payload())
+        original = json.loads(self.path.read_text(encoding="utf-8"))
+
+        duplicate = json.loads(json.dumps(original))
+        duplicate["events"].append(dict(duplicate["events"][0]))
+        self.path.write_text(json.dumps(duplicate), encoding="utf-8")
+        with self.assertRaises(PilotIncidentLogCorrupt):
+            self.store.list()
+
+        opened = original["events"][0]
+        early_resolution = {
+            "schema": "binario.marketing.pilot-incident-event.v1",
+            "event_id": "event_20000101T000000Z_deadbeef",
+            "incident_id": opened["incident_id"],
+            "type": "RESOLVED",
+            "recorded_at": "2000-01-01T00:00:00+00:00",
+            "local_date": "2026-09-13",
+        }
+        tampered = json.loads(json.dumps(original))
+        tampered["events"].append(early_resolution)
+        self.path.write_text(json.dumps(tampered), encoding="utf-8")
+        with self.assertRaises(PilotIncidentLogCorrupt):
+            self.store.list()
+
     @unittest.skipIf(os.name == "nt", "symlink behavior differs on Windows runners")
     def test_corrupt_or_symlink_store_fails_closed_without_overwrite(self):
         self.path.parent.mkdir(parents=True)
@@ -102,6 +127,15 @@ class PilotIncidentLogUnitTests(unittest.TestCase):
         self.path.symlink_to(target)
         with self.assertRaises(PilotIncidentLogCorrupt):
             self.store.list()
+
+        self.path.unlink()
+        target.unlink()
+        self.path.symlink_to(target)
+        with self.assertRaises(PilotIncidentLogCorrupt):
+            self.store.list()
+        with self.assertRaises(PilotIncidentLogCorrupt):
+            self.store.open(incident_payload())
+        self.assertTrue(self.path.is_symlink())
 
 
 class PilotIncidentLogHTTPTests(unittest.TestCase):
@@ -137,11 +171,13 @@ class PilotIncidentLogHTTPTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 403)
         with self._post("/api/pilot/incidents", incident_payload()) as response:
             opened = json.loads(response.read().decode("utf-8"))
-        self.assertEqual(response.status, 201)
+            opened_status = response.status
+        self.assertEqual(opened_status, 201)
         self.assertEqual(opened["status"], "OPEN")
         with self._post(f"/api/pilot/incidents/{opened['id']}/resolve", {"local_date": "2026-09-13"}) as response:
             resolved = json.loads(response.read().decode("utf-8"))
-        self.assertEqual(response.status, 200)
+            resolved_status = response.status
+        self.assertEqual(resolved_status, 200)
         self.assertEqual(resolved["status"], "RESOLVED")
         with urlopen(self.root + "/api/pilot/incidents?status=ALL&limit=100", timeout=5) as response:
             listing = json.loads(response.read().decode("utf-8"))
