@@ -65,6 +65,13 @@ def _enum(value: object, allowed: tuple[str, ...], label: str) -> str:
     return normalized
 
 
+def _timestamp(value: object) -> datetime:
+    timestamp = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        raise ValueError("invalid pilot incident timestamp")
+    return timestamp
+
+
 class PilotIncidentLog:
     """Append-only structured incident evidence for the local pilot.
 
@@ -122,9 +129,7 @@ class PilotIncidentLog:
         if not _INCIDENT_RE.fullmatch(str(event.get("incident_id") or "")):
             raise ValueError("invalid pilot incident id")
         _validate_date(event.get("local_date"))
-        timestamp = datetime.fromisoformat(str(event.get("recorded_at") or "").replace("Z", "+00:00"))
-        if timestamp.tzinfo is None:
-            raise ValueError("invalid pilot incident timestamp")
+        _timestamp(event.get("recorded_at"))
         if event_type == "OPENED":
             _enum(event.get("module"), MODULES, "module")
             _enum(event.get("category"), CATEGORIES, "category")
@@ -134,7 +139,12 @@ class PilotIncidentLog:
     def _derive(events: list[dict]) -> list[dict]:
         incidents: dict[str, dict] = {}
         order: list[str] = []
+        event_ids: set[str] = set()
         for event in events:
+            event_id = event["event_id"]
+            if event_id in event_ids:
+                raise ValueError("duplicate pilot incident event id")
+            event_ids.add(event_id)
             incident_id = event["incident_id"]
             if event["type"] == "OPENED":
                 if incident_id in incidents:
@@ -156,6 +166,8 @@ class PilotIncidentLog:
             incident = incidents.get(incident_id)
             if incident is None or incident["status"] != "OPEN":
                 raise ValueError("invalid pilot incident resolution sequence")
+            if _timestamp(event["recorded_at"]) <= _timestamp(incident["opened_at"]):
+                raise ValueError("pilot incident resolution predates opening")
             incident["status"] = "RESOLVED"
             incident["resolved_at"] = event["recorded_at"]
             incident["resolved_date"] = event["local_date"]
